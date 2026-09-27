@@ -13,6 +13,8 @@ function P = setup_pmpc()
 %   注: 本函数里的 wsget / func_RunMode 会读 CarSim 的 simfile.sim 与 Run_all.par,
 %   这些都是 codegen 不支持的操作 —— 正因为它们在块外, 所以无所谓。
 
+startup_pmpc();
+
 [~, ~] = func_RLSFilter_Calpha_f('initial', 0.99, 10, 50);
 [~, ~] = func_RLSFilter_Calpha_r('initial', 0.99, 10, 50);
 

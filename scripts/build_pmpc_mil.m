@@ -200,8 +200,9 @@ function local_carsimlib()
 %   路径从 simfile.sim 的 PROGDIR 推 —— 不写死机器路径。
 if ~isempty(which('Solver_SF')), return; end
 progdir = '';
-if exist('simfile.sim','file') == 2
-    txt = fileread('simfile.sim');
+simfile = fullfile(func_ProjectRoot(), 'simfile.sim');
+if exist(simfile,'file') == 2
+    txt = fileread(simfile);
     tk  = regexp(txt, '(?m)^PROGDIR\s+(.+?)\s*$', 'tokens', 'once');
     if ~isempty(tk), progdir = strtrim(tk{1}); end
 end

@@ -253,7 +253,13 @@ WayPoints_Collect(:,5) = K;              % Curvature (1/m)
 %% 3. 保存与输出
 filename = sprintf('WayPoints_Type%d.mat', maneuverType);
 if maneuverType == 5, filename = sprintf('WayPoints_Type5_R%g.mat', Rjt); end   % 半径不同的 J-turn 分开存
-save(filename, 'WayPoints_Collect');
+if maneuverType == 5
+    outdir = fullfile(func_ProjectRoot(), 'data', 'generated');
+else
+    outdir = fullfile(func_ProjectRoot(), 'data');
+end
+if exist(outdir,'dir') ~= 7, mkdir(outdir); end
+save(fullfile(outdir, filename), 'WayPoints_Collect');
 % fprintf('路经类型 %d 生成完成，点数: %d，已保存至 %s\n', maneuverType, numPoints, filename);
 
 %% 4. (可选) 绘图验证

@@ -16,7 +16,7 @@ function make_deploy()
 %   不放什么: 所有桌面侧工具(chk_regress / run3b / run_ds / build_* /
 %   func_Metrics / func_ReadERD / plot_week / cg_* ...), 部署机用不着。
 
-root = fileparts(mfilename('fullpath'));
+root = func_ProjectRoot();
 D = fullfile(root, 'HIL_deploy');
 %  清空而不是删目录 —— OneDrive/资源管理器会占住目录句柄, rmdir 直接失败,
 %  但删里面的文件是可以的。
@@ -31,7 +31,8 @@ end
 
 % ---------- 1. 依赖分析 ----------
 fprintf('  依赖分析中...\n');
-flist = matlab.codetools.requiredFilesAndProducts({'setup_pmpc.m','pmpc_block.m'});
+flist = matlab.codetools.requiredFilesAndProducts( ...
+    {fullfile(root,'setup_pmpc.m'), fullfile(root,'controller','pmpc_block.m')});
 flist = flist(:);
 n = 0;
 for i = 1:numel(flist)
@@ -68,7 +69,7 @@ if ~isempty(miss)
     mats = [mats, miss(:).'];
 end
 for i = 1:numel(mats)
-    src = fullfile(root, mats{i});
+    src = fullfile(root, 'data', mats{i});
     if exist(src,'file') ~= 2
         error('make_deploy:NoMat', '找不到数据文件 %s', mats{i});
     end
@@ -84,13 +85,14 @@ fprintf('  模型      : pmpc_hil.slx (R2018a 格式)\n');
 
 %  给远程机就地改造用: 那边的 pmpc_hil.slx 已经手工换好 50 个 NI In,
 %  重新生成要再换 50 次, 所以带上这个脚本, 跑一次就把 Mux(62) 换成 Mux(50)。
-copyfile(fullfile(root,'hil50.m'), fullfile(D,'hil50.m'));
+copyfile(fullfile(root,'scripts','hil50.m'), fullfile(D,'hil50.m'));
 
 % ---------- 4. 端口表 ----------
 func_PortMap('-doc');
-for f = {'PORTMAP_HIL.md','portmap_hil_in.csv','portmap_hil_out.csv','HIL_R2018a_codegen_notes.md'}
-    copyfile(fullfile(root,f{1}), fullfile(D,f{1}));
-end
+copyfile(fullfile(root,'docs','PORTMAP_HIL.md'), fullfile(D,'PORTMAP_HIL.md'));
+copyfile(fullfile(root,'docs','HIL_R2018a_codegen_notes.md'), fullfile(D,'HIL_R2018a_codegen_notes.md'));
+copyfile(fullfile(root,'data','portmap_hil_in.csv'), fullfile(D,'portmap_hil_in.csv'));
+copyfile(fullfile(root,'data','portmap_hil_out.csv'), fullfile(D,'portmap_hil_out.csv'));
 
 % ---------- 5. hil_init + README ----------
 local_write_init(D);

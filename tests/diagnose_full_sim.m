@@ -2,6 +2,7 @@ solverDir = 'D:\Program Files\CarSim2019.0\CarSim2019.0_Prog\Programs\solvers\Ma
 modelDir = fileparts(fileparts(mfilename('fullpath')));
 cd(modelDir);
 addpath(modelDir, solverDir);
+startup_pmpc();
 clear global;
 load_system('Solver_SF');
 load_system('cq3_2019');

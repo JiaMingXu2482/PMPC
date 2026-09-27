@@ -153,20 +153,23 @@ end
 
 function local_writedoc(P)
 %  csv: VeriStand 映射直接导入用
-f = fopen('portmap_in.csv','w');
+root = func_ProjectRoot();
+dataDir = fullfile(root, 'data');
+docsDir = fullfile(root, 'docs');
+f = fopen(fullfile(dataDir,'portmap_in.csv'),'w');
 fprintf(f, 'Index,Name,Unit,Used,Description\n');
 for i = 1:size(P.in,1)
     fprintf(f, '%d,%s,%s,%d,"%s"\n', P.in{i,1}, P.in{i,2}, P.in{i,3}, P.in{i,5}, P.in{i,4});
 end
 fclose(f);
-f = fopen('portmap_out.csv','w');
+f = fopen(fullfile(dataDir,'portmap_out.csv'),'w');
 fprintf(f, 'Index,Name,Unit,Destination,Description\n');
 for i = 1:size(P.out,1)
     fprintf(f, '%d,%s,%s,"%s","%s"\n', P.out{i,1}, P.out{i,2}, P.out{i,3}, P.out{i,4}, P.out{i,5});
 end
 fclose(f);
 
-f = fopen('PORTMAP_HIL.md','w','n','UTF-8');
+f = fopen(fullfile(docsDir,'PORTMAP_HIL.md'),'w','n','UTF-8');
 fprintf(f, '# 控制器端口映射 (50 入 / 54 出)\n\n');
 fprintf(f, '> 由 `func_PortMap(''-doc'')` 生成, 不要手改。\n');
 fprintf(f, '> 来源: CarSim `Run_all.par` 的 EXPORT/IMPORT 列表 + `func_StateEstimation.m`\n');
@@ -234,13 +237,13 @@ fprintf(f, '> `qp_status`。建议把它加成 `sys(55)`: 不影响任何计算,
 fprintf(f, '> 所以 `baseline_mf` 的 MD5 不会变; 代价是改 `pmpc_step` 的输出宽度和 `Demux4`。\n');
 fclose(f);
 
-f = fopen('portmap_hil_in.csv','w');
+f = fopen(fullfile(dataDir,'portmap_hil_in.csv'),'w');
 fprintf(f, 'NI_In,CarSimChannel,Name,Unit\n');
 for i = 1:size(P.hil_in,1)
     fprintf(f, '%d,%d,%s,%s\n', P.hil_in{i,1}, P.hil_in{i,2}, P.hil_in{i,3}, P.hil_in{i,4});
 end
 fclose(f);
-f = fopen('portmap_hil_out.csv','w');
+f = fopen(fullfile(dataDir,'portmap_hil_out.csv'),'w');
 fprintf(f, 'NI_Out,Source,Name,Unit,Description\n');
 for i = 1:size(P.hil_out,1)
     fprintf(f, '%d,%s,%s,%s,"%s"\n', P.hil_out{i,1}, P.hil_out{i,2}, P.hil_out{i,3}, ...

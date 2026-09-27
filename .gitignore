@@ -26,6 +26,7 @@
 /baseline_*/
 /results_*/
 /Results/
+/simulation_results/
 
 # Generated deployment snapshots (root sources are authoritative)
 /MIL_deploy/
@@ -37,6 +38,7 @@
 
 # Generated J-turn paths and one-off diagnostics
 /WayPoints_Type5_*.mat
+/data/generated/
 /step_*_result.mat
 **/dbg_*.mat
 **/diag_*.mat

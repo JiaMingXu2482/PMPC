@@ -16,10 +16,11 @@ function ok = func_CarSimLib()
 ok = ~isempty(which('Solver_SF'));
 if ok, return; end
 
-if exist('simfile.sim','file') ~= 2
+simfile = fullfile(func_ProjectRoot(), 'simfile.sim');
+if exist(simfile,'file') ~= 2
     return      % 没有 simfile 就不是能跑仿真的环境, 交给上层报错
 end
-tk = regexp(fileread('simfile.sim'), '(?m)^PROGDIR\s+(.+?)\s*$', 'tokens', 'once');
+tk = regexp(fileread(simfile), '(?m)^PROGDIR\s+(.+?)\s*$', 'tokens', 'once');
 if isempty(tk), return; end
 progdir = strtrim(tk{1});
 

@@ -1,8 +1,8 @@
 function plot_week
-%PLOT_WEEK  周报用图。读 scratchpad 里的 ERD, 输出 PNG 到 .\figs\
+%PLOT_WEEK  周报用图。读仿真输出, 输出 PNG 到 docs\figures\
 %   颜色沿用 CarSim 动画: 1 MPC 黑(动画里是白) / 2 ZENG 蓝 / 3 PMPC 红
 SC = func_ErdDir();          % 项目内 erd_out (原为会话临时目录, 见 func_ErdDir)
-OUT = fullfile(pwd,'figs');
+OUT = fullfile(func_ProjectRoot(),'docs','figures');
 if ~exist(OUT,'dir'), mkdir(OUT); end
 set(0,'defaultAxesFontName','Microsoft YaHei','defaultTextFontName','Microsoft YaHei');
 set(0,'defaultAxesFontSize',10,'defaultLineLineWidth',1.4);

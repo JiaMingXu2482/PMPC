@@ -2,6 +2,12 @@ function tests = test_func_QPA_DB
 tests = functiontests(localfunctions);
 end
 
+function setupOnce(~)
+root = fileparts(fileparts(mfilename('fullpath')));
+addpath(root);
+startup_pmpc();
+end
+
 function testZeroWheelLoadDoesNotCreateNonFiniteQP(testCase)
 vehicle = struct('lf', 1.417, 'mu', 0.85, 'tf', 1.575, ...
                  'tr', 1.575, 'rt', 0.347);

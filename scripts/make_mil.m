@@ -11,7 +11,7 @@ function make_mil()
 %      GBK 转换保证 R2018a(中文 Windows 按 ANSI 代码页读 .m)不乱码。
 %      HIL 包剥注释是另一回事 —— 那是要交付给 NI 侧的干净产物。
 
-root = fileparts(mfilename('fullpath'));
+root = func_ProjectRoot();
 D = fullfile(root, 'MIL_deploy');
 if exist(D,'dir')
     for sub = {'', 'baseline_ref', 'baseline_ref_mil', 'carsim'}
@@ -28,7 +28,8 @@ end
 
 % ---------- 1. 运行期 .m (依赖分析) ----------
 fprintf('  依赖分析中...\n');
-flist = matlab.codetools.requiredFilesAndProducts({'setup_pmpc.m','pmpc_block.m'});
+flist = matlab.codetools.requiredFilesAndProducts( ...
+    {fullfile(root,'setup_pmpc.m'), fullfile(root,'controller','pmpc_block.m')});
 n = 0;
 for i = 1:numel(flist)
     [~,nm,ext] = fileparts(flist{i});
@@ -40,14 +41,16 @@ end
 tools = {'run_ds.m','run3b.m','chk_regress.m','func_Metrics.m', ...
          'func_ReadERD.m','func_WaitERD.m','func_ErdDir.m','mil_init.m','chk_ver.m'};
 for i = 1:numel(tools)
-    copyfile(fullfile(root,tools{i}), fullfile(D,tools{i}));
+    src = which(tools{i});
+    if isempty(src), error('make_mil:NoTool', '找不到工具 %s', tools{i}); end
+    copyfile(src, fullfile(D,tools{i}));
 end
 fprintf('  .m 文件  : 运行期 %d 个 + 工具 %d 个\n', n, numel(tools));
 
 % ---------- 3. 数据 ----------
 mats = {'TireCarpet_265_75R16.mat','ZengSaddleDB_SUV.mat'};
 for i = 1:numel(mats)
-    copyfile(fullfile(root,mats{i}), fullfile(D,mats{i}));
+    copyfile(fullfile(root,'data',mats{i}), fullfile(D,mats{i}));
 end
 
 % ---------- 4. 模型 ----------
@@ -71,7 +74,7 @@ fprintf('  模型     : cq3_2019.slx + pmpc_mil.slx (R2018a 格式)\n');
 bd = fullfile(D,'baseline_ref');
 if ~exist(bd,'dir'), mkdir(bd); end
 for pair = { {'baseline_mf','baseline_ref'}, {'baseline_mil','baseline_ref_mil'} }
-    srcd = fullfile(root, pair{1}{1}, 'erd');
+    srcd = fullfile(root, 'simulation_results', 'archive', pair{1}{1}, 'erd');
     dstd = fullfile(D, pair{1}{2});
     if ~exist(dstd,'dir'), mkdir(dstd); end
     for t = {'MPC','ZENG','PMPC'}

@@ -28,7 +28,7 @@ while i <= numel(varargin)
     i = i + 1;
 end
 
-SF = 'simfile.sim';
+SF = fullfile(func_ProjectRoot(), 'simfile.sim');
 assert(exist(SF,'file')==2, 'run_ds:NoSimfile', ...
       ['找不到 %s —— 它是 CarSim "Send to Simulink" 写出的句柄文件, 不是临时文件。\n' ...
        '在 CarSim 里点一次 Send to Simulink 即可重新生成。'], SF);

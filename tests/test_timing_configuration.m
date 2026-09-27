@@ -6,6 +6,7 @@ function testMpcUses50msPredictionWith100HzTrigger(testCase)
 modelDir = fileparts(fileparts(mfilename('fullpath')));
 solverDir = 'D:\Program Files\CarSim2019.0\CarSim2019.0_Prog\Programs\solvers\Matlab84+';
 addpath(modelDir, solverDir);
+startup_pmpc();
 
 clear global;
 cq32019mpc(0, [], [], 0);

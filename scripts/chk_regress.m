@@ -28,8 +28,9 @@ function ok = chk_regress(varargin)
 %     baseline_0917      quadprog 时代
 %
 %   MD5 不一致时会定位到: 哪个控制器 / 首次偏离在第几拍 / 哪个通道。
-root = fileparts(mfilename('fullpath'));
-base = fullfile(root,'baseline_mf','erd');   % 阶段 D 后: MATLAB Function block
+root = func_ProjectRoot();
+archive = fullfile(root,'simulation_results','archive');
+base = fullfile(archive,'baseline_mf','erd');   % 阶段 D 后: MATLAB Function block
 %  历史基准见上方说明, 需要时用 -base 指定。
 dosim = true;
 cur = '';
@@ -55,8 +56,8 @@ if ~isempty(cur), out = cur; else, out = func_ErdDir(); end
 if ~hasBase
     mdl = local_curmodel();
     switch mdl
-        case 'cq3_2019', base = fullfile(root,'baseline_mf','erd');
-        case 'pmpc_mil', base = fullfile(root,'baseline_mil','erd');
+        case 'cq3_2019', base = fullfile(archive,'baseline_mf','erd');
+        case 'pmpc_mil', base = fullfile(archive,'baseline_mil','erd');
         otherwise
             warning('chk_regress:UnknownModel', ...
                 ['CarSim 指向的模型是 %s, 没有对应的基准目录, 仍用默认 baseline_mf。\n' ...
@@ -168,8 +169,9 @@ function mdl = local_curmodel()
 %  simfile.sim 当前指向哪个数据集 -> 那份 Run_all.par -> SIMULINK_MODEL_FILE
 %  逐行找而不用正则: 这两个宏名里带 ) 和 $, 写成正则要一堆转义, 容易出错。
 mdl = 'cq3_2019';
-if exist('simfile.sim','file') ~= 2, return; end
-L = strsplit(fileread('simfile.sim'), newline);
+simfile = fullfile(func_ProjectRoot(), 'simfile.sim');
+if exist(simfile,'file') ~= 2, return; end
+L = strsplit(fileread(simfile), newline);
 wd = '';  gid = '';
 %  ⚠️ 宏名在文件里出现不止一次, 而且**其它宏的值里也会引用它**, 例如
 %       SET_MACRO $(WORK_DIR)$ D:\...\CarSim2019.0_Data\            <- 定义

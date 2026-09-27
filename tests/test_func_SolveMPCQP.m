@@ -2,6 +2,12 @@ function tests = test_func_SolveMPCQP
 tests = functiontests(localfunctions);
 end
 
+function setupOnce(~)
+root = fileparts(fileparts(mfilename('fullpath')));
+addpath(root);
+startup_pmpc();
+end
+
 function testNonFiniteWarmStartIsReset(testCase)
 params = struct('Nu', 1, 'Nc', 1, 'Ne', 0, 'Nr', 0);
 
