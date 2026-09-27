@@ -31,6 +31,9 @@
 # Historical plotting workspace
 /plot/
 
+# Local execution ledgers and review packages
+/.superpowers/
+
 # Generated J-turn paths and one-off diagnostics
 /WayPoints_Type5_*.mat
 /data/generated/
