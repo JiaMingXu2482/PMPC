@@ -338,7 +338,7 @@ Fxu_f    = sqrt(max((VehiclePara.mu*Fz_f_avg)^2 - Fy_f_avg^2, 1));
 kappa_fx = (VehiclePara.tf/2) * (Fy_f_avg/Fxu_f) * abs(cb_f)/2;
 
 % 优先级因子的惯性/耦合都要用到上一拍的 gamma, 初始化必须在 Lim 之前
-%  codegen: gamma 已在 func_InitialParams 里初始化为 [0;0;1], 无需惰性创建
+%  codegen: gamma 已在 setup_pmpc 里初始化为 [0;0;1], 无需惰性创建
 
 %  各预测节点处的路径曲率, 供四角点弯道修正 -kappa*a^2/2 用(动力学用的是每步平均曲率 Kap_dyn)。
 %  鱼钩模式下为空(无路径), 与 func_SystemFurture 一样补零。

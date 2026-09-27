@@ -14,7 +14,7 @@ switch exitflag
 end
 
 % --- 求解耗时记录（R3#9 需要报告 mean/max 求解时间与迭代次数）---
-%  codegen: t_solve/n_solve 已在 func_InitialParams 里预分配
+%  codegen: t_solve/n_solve 已在 setup_pmpc 里预分配
 InitialParams.n_solve = InitialParams.n_solve + 1;
 if InitialParams.n_solve <= numel(InitialParams.t_solve)
     InitialParams.t_solve(InitialParams.n_solve) = t_Elapsed;

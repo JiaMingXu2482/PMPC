@@ -56,3 +56,19 @@ verifyFalse(testCase, contains(stepText,'Pm.C_table'));
 verifyFalse(testCase, contains(stepText,'Pm.Cf0'));
 verifyFalse(testCase, contains(stepText,'Pm.Cr0'));
 end
+
+function testSetupHelpersAreLocal(testCase)
+root = testCase.TestData.root;
+verifyEqual(testCase, exist(fullfile(root,'controller','func_InitialParams.m'),'file'), 0);
+verifyEqual(testCase, exist(fullfile(root,'controller','wsget.m'),'file'), 0);
+
+assignin('base','PMPC_TS',0.04);
+cleanup = onCleanup(@() evalin('base','clear PMPC_TS PMPC_P')); %#ok<NASGU>
+P = setup_pmpc();
+verifyEqual(testCase, P.Pm.MPCParameters.Ts, 0.04, 'AbsTol', 1e-12);
+verifyTrue(testCase, isfield(P.S0.InitialParams,'InitialGapflag'));
+verifyTrue(testCase, isfield(P.S0.InitialParams,'prevstate'));
+verifySize(testCase, P.S0.InitialParams.t_solve, [1 20000]);
+verifySize(testCase, P.S0.InitialParams.ey_hist, [1 20000]);
+verifySize(testCase, P.S0.InitialParams.epsi_hist, [1 20000]);
+end

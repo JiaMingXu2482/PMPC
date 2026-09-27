@@ -3,37 +3,37 @@ function P = setup_pmpc()
 %
 %   P = setup_pmpc                 % 只返回, 不写工作区
 %   setup_pmpc                     % 同时把 P 写到 base 工作区的 PMPC_P
-%   模式选择仍走原来的 wsget 机制(CarSim 数据集名 / base 工作区)。
+%   模式选择仍走原来的 localWsget 机制(CarSim 数据集名 / base 工作区)。
 %
 %   初始化在 Simulink 模型之外完成。
 %   用法: 先跑一次 setup_pmpc, 工作区就有 PMPC_P 了, 再跑仿真。
 %   彻底迁到 MATLAB Function block 后, P 的各字段以块参数(Scope=Parameter)
 %   形式传入, 在开发机 build 时解析并固化进生成代码, 目标机不需要工作区。
 %
-%   注: 本函数里的 wsget / func_RunMode 会读 CarSim 的 simfile.sim 与 Run_all.par,
+%   注: 本函数里的 localWsget / func_RunMode 会读 CarSim 的 simfile.sim 与 Run_all.par,
 %   这些都是 codegen 不支持的操作 —— 正因为它们在块外, 所以无所谓。
 
 startup_pmpc();
 
-[InitialParams] = func_InitialParams;
+InitialParams = localInitialParams();
 
 %% ==== 运行配置 (详见 README_运行配置.md) ====
-InitialParams.BaselineMode    = wsget('PMPC_BASELINE',   0);   % 1=无控制baseline
-InitialParams.BaselineCurrent = wsget('PMPC_BASELINE_I', 2.0); % A, baseline 时 MR 电流
-InitialParams.FishhookMode    = wsget('PMPC_FISHHOOK',   0);   % 1=鱼钩纯防侧翻
+InitialParams.BaselineMode    = localWsget('PMPC_BASELINE',   0);   % 1=无控制baseline
+InitialParams.BaselineCurrent = localWsget('PMPC_BASELINE_I', 2.0); % A, baseline 时 MR 电流
+InitialParams.FishhookMode    = localWsget('PMPC_FISHHOOK',   0);   % 1=鱼钩纯防侧翻
 %  工况(路径类型 / J-turn 半径 / 路面 mu)从 CarSim 数据集名解析, 见 func_ManeuverFromName。
 %  DLC80_mu0.5_* 解析结果与 2026-09-26 前写死的 (DLC, mu = 0.5) 完全相同。
 [~, ~, ds_mv] = func_RunMode();
 MV = func_ManeuverFromName(ds_mv);
 [Reftraj] = func_WayPoints(MV.type, MV.R); % 1-DLC, 2-Slalom, 3-U-Turn, 5-J-turn
-PMPC_cargo = wsget('PMPC_CARGO', 0);   % 与横幅同源
+PMPC_cargo = localWsget('PMPC_CARGO', 0);   % 与横幅同源
 [VehiclePara] = func_VehicleParams(PMPC_cargo);
 %  模型基准试验开关 (改进.md 18z, 默认全关 = erd_0926_pi 版本, 用户 2026-09-27 定):
 %    PMPC_ISW     传动比 (CarSim 齿条表 18.57)
 %    PMPC_KCS     转向柔性, 轴级 deg/kN (实测约 0.06; >0 时前轴用有效特性 func_TireTable 'comply')
 %    PMPC_ARLIM_MU 1 = 后轴侧偏界 = mu * 参考表峰值角 (后轮静载)
-VehiclePara.isw  = wsget('PMPC_ISW', VehiclePara.isw);
-VehiclePara.k_cs = deg2rad(wsget('PMPC_KCS', 0))/1000;   % rad/N (轴级侧向力); 0 = 不建模柔性
+VehiclePara.isw  = localWsget('PMPC_ISW', VehiclePara.isw);
+VehiclePara.k_cs = deg2rad(localWsget('PMPC_KCS', 0))/1000;   % rad/N (轴级侧向力); 0 = 不建模柔性
 % VehiclePara.mu = 0.3;
 VehiclePara.mu = MV.mu;              % 路面设定值, 取自数据集名 (须与 CarSim 路面数据集一致)
 VehiclePara.mu_eff = 0.855*MV.mu;    % 轮胎可实现的侧向附着 = 0.855*mu_road (mu = 0.5 时恰为 0.4275)
@@ -52,7 +52,7 @@ VehiclePara.mu_eff = 0.855*MV.mu;    % 轮胎可实现的侧向附着 = 0.855*mu
 %  四条轮胎相同, 前后轴的差别只来自载荷, 故两个模型用同一份标定。
 %  Fiala 标定: 1 = C 取实测原点刚度(Tire Tester 实测轴级 145256, 本式给 144808, 差 0.3%),
 %  0 = 对齐饱和角(C 偏硬 17%)。闭环两者都测过, =1 更好(出车道 5.8% vs 10.9%), 取 1。
-fia_c0 = wsget('PMPC_FIALA_C0', 1);
+fia_c0 = localWsget('PMPC_FIALA_C0', 1);
 TireF = func_TireTable('carsim', VehiclePara.mu, 2, fia_c0);
 TireR = func_TireTable('carsim', VehiclePara.mu, 2, fia_c0);
 if VehiclePara.k_cs > 0
@@ -83,12 +83,12 @@ Constraints.Roadwidth  = 3.5;
 %  (当前数据集 lf = 1.2466 -> a_f = 2.107, a_r = 2.725)。
 %  四角横向偏移 e_y + a*e_psi +- W_v/2 (小角近似, |e_psi|<pi/2 时偏保守)。
 %  与 es/emax 分开: emax 还用于 Q 的归一化和越界指标, 不随约束几何变。
-%  wsget 口子: 工作区给 PMPC_ENV_AF/AR/WV/ES 可覆盖(对照试验用)。
+%  localWsget 口子: 工作区给 PMPC_ENV_AF/AR/WV/ES 可覆盖(对照试验用)。
 %  af=ar=0, Wv=tf, es=0.43 即退回旧的"质心 + 半轮距 + 0.43"约束。
-Constraints.env_af = wsget('PMPC_ENV_AF', 0.860 + VehiclePara.lf);   % m
-Constraints.env_ar = wsget('PMPC_ENV_AR', 3.972 - VehiclePara.lf);   % m
-Constraints.env_Wv = wsget('PMPC_ENV_WV', 1.96);                     % m
-Constraints.env_es = wsget('PMPC_ENV_ES', 0.2);                      % m, 安全余量
+Constraints.env_af = localWsget('PMPC_ENV_AF', 0.860 + VehiclePara.lf);   % m
+Constraints.env_ar = localWsget('PMPC_ENV_AR', 3.972 - VehiclePara.lf);   % m
+Constraints.env_Wv = localWsget('PMPC_ENV_WV', 1.96);                     % m
+Constraints.env_es = localWsget('PMPC_ENV_ES', 0.2);                      % m, 安全余量
 % ---- 转向速率上限: 执行器的物理能力, 不是可调参数 ----
 %  依据(本项目自带, 可直接引用): 鱼钩工况的 NHTSA 转向机器人指令
 %    0 -> 294 deg 用 0.4083 s, 294 -> -294 deg 用 0.817 s
@@ -113,15 +113,15 @@ Constraints.SW_rate_max_deg = 720;                     % deg/s @方向盘
 Constraints.dlt_rate_max = deg2rad(Constraints.SW_rate_max_deg / VehiclePara.isw);
 %  辅助驾驶(AFS_add = 1)下约束的是 **AFS 叠加电机**, 不是整个转向系统。
 %  取 Bemporad 2013 的 0.5 rad/s @前轮 (= 28.6 deg/s), 工作区 PMPC_AFSRATE 可覆盖。
-Constraints.AFS_rate_max = wsget('PMPC_AFSRATE', 0.5);            % rad/s @前轮
-if wsget('PMPC_AFSADD', 0)
+Constraints.AFS_rate_max = localWsget('PMPC_AFSRATE', 0.5);            % rad/s @前轮
+if localWsget('PMPC_AFSADD', 0)
     Constraints.dlt_rate_max = Constraints.AFS_rate_max;
 end
 Constraints.SW_max     =deg2rad(240);
 % 鱼钩(Add 模式)下 AFS 的增量权限, Wang 2023 表一 delta_fm = 0.1 rad = 5.73 deg。
 % 拆成 _deg 便于扫描: 降到 0 即「只用 DB+MR, 完全不削驾驶员转角」,
 % 用于量化防侧翻里有多少来自削转角 (任务 #9 / 缺陷 A3)。
-Constraints.AFS_max_deg = wsget('PMPC_AFSMAX', 5.73);   % 0 = AFS 不作用(诊断: 只看驾驶员)
+Constraints.AFS_max_deg = localWsget('PMPC_AFSMAX', 5.73);   % 0 = AFS 不作用(诊断: 只看驾驶员)
 Constraints.AFS_max    = deg2rad(Constraints.AFS_max_deg);
 % MR 力矩变化率 = 可调制幅度 / 响应时间。原写死 500/0.03, 其中 500 N*m 无来源。
 % 幅度改用 Md_ref (由阻尼器上下界模型算出, 见 func_CostWeighting... 第 0 节)。
@@ -164,9 +164,9 @@ Constraints.ZengRho_on = 0;   % 占位, 真值在 ContrlMode 处按数据集名�
 Constraints.ZengLong_on  = 1;        % 1 = 给 ZENG 配套纵向控制(忠实复现所必需)
 %  诊断开关 (2026-09-26, 改进.md 18z): 让 MPC/PMPC 也用这套纵向限速, 检验"J-turn 偏出车道
 %  是因为没有联合纵向车速"。默认 0 = 只有 ZENG 用, 行为不变。工作区 PMPC_LONGLIM 可覆盖。
-Constraints.LongLim_diag = wsget('PMPC_LONGLIM', 0);
-Constraints.afs_box_exact = wsget('PMPC_AFSBOX', 0);   % 1 = AFS 力限转角箱查表反解 (诊断, 改进.md 18z)
-Constraints.lane_off = wsget('PMPC_LANEOFF', 0);        % 1 = 去掉车道角点约束 (诊断, 改进.md 18z)
+Constraints.LongLim_diag = localWsget('PMPC_LONGLIM', 0);
+Constraints.afs_box_exact = localWsget('PMPC_AFSBOX', 0);   % 1 = AFS 力限转角箱查表反解 (诊断, 改进.md 18z)
+Constraints.lane_off = localWsget('PMPC_LANEOFF', 0);        % 1 = 去掉车道角点约束 (诊断, 改进.md 18z)
 Constraints.Zg_rfloor    = 0.05;     % rad/s, 防除零
 Constraints.Zg_Vmin      = 30/3.6;   % m/s,  速度下限(对应原文 u_x >= 1 m/s 的工程取值)
 Constraints.Zg_tau       = 2.5;      % s,    速度误差转减速度的时间常数
@@ -276,7 +276,7 @@ MPCParameters.FishhookMode = InitialParams.FishhookMode;
 %  AFS_add = 1: **辅助驾驶**架构 —— CarSim 闭环驾驶员模型给基底转角(IMP_STEER_SW = Add),
 %  MPC 只叠加 AFS 增量(权限 AFS_max, 速率 AFS_rate_max)。= 0: 自动驾驶(Replace, 输出总转角)。
 %  与 Chen 2026 (VSD, FSC-DMPC) 同一口径: 画出的前轮转角由驾驶员主导, AFS 只是小增量。
-MPCParameters.AFS_add = wsget('PMPC_AFSADD', 0);
+MPCParameters.AFS_add = localWsget('PMPC_AFSADD', 0);
 MPCParameters.sigma_budget = 0;
 MPCParameters.fx_couple    = 0;
 Constraints.Tb_max = 3000;
@@ -286,7 +286,7 @@ Constraints.Vymax   = 2;
 %  4.5-5 deg 已走平(0.424), 即 5 deg 已贴近真实饱和。放宽到 5.5/6 deg 的对照(改进.md 18u):
 %  跟踪几乎不变, 质心侧偏角峰 +15%/+32%, 故保持 5 deg。
 %  PMPC_ARLIM_MU = 1: arlim = (mu/MU_REF)*参考表在后轮静载下的峰值角 (相似缩放, 改进.md 18z)。
-if wsget('PMPC_ARLIM_MU', 0)
+if localWsget('PMPC_ARLIM_MU', 0)
     Ccp   = load('TireCarpet_265_75R16.mat');
     Fzr0w = VehiclePara.m*VehiclePara.g*VehiclePara.lf/VehiclePara.L/2;     % 后轮单轮静载
     [~, ipk] = max(interp1(Ccp.FZ(:), Ccp.FY.', Fzr0w, 'linear'));
@@ -338,7 +338,7 @@ MPCParameters.Ny = 7;
 MPCParameters.tau_d = Constraints.tau_MR;
 %  被控对象侧的阻尼器执行器模型(一阶滞后作用在"力在上下界间的位置"上, 保耗散):
 %  1 = 开(与预测模型一致), 0 = 关(阻尼力当拍直达 CarSim, 即 2026-09-25 前的行为)
-Constraints.dmp_act_on = wsget('PMPC_DMP_ACT', 1);
+Constraints.dmp_act_on = localWsget('PMPC_DMP_ACT', 1);
 %  预测步长 T_p = 0.05 s (触发子系统每 T_c = 0.01 s 重解一次, 滚动时域), N_p = 20 (1.0 s), N_c = 6。
 %  N_p 扫描(改进.md 18z, Fiala-C0 标定): 16/20/24/28 -> e_y RMS 0.3031/0.2531/0.2772/0.2709,
 %  出车道 5.8%/0/0/0。跟踪在 N_p = 20 取极值; 再加长跟踪略退而稳定性继续改善(beta 峰 3.49->2.45),
@@ -347,10 +347,10 @@ Constraints.dmp_act_on = wsget('PMPC_DMP_ACT', 1);
 %  1/5", 但 N_p = N_c = 10 只剩 0.1 s 预瞄, DLC 直接失稳(出车道 56%, beta 峰 15 deg);
 %  拉到 N_p = 80 (同为 0.8 s 预瞄) 仍差于本配置, 差在控制时域时间 N_c*T_p 由 300 ms 缩到 100 ms。
 %  工作区 PMPC_TS / PMPC_NS / PMPC_NC 可覆盖(对照用)。
-MPCParameters.Ts = wsget('PMPC_TS', 0.05);
-MPCParameters.Ns = wsget('PMPC_NS', 20);
+MPCParameters.Ts = localWsget('PMPC_TS', 0.05);
+MPCParameters.Ns = localWsget('PMPC_NS', 20);
 MPCParameters.Np = MPCParameters.Ns;
-MPCParameters.Nc = wsget('PMPC_NC', 6);
+MPCParameters.Nc = localWsget('PMPC_NC', 6);
 %  历史对照(改进.md 18r/18v, 均在 T_p = 0.05 下): N_p 12(0.6 s) -> 16(0.8 s) 使换道滞后
 %  158-218 ms 降到 108 ms; N_c = 16 跟踪不变但最坏耗时约 3.7 倍; 时域内第 2..N_c 步速率限
 %  按 T_p 放宽则跟踪与侧偏全面变差。
@@ -367,7 +367,7 @@ MPCParameters.Nc = wsget('PMPC_NC', 6);
 % 横向变准而纵向仍瞎, 控制器会过度制动)。
 % 故默认保持 0(不引入回归), 方案三作为已验证的可选项保留。
 MPCParameters.LTV_on = 0;
-MPCParameters.QPSolver = wsget('PMPC_QPSOLVER', 1);   % 0 = quadprog, 1 = KWIK(mpcqpsolver)
+MPCParameters.QPSolver = localWsget('PMPC_QPSOLVER', 1);   % 0 = quadprog, 1 = KWIK(mpcqpsolver)
 %  2026-09-17 阶段 S 已切成 KWIK(默认 1)。实测对比 quadprog:
 %    安全类指标全部持平或改善(|LTR|峰 三个控制器全降), ey RMS 变化 <0.1%
 %    QP 失败次数 1/1/4 -> 0/0/0
@@ -378,7 +378,7 @@ MPCParameters.QPSolver = wsget('PMPC_QPSOLVER', 1);   % 0 = quadprog, 1 = KWIK(m
 MPCParameters.Ts_exec = 0.01;   % 触发周期，速率限制按它缩放
 %  第一预测步是否按 Ts_exec 离散(非均匀网格, 见 func_DynamicalModel / 规划器 Tk)。
 %  0 = 原行为(全部按 Ts); 1 = 第一步 Ts_exec、其余 Ts。2026-09-26 抖动对照用。
-MPCParameters.first_Tc = wsget('PMPC_FIRSTTC', 0);
+MPCParameters.first_Tc = localWsget('PMPC_FIRSTTC', 0);
 % ---- 约束时域（分类设置）----
 %  远端预测的物理量不可靠，对其施加约束既无实际意义，又给 QP 增加大量
 %  近乎等价的候选活跃集，是控制量不平滑的来源之一；缩短还能减少约束行数。
@@ -390,7 +390,7 @@ MPCParameters.first_Tc = wsget('PMPC_FIRSTTC', 0);
 %                                不足 DLC 一个门区(~13.5m) -> 必须取 Np
 MPCParameters.Ncons_sh  = MPCParameters.Nc;
 MPCParameters.Ncons_r   = MPCParameters.Nc;
-MPCParameters.Ncons_env = wsget('PMPC_NCONS_ENV', MPCParameters.Np);   % 工作区可覆盖(对照试验用)
+MPCParameters.Ncons_env = localWsget('PMPC_NCONS_ENV', MPCParameters.Np);   % 工作区可覆盖(对照试验用)
 
 %% ---- 运行期打印开关 (阶段 E) ----
 %  0 = 关掉每拍的 fprintf 和求解器 warning。实时运行时应关闭, 理由是:
@@ -402,7 +402,7 @@ MPCParameters.Ncons_env = wsget('PMPC_NCONS_ENV', MPCParameters.Np);   % 工作�
 %  放在 MPCParameters 里而不是 Constraints 里, 是因为 MPCParameters 属于 Pm,
 %  在块里是 coder.Constant —— Verbose=0 时整个打印分支在生成代码阶段就被折掉,
 %  一行 C 代码都不会留。Constraints 属于状态(S0), 折不掉。
-MPCParameters.Verbose = wsget('PMPC_VERBOSE', 1);    
+MPCParameters.Verbose = localWsget('PMPC_VERBOSE', 1);
 
 DiscreteModle = 4;  % 1=Euler; 2=Taylor4; 3=FOH; 4=精确 ZOH(expm)
 %  2026-09-25 由 2 改 4: 时延行 -1/tau_d, Ts/tau_d = 3.3 时 Taylor4 给出的
@@ -414,8 +414,8 @@ DiscreteModle = 4;  % 1=Euler; 2=Taylor4; 3=FOH; 4=精确 ZOH(expm)
 %      baseline 权重会把"权重不同"和"机制不同"混在一起。
 %  先进对比方法(Zeng 2025)在 baseline MPC 基础上开 Constraints.ZengRho_on。
 [md_auto, zg_auto, ds_auto] = func_RunMode();   % 从数据集名自动识别
-ContrlMode    = wsget('PMPC_MODE', md_auto);
-Constraints.ZengRho_on = wsget('PMPC_ZENGRHO', zg_auto);
+ContrlMode    = localWsget('PMPC_MODE', md_auto);
+Constraints.ZengRho_on = localWsget('PMPC_ZENGRHO', zg_auto);
 ctlStr = {'① 固定权重 MPC (无 sigma/gamma)','② Zeng rho 调权','③ 本文 PMPC'};
 if ContrlMode==1, ic=3; elseif Constraints.ZengRho_on, ic=2; else ic=1; end
 disp(['  数据集 ' ds_auto '   ->   控制器 ' ctlStr{ic}]);
@@ -437,7 +437,7 @@ end
 %    2 = PMPC-noSAS: 减振器为标称电流下的被动阻尼; 控制器的 CDC 通道冻结在当前被动力矩
 %    3 = [32] 风格  : 旧 PMPC 结构, 8 个松弛 + 3 个 gamma, 按 W_beta >> W_rho >> W_r >> Q 排序的固定权重
 %  #3 改变 QP 维度, 所以放 MPCParameters(编译期常量)。
-MPCParameters.abl = wsget('PMPC_ABL', 0) * double(ContrlMode == 1);
+MPCParameters.abl = localWsget('PMPC_ABL', 0) * double(ContrlMode == 1);
 if ContrlMode == 1 || ContrlMode == 2
     newP = double(ContrlMode == 1 && MPCParameters.abl ~= 3);
     MPCParameters.PrioMode = newP;                     % PMPC 用新结构, 见上方 PrioMode 说明
@@ -453,7 +453,7 @@ if ContrlMode == 1 || ContrlMode == 2
     % Q5 随轮胎表换成 CarSim 实测 carpet 后重调: 2e3 -> 2e4。
     % 新表的前轴刚度更高、Flim 更紧(mu_eff=0.78 而非 0.9), 控制器打方向更少,
     % 需提高路径权重补回。扫描 2e3/6e3/2e4/6e4 后 2e4 的 |LTR|峰与侧倾峰最好。
-    CostWeights.Q5=wsget('PMPC_Q5', 2e4); CostWeights.Q6=wsget('PMPC_Q6', 2e2);   % 工作区可覆盖 (新模型基准下重标定, 18z)
+    CostWeights.Q5=localWsget('PMPC_Q5', 2e4); CostWeights.Q6=localWsget('PMPC_Q6', 2e2);   % 工作区可覆盖 (新模型基准下重标定, 18z)
     if InitialParams.FishhookMode
         % 纯防侧翻: 无路径、无偏航角速度参考
         CostWeights.Q1=0;    CostWeights.Q2=0;
@@ -470,7 +470,7 @@ if ContrlMode == 1 || ContrlMode == 2
     % 原 R2=1e9 意味着一次制动增量抵十亿次 AFS 增量, 把差动制动掐死了。
     % 鱼钩扫描 1e9/1e7/1e5/1e3/1e1: 1e7 以下完全平坦, 侧倾峰 6.70->4.81 deg,
     % |LTR|>0.99 占比 6.88%->0.31%, 抬轮 12.2%->4.4%, 车速反而更快。
-    CostWeights.R1=wsget('PMPC_R1', 1e0); CostWeights.R2=1e1; CostWeights.R3=5;   % R1 工作区可覆盖(抖动对照)
+    CostWeights.R1=localWsget('PMPC_R1', 1e0); CostWeights.R2=1e1; CostWeights.R3=5;   % R1 工作区可覆盖(抖动对照)
     % R2 扫 1e1/3e1/1e2/3e2/1e3 (ZENG, DLC80 mu=0.5): 对轮缸力矩抖振
     % (dTb RMS 2335/2384/2419/2254/2370) **几乎无效** —— 因为 R2 罚的是
     % 上层 Δ(MFx), 而抖振产生在下层分配 QP; 但它显著改善约束满足:
@@ -480,13 +480,13 @@ if ContrlMode == 1 || ContrlMode == 2
     CostWeights.Qf_scale = 1;
     % sigma 价格: MR 最便宜(不消耗轮胎力、不掉车速), DB 最贵(掉车速+占纵向摩擦)
     % V3 扫描 0/1/10/1e3/1e5: 制动占空 74->97%, 侧倾峰 6.12->7.11deg, 见任务 #2
-    CostWeights.V1=100; CostWeights.V2=wsget('PMPC_V2', 8e4);CostWeights.V3=1;   % V2 工作区可覆盖(DB 启用阈值对照试验)
+    CostWeights.V1=100; CostWeights.V2=localWsget('PMPC_V2', 8e4);CostWeights.V3=1;   % V2 工作区可覆盖(DB 启用阈值对照试验)
     % Delta-gamma 惩罚。不直接给裸数字 —— 它的物理含义是优先级的切换时间常数:
     %   gamma 子问题 min Nc*V*g^2 + Wdg*(g-g_prev)^2  s.t. g >= g_req
     %   无约束最优 g* = Wdg*g_prev/(Nc*V+Wdg), 故每拍记忆保持率 = Wdg/(Nc*V+Wdg)。
     %   令其 = exp(-Ts_exec/tau_gamma)  =>  Wdg = rho/(1-rho)*Nc*V。
     %   这样 Wdg 自动随 V 缩放, 设计者只需给一个有物理意义的 tau_gamma。
-    CostWeights.tau_gamma = wsget('PMPC_TAUG', 0);   % s, 优先级切换时间常数; 0 = 关闭迟滞(工作区可覆盖)
+    CostWeights.tau_gamma = localWsget('PMPC_TAUG', 0);   % s, 优先级切换时间常数; 0 = 关闭迟滞(工作区可覆盖)
     CostWeights.Wdg=[0 0 0];     % 仅在 tau_gamma=0 时生效的直接指定
     CostWeights.W1=5e4; CostWeights.W2=5e4; 
     % epsilon 权重(归一化后含义: 松弛达到各自参考值 epsilon_* 时的代价)。
@@ -540,5 +540,63 @@ if nargout == 0
     assignin('base','PMPC_P',P);
     fprintf('  PMPC_P 已写入工作区 (%d 个字段)\n', numel(fieldnames(P)));
     clear P
+end
+end
+
+function Pa = localInitialParams()
+Pa = struct();
+Pa.InitialGapflag = 0;
+Pa.WayPoints_IndexPre = 1;
+
+Pa.failed_num = struct('solve',0, 'conv',0, 'unsolved',0, ...
+    'NaN_or_Inf',0, 'else',0);
+Pa.emax = struct('y',0, 'psi',0);
+Pa.U = zeros(3,1);
+
+Pa.prevstate = struct();
+Pa.prevstate.sw = 0;
+Pa.prevstate.Fyf = 0;
+Pa.prevstate.MFx = 0;
+Pa.prevstate.Md = 0;
+Pa.prevstate.ey = 0;
+Pa.prevstate.epsi = 0;
+Pa.prevstate.Tb = zeros(4,1);
+Pa.prevstate.Fd = zeros(4,1);
+Pa.prevstate.s_act = -ones(4,1);
+Pa.prevstate.Vd = zeros(4,1);
+Pa.prevstate.gamma = [0; 0; 1];
+Pa.prevstate.Vpid = NaN;
+Pa.prevstate.iA = false(0,1);
+
+Pa.dr_prev = NaN;
+Pa.dr_rate = 0;
+Pa.t_solve = zeros(1,20000);
+Pa.n_solve = 0;
+Pa.ey_hist = zeros(1,20000);
+Pa.epsi_hist = zeros(1,20000);
+end
+
+function v = localWsget(name, dflt)
+% Read runtime configuration from CarSim, then base workspace, then default.
+runall = '';
+try
+    par = fullfile(func_CarSimResDir(), 'Run_all.par');
+    if exist(par,'file') == 2
+        runall = fileread(par);
+    end
+catch
+end
+if ~isempty(runall)
+    tok = regexp(runall, ['(?m)^\s*(?:DEFINE_PARAMETER\s+)?' name ...
+        '\s*=\s*([-\d.eE+]+)'], 'tokens', 'once');
+    if ~isempty(tok)
+        v = str2double(tok{1});
+        if ~isnan(v), return; end
+    end
+end
+if evalin('base', ['exist(''' name ''',''var'')'])
+    v = evalin('base', name);
+else
+    v = dflt;
 end
 end

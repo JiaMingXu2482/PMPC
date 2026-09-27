@@ -36,7 +36,7 @@ bm = [ -b ; lbf    ; -ubf    ];
 m  = numel(bm);
 
 %  活动集热启动用 persistent 而非出入参: 它的长度 m = size(A,1)+2n
-%  在一次 build 内是常量, 但初值没法在 func_InitialParams 里算出来
+%  在一次 build 内是常量, 但初值没法在 setup_pmpc 的初始化阶段算出来
 %  (依赖 A_cons 的行数)。persistent 的尺寸由首次赋值确定, 正好合适。
 %  usews: 是否用活动集热启动。**三个调用点不能共用同一个 persistent**,
 %  所以只有上层 MPC (迭代多、收益大) 用热启动; 两个分配 QP 冷启动
