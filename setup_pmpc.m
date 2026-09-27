@@ -15,9 +15,6 @@ function P = setup_pmpc()
 
 startup_pmpc();
 
-[~, ~] = func_RLSFilter_Calpha_f('initial', 0.99, 10, 50);
-[~, ~] = func_RLSFilter_Calpha_r('initial', 0.99, 10, 50);
-
 [InitialParams] = func_InitialParams;
 
 %% ==== 运行配置 (详见 README_运行配置.md) ====
@@ -29,11 +26,6 @@ InitialParams.FishhookMode    = wsget('PMPC_FISHHOOK',   0);   % 1=鱼钩纯防�
 [~, ~, ds_mv] = func_RunMode();
 MV = func_ManeuverFromName(ds_mv);
 [Reftraj] = func_WayPoints(MV.type, MV.R); % 1-DLC, 2-Slalom, 3-U-Turn, 5-J-turn
-C_table = func_tire_init_Calpha(1,8);
-% 等效轴刚度(含悬架/转向柔性), Wang et al. IEEE TVT 72(10) 2023 Table I
-
-Cf0=func_Fz_Calpha(4740);
-Cr0=func_Fz_Calpha(4380);%4380->后轮单轮垂向力
 PMPC_cargo = wsget('PMPC_CARGO', 0);   % 与横幅同源
 [VehiclePara] = func_VehicleParams(PMPC_cargo);
 %  模型基准试验开关 (改进.md 18z, 默认全关 = erd_0926_pi 版本, 用户 2026-09-27 定):
@@ -529,9 +521,6 @@ P.WarmStart = WarmStart;
 P.DotPHI = DotPHI;
 P.rho = rho;
 P.CostWeights = CostWeights;
-P.C_table = C_table;
-P.Cf0 = Cf0;
-P.Cr0 = Cr0;
 P.TireF = TireF;
 P.TireR = TireR;
 
@@ -541,8 +530,7 @@ P.TireR = TireR;
 %  上面那 16 个扁平字段保留不动 —— S-function 那条路还在用。
 P.Pm = struct('MPCParameters',MPCParameters, 'CostWeights',CostWeights, ...
               'DiscreteModle',DiscreteModle, 'ContrlMode',ContrlMode, ...
-              'Reftraj',Reftraj, 'Cf0',Cf0, 'Cr0',Cr0, 'C_table',C_table, ...
-              'TireF',TireF, 'TireR',TireR);
+              'Reftraj',Reftraj, 'TireF',TireF, 'TireR',TireR);
 P.S0 = struct('InitialParams',InitialParams, 'WarmStart',WarmStart, 'rho',rho, ...
               'VehiclePara',VehiclePara, 'Constraints',Constraints, ...
               'cert', nan(24, 1));   % 记录用(不参与控制), 布局随 PrioMode 而异, 见 cert_replay.m

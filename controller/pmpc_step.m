@@ -16,9 +16,6 @@ CostWeights = Pm.CostWeights;
 DiscreteModle = Pm.DiscreteModle;
 ContrlMode = Pm.ContrlMode;
 Reftraj = Pm.Reftraj;
-Cf0 = Pm.Cf0;
-Cr0 = Pm.Cr0;
-C_table = Pm.C_table;
 TireF = Pm.TireF;
 TireR = Pm.TireR;
 

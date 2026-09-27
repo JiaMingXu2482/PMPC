@@ -33,3 +33,26 @@ verifyEqual(testCase, exist(base,'dir'), 7);
 d = dir(base);
 verifyEqual(testCase, sum(~[d.isdir]), 13);
 end
+
+function testDeadControllerFilesAreAbsent(testCase)
+root = testCase.TestData.root;
+dead = {'func_bezierInterp.m','func_FindBezierControlPointsND.m', ...
+    'func_RLSFilter_Calpha_f.m','func_RLSFilter_Calpha_r.m', ...
+    'func_tire_init_Calpha.m','func_Fz_Calpha.m'};
+for i = 1:numel(dead)
+    verifyEqual(testCase, exist(fullfile(root,'controller',dead{i}),'file'), 0, dead{i});
+end
+end
+
+function testDeadParameterFieldsAreAbsent(testCase)
+P = setup_pmpc();
+dead = {'C_table','Cf0','Cr0'};
+for i = 1:numel(dead)
+    verifyFalse(testCase, isfield(P,dead{i}), dead{i});
+    verifyFalse(testCase, isfield(P.Pm,dead{i}), ['Pm.' dead{i}]);
+end
+stepText = fileread(fullfile(testCase.TestData.root,'controller','pmpc_step.m'));
+verifyFalse(testCase, contains(stepText,'Pm.C_table'));
+verifyFalse(testCase, contains(stepText,'Pm.Cf0'));
+verifyFalse(testCase, contains(stepText,'Pm.Cr0'));
+end
