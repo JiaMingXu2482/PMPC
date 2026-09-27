@@ -72,3 +72,21 @@ verifySize(testCase, P.S0.InitialParams.t_solve, [1 20000]);
 verifySize(testCase, P.S0.InitialParams.ey_hist, [1 20000]);
 verifySize(testCase, P.S0.InitialParams.epsi_hist, [1 20000]);
 end
+
+function testUtilitiesLiveOutsideController(testCase)
+root = testCase.TestData.root;
+lib = fullfile(root,'scripts','lib');
+verifyEqual(testCase, which('func_ProjectRoot'), fullfile(lib,'func_ProjectRoot.m'));
+verifyEqual(testCase, which('func_RunMode'), fullfile(lib,'func_RunMode.m'));
+verifyEqual(testCase, which('func_Metrics'), fullfile(lib,'func_Metrics.m'));
+verifyEqual(testCase, func_ProjectRoot(), root);
+
+utilities = {'func_CarSimLib.m','func_CarSimResDir.m','func_CarSimRunning.m', ...
+    'func_ErdDir.m','func_ManeuverFromName.m','func_Metrics.m', ...
+    'func_ProjectRoot.m','func_ReadERD.m','func_RunMode.m', ...
+    'func_SimModel.m','func_WaitERD.m'};
+for i = 1:numel(utilities)
+    verifyEqual(testCase, exist(fullfile(root,'controller',utilities{i}),'file'), 0, utilities{i});
+    verifyEqual(testCase, exist(fullfile(lib,utilities{i}),'file'), 2, utilities{i});
+end
+end

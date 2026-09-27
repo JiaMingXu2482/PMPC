@@ -13,9 +13,10 @@ setup_pmpc
 
 | 目录 | 内容 |
 |---|---|
-| `controller/` | PMPC 控制算法、预测模型、QP 和执行器分配 |
+| `controller/` | PMPC 核心算法、预测模型、QP 和执行器分配 |
 | `data/` | 轮胎、路径和车辆参数数据 |
 | `scripts/` | 构建、仿真、回归检查和绘图脚本 |
+| `scripts/lib/` | CarSim、结果读取和项目路径等公共工具 |
 | `docs/` | 改进记录、运行说明和图片 |
 | `simulation_results/current/` | 当前有效仿真结果 |
 | `simulation_results/output/` | 新仿真的默认输出 |

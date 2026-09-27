@@ -7,4 +7,5 @@ if exist(fullfile(root, 'data', 'generated'), 'dir') == 7
     addpath(fullfile(root, 'data', 'generated'));
 end
 addpath(fullfile(root, 'scripts'));
+addpath(fullfile(root, 'scripts', 'lib'));
 end
