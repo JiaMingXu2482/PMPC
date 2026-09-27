@@ -62,15 +62,30 @@ root = testCase.TestData.root;
 verifyEqual(testCase, exist(fullfile(root,'controller','func_InitialParams.m'),'file'), 0);
 verifyEqual(testCase, exist(fullfile(root,'controller','wsget.m'),'file'), 0);
 
-assignin('base','PMPC_TS',0.04);
-cleanup = onCleanup(@() evalin('base','clear PMPC_TS PMPC_P')); %#ok<NASGU>
 P = setup_pmpc();
-verifyEqual(testCase, P.Pm.MPCParameters.Ts, 0.04, 'AbsTol', 1e-12);
 verifyTrue(testCase, isfield(P.S0.InitialParams,'InitialGapflag'));
 verifyTrue(testCase, isfield(P.S0.InitialParams,'prevstate'));
 verifySize(testCase, P.S0.InitialParams.t_solve, [1 20000]);
 verifySize(testCase, P.S0.InitialParams.ey_hist, [1 20000]);
 verifySize(testCase, P.S0.InitialParams.epsi_hist, [1 20000]);
+end
+
+function testBaseWorkspaceOverrideWhenDatasetDoesNotDefineIt(testCase)
+par = fullfile(func_CarSimResDir(), 'Run_all.par');
+if exist(par,'file') == 2
+    token = regexp(fileread(par), ...
+        '(?m)^\s*(?:DEFINE_PARAMETER\s+)?PMPC_TS\s*=', 'once');
+    assumeTrue(testCase, isempty(token), ...
+        'Current CarSim dataset defines PMPC_TS and correctly has precedence.');
+end
+
+hadTs = evalin('base','exist(''PMPC_TS'',''var'')') == 1;
+oldTs = [];
+if hadTs, oldTs = evalin('base','PMPC_TS'); end
+cleanup = onCleanup(@() restoreBaseVar('PMPC_TS',hadTs,oldTs)); %#ok<NASGU>
+assignin('base','PMPC_TS',0.04);
+P = setup_pmpc();
+verifyEqual(testCase, P.Pm.MPCParameters.Ts, 0.04, 'AbsTol', 1e-12);
 end
 
 function testUtilitiesLiveOutsideController(testCase)
@@ -88,5 +103,13 @@ utilities = {'func_CarSimLib.m','func_CarSimResDir.m','func_CarSimRunning.m', ..
 for i = 1:numel(utilities)
     verifyEqual(testCase, exist(fullfile(root,'controller',utilities{i}),'file'), 0, utilities{i});
     verifyEqual(testCase, exist(fullfile(lib,utilities{i}),'file'), 2, utilities{i});
+end
+end
+
+function restoreBaseVar(name, existed, value)
+if existed
+    assignin('base',name,value);
+else
+    evalin('base',['clear ' name]);
 end
 end
