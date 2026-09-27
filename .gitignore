@@ -1,0 +1,52 @@
+# MATLAB / Simulink generated files
+/slprj/
+*.slxc
+*.autosave
+*.asv
+*.mex*
+*.pdb
+*.obj
+*.exp
+*.lib
+*.dll
+
+# Local MATLAB preference and scratch directories
+/.matlab_pref*/
+/scratchpad/
+
+# Simulink backups and historical model copies
+*.bak
+*.bak_*
+*.original
+
+# CarSim and controller experiment outputs
+/erd_*/
+/erd_out/
+/erd_mil/
+/baseline_*/
+/results_*/
+/Results/
+
+# Generated deployment snapshots (root sources are authoritative)
+/MIL_deploy/
+/HIL_deploy/
+/deploy/
+
+# Historical plotting workspace
+/plot/
+
+# Generated J-turn paths and one-off diagnostics
+/WayPoints_Type5_*.mat
+/step_*_result.mat
+**/dbg_*.mat
+**/diag_*.mat
+**/certlog*.mat
+**/replay_*.mat
+
+# OS and editor metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.tmp
+~$*
