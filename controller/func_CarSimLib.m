@@ -3,7 +3,7 @@ function ok = func_CarSimLib()
 %   ok = func_CarSimLib()   true = 现在能找到 Solver_SF
 %
 %   为什么需要:
-%     cq3_2019 / pmpc_mil 里的 CarSim 块是对库 Solver_SF 的链接引用。
+%     pmpc_mil 里的 CarSim 块是对库 Solver_SF 的链接引用。
 %     CarSim 点 "Send to Simulink" 时会把该库目录加进**那个** MATLAB 会话的
 %     路径, 所以平时手工跑没事。但用 matlab -batch 另起一个干净会话时没有,
 %     sim 会报:

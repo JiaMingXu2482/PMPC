@@ -1,6 +1,6 @@
 function InitialParams = func_ReportStatus(InitialParams, exitflag, PrjP, Vel, t_Elapsed, verbose)
 % func_ReportStatus  统计求解结果、跟踪最大误差并打印运行信息
-%   verbose=0 时只统计不打印 (HIL/codegen 用, 见 setup_pmpc 的 MPCParameters.Verbose)
+%   verbose=0 时只统计不打印 (codegen 用, 见 setup_pmpc 的 MPCParameters.Verbose)
 % -------------------------------------------------------------------------
 
 % --- 求解结果计数 ---

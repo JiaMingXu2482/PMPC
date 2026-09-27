@@ -5,7 +5,7 @@ function P = setup_pmpc()
 %   setup_pmpc                     % 同时把 P 写到 base 工作区的 PMPC_P
 %   模式选择仍走原来的 wsget 机制(CarSim 数据集名 / base 工作区)。
 %
-%   这是面向 HIL 的第一步: 初始化不进 Simulink。
+%   初始化在 Simulink 模型之外完成。
 %   用法: 先跑一次 setup_pmpc, 工作区就有 PMPC_P 了, 再跑仿真。
 %   彻底迁到 MATLAB Function block 后, P 的各字段以块参数(Scope=Parameter)
 %   形式传入, 在开发机 build 时解析并固化进生成代码, 目标机不需要工作区。
@@ -381,9 +381,8 @@ MPCParameters.QPSolver = wsget('PMPC_QPSOLVER', 1);   % 0 = quadprog, 1 = KWIK(m
 %    QP 失败次数 1/1/4 -> 0/0/0
 %    PMPC 最大迭代 2500(撞上限) -> 28; ZENG -> 77; 均值 71.8 -> 2.5
 %  原因是 KWIK 的热启动传的是**活动集**, 比 quadprog 的原始点热启动强得多。
-%  且 R2018a 的 quadprog 本就不支持 codegen, HIL 上只能用这条路。
-%  R2018a 的 quadprog 不支持 codegen(R2020a 才加), HIL 必须用 KWIK。
-%  见 PLAN_HIL迁移方案.md §1。默认 0 保证与基准逐字节一致。
+%  R2018a 的 quadprog 不支持 codegen(R2020a 才加), 生成代码使用 KWIK。
+%  默认 0 保证与基准逐字节一致。
 MPCParameters.Ts_exec = 0.01;   % 触发周期，速率限制按它缩放
 %  第一预测步是否按 Ts_exec 离散(非均匀网格, 见 func_DynamicalModel / 规划器 Tk)。
 %  0 = 原行为(全部按 Ts); 1 = 第一步 Ts_exec、其余 Ts。2026-09-26 抖动对照用。
@@ -402,7 +401,7 @@ MPCParameters.Ncons_r   = MPCParameters.Nc;
 MPCParameters.Ncons_env = wsget('PMPC_NCONS_ENV', MPCParameters.Np);   % 工作区可覆盖(对照试验用)
 
 %% ---- 运行期打印开关 (阶段 E) ----
-%  0 = 关掉每拍的 fprintf 和求解器 warning。HIL 上必须关, 理由是:
+%  0 = 关掉每拍的 fprintf 和求解器 warning。实时运行时应关闭, 理由是:
 %    生成的代码里 fprintf/warning 是纯累赘, 实时目标上还可能阻塞。
 %  ⚠️ 不是为了提速 —— 2026-09-18 实测: 关掉打印后 CarSim 的
 %     RTIME 是 1.039/1.065/2.129 (MPC/ZENG/PMPC), 开着是 1.098/1.056/2.116,

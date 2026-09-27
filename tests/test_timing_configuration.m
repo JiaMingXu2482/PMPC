@@ -2,29 +2,30 @@ function tests = test_timing_configuration
 tests = functiontests(localfunctions);
 end
 
-function testMpcUses50msPredictionWith100HzTrigger(testCase)
+function testMpcTimingParametersAndSubsystem(testCase)
 modelDir = fileparts(fileparts(mfilename('fullpath')));
 solverDir = 'D:\Program Files\CarSim2019.0\CarSim2019.0_Prog\Programs\solvers\Matlab84+';
 addpath(modelDir, solverDir);
 startup_pmpc();
 
-clear global;
-cq32019mpc(0, [], [], 0);
-global MPCParameters;
+P = setup_pmpc();
+MPCParameters = P.Pm.MPCParameters;
 
 verifyEqual(testCase, MPCParameters.Ts, 0.05, 'AbsTol', 1e-12);
-verifyEqual(testCase, MPCParameters.Np, 12);
+verifyEqual(testCase, MPCParameters.Np, 20);
 verifyEqual(testCase, MPCParameters.Nc, 6);
+verifyEqual(testCase, MPCParameters.Ts_exec, 0.01, 'AbsTol', 1e-12);
 
 load_system('Solver_SF');
-load_system(fullfile(modelDir, 'cq3_2019.slx'));
+load_system(fullfile(modelDir, 'pmpc_mil.slx'));
 cleanup = onCleanup(@() closeModels()); %#ok<NASGU>
-trigger = sprintf('cq3_2019/Function-Call\nGenerator2');
-verifyEqual(testCase, str2double(get_param(trigger, 'sample_time')), ...
-    0.01, 'AbsTol', 1e-12);
+blocks = find_system('pmpc_mil','LookUnderMasks','all','FollowLinks','on','Name','PMPC_MF');
+verifyNotEmpty(testCase, blocks);
+verifyEqual(testCase, get_param(blocks{1}, 'TreatAsAtomicUnit'), 'on');
+verifyEqual(testCase, get_param(blocks{1}, 'ScheduleAs'), 'Sample time');
 end
 
 function closeModels
-close_system('cq3_2019', 0);
+close_system('pmpc_mil', 0);
 close_system('Solver_SF', 0);
 end

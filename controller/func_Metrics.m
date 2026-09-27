@@ -4,7 +4,7 @@ function M = func_Metrics(tag, opt)
 %   M = func_Metrics(D)                     % 也可直接传 func_ReadERD 的结果
 %
 %   阶段 S(换求解器 quadprog -> mpcqpsolver) 时 MD5 逐字节验收必然失效,
-%   验收改用这些指标。见 PLAN_HIL迁移方案.md §4。
+%   验收统一使用这些指标。
 %
 %   opt 字段(可选):
 %     .mu      路面附着 (默认 0.5)   —— 只影响 r_over 这一项的判据

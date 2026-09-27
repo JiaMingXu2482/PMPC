@@ -15,8 +15,7 @@ chk = { 'setup_pmpc',                 'MPCParameters.Zg_Npv',   'Zg_Npv 搬进 M
         'func_SolveMPCQP',            'bsxfun(@times',          'bsxfun 代替隐式扩展'
         'func_SolveMPCQP',            'fprintf(2',              'warning 换成 fprintf'
         'func_QPKwik',                'local_warmstart',        'persistent 已隔离'
-        'func_StateEstimation',       'ModelInput(50)',         '输入已重编号成 50 路'
-        'func_PortMap',               'P.dropped',              'PortMap 已是 50 入' };
+        'func_StateEstimation',       'ModelInput(50)',         '输入已重编号成 50 路' };
 bad = 0;
 for i = 1:size(chk,1)
     p = which(chk{i,1});

@@ -14,15 +14,14 @@ setup_pmpc
 | 目录 | 内容 |
 |---|---|
 | `controller/` | PMPC 控制算法、预测模型、QP 和执行器分配 |
-| `data/` | 轮胎、路径、车辆参数和端口映射数据 |
+| `data/` | 轮胎、路径和车辆参数数据 |
 | `scripts/` | 构建、仿真、回归检查和绘图脚本 |
-| `docs/` | 改进记录、运行说明、HIL 文档和图片 |
+| `docs/` | 改进记录、运行说明和图片 |
 | `simulation_results/current/` | 当前有效仿真结果 |
-| `simulation_results/archive/` | 历史基准和参数扫描结果 |
 | `simulation_results/output/` | 新仿真的默认输出 |
 | `tests/` | MATLAB 自动化测试 |
 
-三个 `.slx` 模型、`simfile.sim` 和 `setup_pmpc.m` 保留在根目录，以兼容 CarSim/Simulink 的相对路径。
+唯一模型 `pmpc_mil.slx`、`simfile.sim` 和 `setup_pmpc.m` 保留在根目录，以兼容 CarSim/Simulink 的相对路径。
 
 当前基准：`simulation_results/current/erd_0927_base/`。
 

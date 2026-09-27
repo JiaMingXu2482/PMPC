@@ -11,7 +11,7 @@ function [VehStatemeasured, HATParameter] = func_StateEstimation(ModelInput,Vehi
 %                 29 My_Dr .. 32, 33 AVx, 34 AVz, 35 Ax, 36 Ay, 37 Beta,
 %                 38 Roll, 39 Yaw, 40 Xo, 41 Yo, 42 Vx, 43 Vy, 44 AAx,
 %                 45 AAz, 46 Steer_L1, 47 Steer_R1, 48 Steer_SW,
-%                 49 VxTarget, 50 LTR)   —— 完整对照见 func_PortMap
+%                 49 VxTarget, 50 LTR)
 %
 %   ⚠️ 2026-09-18 从 62 路改成 50 路: CarSim 的 Export 去掉了 CmpD_* / Zgnd_* /
 %   Z_* 共 12 路(旧编号 5-16), 这里所有下标跟着重编 —— 旧的 n(>=17) 对应新的 n-12。

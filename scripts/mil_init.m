@@ -7,8 +7,7 @@ function mil_init(mode)
 %
 %   步骤: CarSim 里选数据集 -> Send to Simulink -> 回 MATLAB 跑 mil_init -> sim
 %
-%   与 HIL 包的 hil_init 的区别: MIL 保留每拍打印(方便看跟踪误差和 QP 成败),
-%   控制器也默认交给数据集名自动判定(那台机器有 CarSim, 读得到 simfile.sim)。
+%   MIL 保留每拍打印(方便看跟踪误差和 QP 成败)，控制器默认由数据集名判定。
 if nargin < 1, mode = 0; end
 
 assignin('base', 'PMPC_VERBOSE', 1);        % MIL 保留每拍打印
@@ -33,14 +32,8 @@ end
 fprintf('  每拍打印  %s\n', local_onoff(P.Pm.MPCParameters.Verbose));
 fprintf('  PMPC_P    Pm %d 字段 / S0 %d 字段\n', ...
         numel(fieldnames(P.Pm)), numel(fieldnames(P.S0)));
-fprintf('\n  两个模型:\n');
-fprintf('    pmpc_mil   验证 HIL 架构(PMPC_MF SampleTime 0.01 + ode1) <- 上 NI 前跑这个\n');
-fprintf('    cq3_2019   原 MIL(Function-Call 触发 + ode3), 论文数据来源\n');
-fprintf('  CarSim 的 Models:Simulink 指向哪个就跑哪个。\n');
-fprintf('\n  跑 sim(''pmpc_mil'')  -> 核对 chk_regress(''-base'',''baseline_ref_mil'')\n');
-fprintf('  跑 sim(''cq3_2019'')  -> 核对 chk_regress(''-base'',''baseline_ref'')\n');
-fprintf('  —— 看指标表, 不看 MD5\n');
-fprintf('  详见 README_MIL.md\n\n');
+fprintf('  模型      pmpc_mil\n');
+fprintf('\n  跑 sim(''pmpc_mil'')，结果用 chk_regress 检查。\n\n');
 end
 
 function s = local_onoff(v)

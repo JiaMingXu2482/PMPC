@@ -19,10 +19,12 @@ end
 
 function testRootKeepsCarSimEntryFiles(testCase)
 root = testCase.TestData.root;
-required = {'setup_pmpc.m','cq3_2019.slx','pmpc_mil.slx','pmpc_hil.slx','simfile.sim'};
+required = {'setup_pmpc.m','pmpc_mil.slx','simfile.sim'};
 for i = 1:numel(required)
     verifyTrue(testCase, ismember(exist(fullfile(root,required{i}),'file'), [2 4]), required{i});
 end
+verifyEqual(testCase, exist(fullfile(root,'cq3_2019.slx'),'file'), 0);
+verifyEqual(testCase, exist(fullfile(root,'pmpc_hil.slx'),'file'), 0);
 end
 
 function testCurrentBaselineWasPreserved(testCase)

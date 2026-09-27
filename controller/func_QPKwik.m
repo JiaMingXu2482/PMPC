@@ -6,8 +6,7 @@ function [x, status, nAct, lam] = func_QPKwik(H, f, A, b, lb, ub, maxiter, usews
 %   min 0.5*x'Hx + f'x   s.t.  A*x <= b ,  lb <= x <= ub
 %
 %   为什么不用 quadprog: R2018a 的 quadprog **不支持代码生成**
-%   (codegen 支持是 R2020a 才加的, 见 PLAN_HIL迁移方案.md §1.1)。
-%   mpcqpsolver 自 R2015b 起就支持 codegen, 是 HIL 上唯一的官方路径。
+%   (codegen 支持是 R2020a 才加的)。mpcqpsolver 自 R2015b 起支持 codegen。
 %
 %   本函数负责吸收三处接口差异, 让调用方仍按 quadprog 的习惯传参:
 %     1. mpcqpsolver 要 Linv = inv(chol(H,'lower')), 不是 H

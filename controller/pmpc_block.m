@@ -1,6 +1,6 @@
 function sys = pmpc_block(u, PMPC_P) %#codegen
 %PMPC_BLOCK  MATLAB Function block 的全部内容(块里只写一行调用它)
-%   u      : 50x1 CarSim 量测 (顺序 = CarSim Export 列表, 见 func_PortMap)
+%   u      : 50x1 CarSim 量测 (顺序见 func_StateEstimation)
 %   PMPC_P : 参数, 块里声明为 Scope=Parameter 且 Tunable=false
 %            (不可调 = 块层面的 coder.Constant; 否则 nvars 这类维度
 %             推不出常量, 块会报"无法确定输出大小")

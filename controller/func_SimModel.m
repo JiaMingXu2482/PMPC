@@ -1,22 +1,9 @@
 function mdl = func_SimModel(allPar)
-%FUNC_SIMMODEL  从 CarSim 的展开结果里读出"该跑哪个 Simulink 模型"
-%   mdl = func_SimModel(<Results\Run_xxx\Run_all.par>)   -> 'cq3_2019' / 'pmpc_mil' / ...
-%
-%   为什么要有这个函数:
-%     模型路径由 CarSim 的 "Models: Simulink" 数据集决定(界面上那个
-%     Simulink Model 输入框), 点 Send to Simulink 时会展开进 Run_all.par 的
-%     SIMULINK_MODEL_FILE。而 run_ds 以前是**写死** sim('cq3_2019') 的 ——
-%     CarSim 那边改指向、MATLAB 这边没改, 就会出现"以为在跑 pmpc_mil、
-%     其实跑的是 cq3_2019"这种**静默错位**: 两个模型都含 CarSim S-Function、
-%     都读同一个 simfile.sim, 跑起来不报任何错, 只是结果是另一个模型的。
-%     所以这里直接跟着 CarSim 走, 从结构上消除两边不同步的可能。
-%
-%   读不到就退回 'cq3_2019' 并**明确警告** —— 宁可吵, 不要静默跑错。
-%
-%   编码: Run_all.par 是 GBK(路径里有中文)。只取basename, 全是 ASCII,
-%   所以目录部分即使解码成乱码也不影响结果。
+%FUNC_SIMMODEL  Verify that a CarSim run is configured for pmpc_mil.
+%   PMPC now has one Simulink model only. A stale CarSim dataset that still
+%   points elsewhere is rejected explicitly instead of running the wrong model.
 
-mdl = 'cq3_2019';
+mdl = 'pmpc_mil';
 if exist(allPar,'file') ~= 2
     warning('func_SimModel:NoPar', '找不到 %s, 退回默认模型 %s', allPar, mdl);
     return
@@ -33,5 +20,8 @@ if isempty(nm)
     warning('func_SimModel:BadPath', 'SIMULINK_MODEL_FILE 解析不出模型名, 退回 %s', mdl);
     return
 end
-mdl = nm;
+if ~strcmp(nm, mdl)
+    error('func_SimModel:WrongModel', ...
+        'CarSim 数据集仍指向模型 %s；请改为 pmpc_mil 后重新 Send to Simulink。', nm);
+end
 end

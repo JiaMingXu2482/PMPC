@@ -36,7 +36,7 @@ if numel(WarmStart) ~= nvars || ~all(isfinite(WarmStart(:)))
         %  codegen(R2018a): warning 不支持 —— MATLAB Function 块里会报
         %    "Function 'warning' is not supported for code generation."
         %  改用 fprintf(2,..) 写 stderr: 信息一样, codegen 支持。
-        %  (HIL 那边没暴露是因为 hil_init 设 PMPC_VERBOSE=0, 整个分支被折掉了。)
+        %  生成代码时可用 PMPC_VERBOSE=0 折掉整个打印分支。
         fprintf(2, 'func_SolveMPCQP: WarmStart size invalid or non-finite; reset to zero.\n');
     end
     WarmStart = zeros(nvars,1);

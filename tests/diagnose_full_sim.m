@@ -5,11 +5,11 @@ addpath(modelDir, solverDir);
 startup_pmpc();
 clear global;
 load_system('Solver_SF');
-load_system('cq3_2019');
-set_param('cq3_2019', 'StopTime', '6.25');
+load_system('pmpc_mil');
+set_param('pmpc_mil', 'StopTime', '6.25');
 
 try
-    capturedOutput = evalc("simOut = sim('cq3_2019');"); %#ok<NASGU>
+    capturedOutput = evalc("simOut = sim('pmpc_mil');"); %#ok<NASGU>
     fprintf('CODEX_SIM_STOP_TIME=%.6f\n', simOut.tout(end));
 catch ME
     fprintf('IDENTIFIER=%s\n', ME.identifier);
@@ -21,5 +21,5 @@ catch ME
     end
 end
 
-close_system('cq3_2019', 0);
+close_system('pmpc_mil', 0);
 close_system('Solver_SF', 0);

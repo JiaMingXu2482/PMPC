@@ -28,11 +28,6 @@
 /Results/
 /simulation_results/
 
-# Generated deployment snapshots (root sources are authoritative)
-/MIL_deploy/
-/HIL_deploy/
-/deploy/
-
 # Historical plotting workspace
 /plot/
 

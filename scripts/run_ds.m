@@ -98,8 +98,7 @@ if ~strcmp(guid, curGuid)
 end
 fprintf('  数据集 -> %s  (Run_%s)\n', name, guid(1:8));
 
-%  跑哪个 Simulink 模型由 CarSim 的 "Models: Simulink" 数据集决定, 不写死。
-%  见 func_SimModel 的说明: 写死会导致"CarSim 改了指向、这边没改"的静默错位。
+%  项目只保留 pmpc_mil；func_SimModel 会拒绝仍指向旧模型的数据集。
 info = struct('name',name,'guid',guid,'resdir',fullfile(RES,['Run_' guid]), ...
               'model','', 'nb',0);
 info.model = func_SimModel(fullfile(info.resdir,'Run_all.par'));

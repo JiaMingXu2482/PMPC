@@ -24,8 +24,7 @@ switch maneuverType
         % dx  = 15.2;      % 拟合的特征长度
         % c   = 0;
         %  原来是从 DLC 的 .mat 里取 cfit 对象再求值, 现改成显式公式。
-        %  (这句故意不写成 load 调用的样子 —— make_deploy 会扫 .m 里的 load
-        %   来校验数据文件清单, 写全了会被当成真依赖多打包一个文件。)
+        %  这里保留显式公式，避免重新引入已移除的 cfit 对象依赖。
         %  两个原因:
         %   1. cfit 是 Curve Fitting Toolbox 的类, R2024b 存下来的对象在
         %      R2018a 上**加载不了** —— curvefit.nlsqoptions 类定义不兼容,
