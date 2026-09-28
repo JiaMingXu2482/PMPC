@@ -22,9 +22,10 @@ evalin('base', 'setup_pmpc;');
 
 P = evalin('base','PMPC_P');
 fprintf('\n===== MIL 就绪 =====\n');
-if P.Pm.ContrlMode == 1
-    fprintf('  控制器    ③ 本文 PMPC (Nr=%d)\n', P.Pm.MPCParameters.Nr);
-elseif P.Pm.MPCParameters.Nr == 0 && evalin('base','exist(''PMPC_ZENGRHO'',''var'')') && evalin('base','PMPC_ZENGRHO')
+if isfield(P.S0.Constraints,'ControllerMode') && P.S0.Constraints.ControllerMode == 1
+    fprintf('  控制器    ③ 本文 PMPC (统一QP: Ne=%d, Nr=%d)\n', ...
+        P.Pm.MPCParameters.Ne, P.Pm.MPCParameters.Nr);
+elseif isfield(P.S0.Constraints,'ZengRho_on') && P.S0.Constraints.ZengRho_on
     fprintf('  控制器    ② Zeng rho 调权\n');
 else
     fprintf('  控制器    ① 固定权重 MPC / 见上方 setup_pmpc 的打印\n');

@@ -22,6 +22,16 @@ function [H, f] = func_BuildQPCost(MPCParameters, Constraints, Pred, Wts, ...
 
 Nu = MPCParameters.Nu;  Nc = MPCParameters.Nc;
 Np = MPCParameters.Np;  Ne = MPCParameters.Ne;  Nr = MPCParameters.Nr;
+prio_on = isfield(Constraints,'PrioModeRT') && (Constraints.PrioModeRT == 1);
+ctrl_mode = 2;
+if isfield(Constraints,'ControllerMode') && ~isempty(Constraints.ControllerMode)
+    ctrl_mode = Constraints.ControllerMode;
+end
+gdb_idx = 2;
+if isfield(Constraints,'GammaDBIndex') && ~isempty(Constraints.GammaDBIndex)
+    gdb_idx = round(Constraints.GammaDBIndex);
+end
+gdb_idx = min(max(1, gdb_idx), max(1, Nr));
 
 PSI = Pred.PSI; THETA = Pred.THETA; PHI = Pred.PHI; GAMMA = Pred.GAMMA;
 Q = Wts.Q; R = Wts.R; S = Wts.S; W = Wts.W; V = Wts.V;
@@ -33,7 +43,7 @@ Q = Wts.Q; R = Wts.R; S = Wts.S; W = Wts.W; V = Wts.V;
 n1 = Nc*Nu;  n2 = Ne;  n3 = Nr;
 H = zeros(n1+n2+n3, n1+n2+n3);
 H(1:n1, 1:n1)           = 2*(THETA'*Q*THETA + R + AI'*S*AI);
-if MPCParameters.PrioMode == 1
+if prio_on
     %  论文式 (MPC_problem): rho*(s1^2 + s2^2 + gamma^2), rho = eta*W_b(s、gamma 共用一个 rho)。
     %  线性权重 w1, w2 由候选裕度在线给出(func_PriorityCert), 在 pmpc_step 里写进 f。
     %  rho 只影响不可达时的折中, 不影响精确性(引理 1 对任意 rho >= 0 成立)。
@@ -41,7 +51,9 @@ if MPCParameters.PrioMode == 1
     if isfield(Constraints,'gamma_reg') && ~isempty(Constraints.gamma_reg)
         eta_s = Constraints.gamma_reg;
     end
-    H(n1+(1:n2), n1+(1:n2)) = 2*eta_s*Nc*V(2,2)*eye(n2);
+    Hs_eps = zeros(n2,1);
+    Hs_eps(1:min(2,n2)) = 2*eta_s*Nc*V(2,2);
+    H(n1+(1:n2), n1+(1:n2)) = diag(Hs_eps);
 else
     H(n1+(1:n2), n1+(1:n2)) = 2*Np*W;
 end
@@ -68,15 +80,15 @@ if nargin < 11 || isempty(gamma_prev), gamma_prev = zeros(Nr,1); end
 %  quadprog 会因此返回伪不可行(实测 28/799 拍 exitflag=-2)。故加一个
 %  **很小的**二次正则项 eta*Nc*V 保持正定; eta=1e-3 时在 gamma=1 处
 %  二次项仅为线性项的 0.1%, 不改变"用就用足"的开关性质。
-if MPCParameters.PrioMode == 1
+if prio_on
     %  只有 gamma_DB: W_b*gamma + rho_g*gamma^2, W_b = Nc*V2, rho_g = eta*Nc*V2
     %  (与原来三 gamma 结构里 DB 那一项的数值相同, 便于对比)。
     eta_g = 1e-3;
     if isfield(Constraints,'gamma_reg') && ~isempty(Constraints.gamma_reg)
         eta_g = Constraints.gamma_reg;
     end
-    H(n1+n2+1, n1+n2+1) = 2*eta_g*Nc*V(2,2);
-elseif Nr > 0
+    H(n1+n2+gdb_idx, n1+n2+gdb_idx) = 2*eta_g*Nc*V(2,2);
+elseif Nr > 0 && ctrl_mode == 1
     eta_g = 1e-3;
     if isfield(Constraints,'gamma_reg') && ~isempty(Constraints.gamma_reg)
         eta_g = Constraints.gamma_reg;
@@ -104,10 +116,11 @@ eps_scale = [Constraints.epsilon_r*ones(2,1);   Constraints.epsilon_alpha*ones(2
 %  L1 罚梯度恒为 w，只要 w > |lambda*|（该约束的最优乘子），eps* 精确为 0。
 %  默认尺度：w_L1(i) = lambda_L1 * Np * W(i,i) * eps_scale(i)
 %    => 在 eps = eps_scale 处 L1 项与二次项等量；eps 更小时 L1 主导。
-if MPCParameters.PrioMode == 1
+if prio_on
     w_L1    = zeros(Ne,1);             % 占位: w1, w2 由 func_PriorityCert 给出后写入
-    f_gamma = Nc*V(2,2) * double(MPCParameters.abl ~= 1);   % W_b: L3 的制动介入代价(线性, 零点斜率 W_b), 不是优先级层; 消融 noWb 时为 0
-elseif Nr > 0
+    f_gamma = zeros(Nr,1);
+    f_gamma(gdb_idx) = Nc*V(2,2) * double(MPCParameters.abl ~= 1);   % W_b: 仅 DB 通道
+elseif Nr > 0 && ctrl_mode == 1
     w_L1    = lambda_L1 * Np * diag(W) .* eps_scale;
     f_gamma = Nc*diag(V) - 2 * W_dgamma * gamma_prev(:);   % 线性优先级罚 + 迟滞项
 else

@@ -25,10 +25,6 @@ if ~exist(outdir,'dir'), mkdir(outdir); end
 
 tags = {'MPC','ZENG','PMPC'};
 for k = 1:numel(tags)
-    clear functions %#ok<CLFUNC>
-    %  ⚠️ run_ds 里会先跑 setup_pmpc 再仿真 —— MATLAB Function block 的参数
-    %  PMPC_P 是 Scope=Parameter, 模型编译时要从工作区解析它。
-    evalin('base','clear PMPC_P');
     info = run_ds(tags{k}, varargin{:});
     copyfile(fullfile(info.resdir,'LastRun.vsb'), fullfile(outdir,[tags{k} '.vsb']));
     copyfile(fullfile(info.resdir,'LastRun.vs'),  fullfile(outdir,[tags{k} '.vs']));

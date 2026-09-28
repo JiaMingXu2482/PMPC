@@ -1,5 +1,5 @@
 function [A_cons, b_cons, lb, ub, umax, umin] = func_BuildQPConstraints( ...
-        MPCParameters, Envelope, Pred, AI, Ut, zeta, Lim)
+        MPCParameters, Constraints, Envelope, Pred, AI, Ut, zeta, Lim)
 % func_BuildQPConstraints  组装 MPC 的不等式约束与变量上下界
 % -------------------------------------------------------------------------
 % 决策向量 x = [DeltaU; Epsilon; Gamma]   (Nr=0 时无 Gamma 段)
@@ -16,6 +16,16 @@ function [A_cons, b_cons, lb, ub, umax, umin] = func_BuildQPConstraints( ...
 Nu = MPCParameters.Nu;  Nc = MPCParameters.Nc;
 Np = MPCParameters.Np;  Ne = MPCParameters.Ne;  Nr = MPCParameters.Nr;
 Ny = MPCParameters.Ny;
+prio_on = isfield(Constraints,'PrioModeRT') && (Constraints.PrioModeRT == 1);
+ctrl_mode = 2;
+if isfield(Constraints,'ControllerMode') && ~isempty(Constraints.ControllerMode)
+    ctrl_mode = Constraints.ControllerMode;
+end
+gdb_idx = 2;
+if isfield(Constraints,'GammaDBIndex') && ~isempty(Constraints.GammaDBIndex)
+    gdb_idx = round(Constraints.GammaDBIndex);
+end
+gdb_idx = min(max(1, gdb_idx), max(1, Nr));
 
 % 约束时域：三类状态约束各自的施加步数（字段缺省时 = Np，即全时域）
 %  codegen(R2018a): 直接读, 不走 isfield/isempty 链。setup_pmpc 一定会设这三个,
@@ -88,7 +98,7 @@ else
 end
 O_r = kron(eye(Nc),Or);
 
-if MPCParameters.PrioMode == 1
+if prio_on
     % ---- 论文 III-D (2026-09-26): 行按界归一化, 每层一个违反量 ----
     %  x = [DeltaU; s1; s2; gamma_DB]。第一层(LTR + 车道四角点) -> s1,
     %  第二层(横摆 + 后轴侧偏) -> s2。归一化后行值 0.1 即超出界 10%,
@@ -96,14 +106,14 @@ if MPCParameters.PrioMode == 1
     dsh  = kron(ones(N_sh ,1), 1./Envelope.sc_sh);
     denv = kron(ones(N_env,1), 1./Envelope.sc_env);
     dr   = kron(ones(N_r  ,1), 1./Envelope.sc_r);
-    A_cons_sh  = [bsxfun(@times, A_sh*THETA, dsh), ...
-                  kron(ones(size(A_sh,1),1),  [0 -1]), zeros(size(A_sh,1),Nr)];
+    E_sh = zeros(size(A_sh,1), Ne);    E_sh(:,2) = -1;
+    E_env = zeros(size(A_env,1), Ne);  E_env(:,1) = -1;
+    E_r_eps = zeros(size(A_r,1), Ne);  E_r_eps(:,1) = -1;
+    A_cons_sh  = [bsxfun(@times, A_sh*THETA, dsh), E_sh, zeros(size(A_sh,1),Nr)];
     b_cons_sh  = dsh .* (b_sh - A_sh*xi0);
-    A_cons_env = [bsxfun(@times, A_env*THETA, denv), ...
-                  kron(ones(size(A_env,1),1), [-1 0]), zeros(size(A_env,1),Nr)];
+    A_cons_env = [bsxfun(@times, A_env*THETA, denv), E_env, zeros(size(A_env,1),Nr)];
     b_cons_env = denv .* (b_env - A_env*xi0);
-    A_cons_r   = [bsxfun(@times, A_r*THETA + E_r*O_r*AI, dr), ...
-                  kron(ones(size(A_r,1),1),   [-1 0]), zeros(size(A_r,1),Nr)];
+    A_cons_r   = [bsxfun(@times, A_r*THETA + E_r*O_r*AI, dr), E_r_eps, zeros(size(A_r,1),Nr)];
     b_cons_r   = dr .* (b_r - A_r*xi0 - E_r*O_r*Ut);
 else
 % (1) 稳定性约束 (yaw rate / alpha_r)
@@ -120,7 +130,7 @@ b_cons_r  = b_r - A_r*xi0 - E_r*O_r*Ut;
 end
 
 %% ---- 3) 控制量幅值约束 (区分 PrioMode / Nr>0 / Nr=0) ----
-if MPCParameters.PrioMode == 1
+if prio_on
     % ---- 论文式 (const_box): AFS、CDC 普通箱约束; 只有 DB 由 gamma 缩放 ----
     %     gamma*umin_b <= M_b(k+i) <= gamma*umax_b,  0 <= gamma <= 1
     %  执行器不排序: AFS/CDC 只受物理界; DB 的幅值由 gamma 缩放, gamma 在 L3 里按 W_b 定价
@@ -138,9 +148,9 @@ if MPCParameters.PrioMode == 1
             A_high(row, 1:Nu*Nc) =  AI_i(k, :);
             A_low(row,  1:Nu*Nc) = -AI_i(k, :);
             if k == 2                                  % DB: gamma 缩放
-                A_high(row, Nu*Nc + Ne + 1) = -umax(2);
+                A_high(row, Nu*Nc + Ne + gdb_idx) = -umax(2);
                 b_high(row)                 = -Ut_i(2);
-                A_low(row,  Nu*Nc + Ne + 1) =  umin(2);
+                A_low(row,  Nu*Nc + Ne + gdb_idx) =  umin(2);
                 b_low(row)                  =  Ut_i(2);
             else                                       % AFS / CDC: 普通箱
                 b_high(row) = umax(k) - Ut_i(k);
@@ -299,12 +309,24 @@ else
     eps_ub = inf(Ne,1);
 end
 
-if MPCParameters.PrioMode == 1
-    lb = [dUmin; eps_min; 0];        % s1, s2 >= 0 无上界; 0 <= gamma_DB <= 1
-    ub = [dUmax; eps_ub;  1];
+if prio_on
+    eps_lb = eps_min;
+    eps_ub2 = eps_ub;
+    if Ne > 2
+        eps_ub2(3:Ne) = 0;           % PMPC 新结构未使用的松弛固定为 0
+    end
+    gam_lb = ones(Nr,1);
+    gam_ub = ones(Nr,1);
+    gam_lb(gdb_idx) = 0;             % 仅 gamma_DB 可调
+    lb = [dUmin; eps_lb; gam_lb];
+    ub = [dUmax; eps_ub2; gam_ub];
 elseif Nr > 0
-    rho_min = [0; 0; 0];    % MR 的 0 表示"保持被动阻尼", 不是"关断", 见上
-    rho_max = [1; 1; 1];
+    if ctrl_mode == 1
+        rho_min = zeros(Nr,1);       % PMPC(旧结构)保留 3 gamma
+    else
+        rho_min = ones(Nr,1);        % baseline/ZENG: 屏蔽 gamma 变量
+    end
+    rho_max = ones(Nr,1);
     lb = [dUmin; eps_min; rho_min];
     ub = [dUmax; eps_ub;  rho_max];
 else
@@ -313,4 +335,3 @@ else
 end
 
 end
-

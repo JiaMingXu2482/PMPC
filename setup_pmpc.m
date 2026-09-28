@@ -316,6 +316,7 @@ Constraints.eps_ub_scale = Inf;
 % MPC 参数
 MPCParameters.Nu = 3;
 MPCParameters.Ne = 8;
+MPCParameters.Nr = 3;    % 统一编译期 QP 结构: gamma 固定保留 3 维
 %  PrioMode = 1: 论文 III-D/III-E 的三层车辆级目标(2026-09-26):
 %    L1 防侧翻与车道安全 > L2 横向稳定 > L3 路径跟踪与执行器代价; 执行器不排序。
 %  L1/L2 各一个违反量 s1/s2(归一化约束行的最大违反), 安全权重按候选裕度在线给定
@@ -408,8 +409,8 @@ DiscreteModle = 4;  % 1=Euler; 2=Taylor4; 3=FOH; 4=精确 ZOH(expm)
 %  2026-09-25 由 2 改 4: 时延行 -1/tau_d, Ts/tau_d = 3.3 时 Taylor4 给出的
 %  e^{-Ts/tau} = 0.036 被近似成 2.19 > 1(发散), 必须精确离散。论文 III-A 写的也是 ZOH。
 %% ---- 对比模式 ----
-%  1 = 本文 PMPC       : 三层车辆级目标 + L3 制动介入代价 gamma_DB (PrioMode=1, Nr=1)
-%  2 = baseline MPC   : **权重与 PMPC 完全相同**, 唯一差别是去掉 sigma/gamma (Nr=0)
+%  1 = 本文 PMPC       : 三层车辆级目标 + L3 制动介入代价 gamma_DB
+%  2 = baseline MPC   : **权重与 PMPC 完全相同**, 唯一差别是去掉 sigma/gamma 机制
 %      这样对比才能分离出"优先级机制"本身的贡献; 旧版那套单独调过的
 %      baseline 权重会把"权重不同"和"机制不同"混在一起。
 %  先进对比方法(Zeng 2025)在 baseline MPC 基础上开 Constraints.ZengRho_on。
@@ -436,13 +437,13 @@ end
 %    1 = PMPC-noWb : 去掉 L3 的制动介入代价 (W_b = 0), 其余不变
 %    2 = PMPC-noSAS: 减振器为标称电流下的被动阻尼; 控制器的 CDC 通道冻结在当前被动力矩
 %    3 = [32] 风格  : 旧 PMPC 结构, 8 个松弛 + 3 个 gamma, 按 W_beta >> W_rho >> W_r >> Q 排序的固定权重
-%  #3 改变 QP 维度, 所以放 MPCParameters(编译期常量)。
+%  统一 QP 结构后, #3 不再改编译期维度, 仅改变运行时代价/约束语义。
 MPCParameters.abl = localWsget('PMPC_ABL', 0) * double(ContrlMode == 1);
 if ContrlMode == 1 || ContrlMode == 2
-    newP = double(ContrlMode == 1 && MPCParameters.abl ~= 3);
-    MPCParameters.PrioMode = newP;                     % PMPC 用新结构, 见上方 PrioMode 说明
-    MPCParameters.Nr = 1*newP + 3*double(ContrlMode == 1 && MPCParameters.abl == 3);   % 新结构只留 gamma_DB; 旧结构 3 个; MPC/ZENG 0
-    MPCParameters.Ne = 8 - 6*newP;                     % 新结构 s1, s2; 旧结构与 MPC/ZENG 为 8 个松弛
+    % 统一尺寸: 模式切换不再改编译期维度, 仅运行时屏蔽/启用相应变量与约束。
+    MPCParameters.PrioMode = 0;
+    MPCParameters.Nr = 3;
+    MPCParameters.Ne = 8;
     % Constraints.arlim   = deg2rad(5); 
     VehiclePara.CafHat = -57772.51*2;VehiclePara.CarHat = -53484.51*2;%mu=0.85
     % VehiclePara.CafHat = -53645.94*2;VehiclePara.CarHat = -49663.82*2;%mu=0.3
@@ -499,6 +500,11 @@ else
     error('Invalid ContrlMode');
 end
 
+% ---- 运行时模式字段(不决定编译期尺寸) ----
+Constraints.ControllerMode = ContrlMode;                              % 1=PMPC, 2=baseline/ZENG
+Constraints.PrioModeRT = double(ContrlMode == 1 && MPCParameters.abl ~= 3);  % PMPC 新优先级机制
+Constraints.GammaDBIndex = 2;                                         % gamma(2) = DB
+
 WarmStart = zeros(MPCParameters.Nc*MPCParameters.Nu + MPCParameters.Ne + MPCParameters.Nr, 1); 
 DotPHI = zeros(MPCParameters.Np,1);
 rho = diag([1 1 1]);
@@ -529,7 +535,7 @@ P.TireR = TireR;
 %  S0 = 跨拍状态的初值 (块里用 persistent, 首拍用它初始化)
 %  上面那 16 个扁平字段保留不动 —— S-function 那条路还在用。
 P.Pm = struct('MPCParameters',MPCParameters, 'CostWeights',CostWeights, ...
-              'DiscreteModle',DiscreteModle, 'ContrlMode',ContrlMode, ...
+              'DiscreteModle',DiscreteModle, ...
               'Reftraj',Reftraj, 'TireF',TireF, 'TireR',TireR);
 P.S0 = struct('InitialParams',InitialParams, 'WarmStart',WarmStart, 'rho',rho, ...
               'VehiclePara',VehiclePara, 'Constraints',Constraints, ...

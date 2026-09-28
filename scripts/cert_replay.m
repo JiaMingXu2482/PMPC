@@ -72,7 +72,7 @@ for k = 1:n
 end
 MP = P.Pm.MPCParameters;
 R.t    = t;
-if isfield(MP,'PrioMode') && MP.PrioMode == 1
+if isfield(P.S0,'Constraints') && isfield(P.S0.Constraints,'PrioModeRT') && P.S0.Constraints.PrioModeRT == 1
     %  PMPC (论文 III-D/E): St.cert = [先验 14 | 后验 5 | s1 s2 | gamma_DB | exitflag | 兜底]
     R.prio = C(:, 1:14);   % [d1 d2 F w1 w2 certA certB Lb certC d1_0 d2_0 F0 gamma^ maxInViol]
     R.cert = C(:, 15:19);  % [1'lam1/w1  1'lam2/w2  NaN  DB净乘子和/W_b  NaN]
