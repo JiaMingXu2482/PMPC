@@ -4,6 +4,8 @@ function sys = pmpc_block(u, PMPC_P) %#codegen
 %   PMPC_P : 参数, 块里声明为 Scope=Parameter 且 Tunable=false
 %            (不可调 = 块层面的 coder.Constant; 否则 nvars 这类维度
 %             推不出常量, 块会报"无法确定输出大小")
+%            模式选择放在 PMPC_P.S0.Constraints 的运行时字段里，
+%            以避免 PMPC/ZENG/MPC 之间切换时改动编译期维度。
 %   sys    : 54x1 输出
 %
 %   跨拍状态用 persistent —— 生成代码里就是一个静态变量。

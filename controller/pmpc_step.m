@@ -14,7 +14,6 @@ function [sys, St] = pmpc_step(u, Pm, St) %#codegen
 MPCParameters = Pm.MPCParameters;
 CostWeights = Pm.CostWeights;
 DiscreteModle = Pm.DiscreteModle;
-ContrlMode = Pm.ContrlMode;
 Reftraj = Pm.Reftraj;
 TireF = Pm.TireF;
 TireR = Pm.TireR;
@@ -25,6 +24,7 @@ TireR = Pm.TireR;
 %  原来它们是 global, 改写会留到下一拍; 做成本地副本会改变行为(已实测踩坑)
 VehiclePara = St.VehiclePara;
 Constraints = St.Constraints;
+prio_on = isfield(Constraints,'PrioModeRT') && (Constraints.PrioModeRT == 1);
 
 %% ---- 跨拍状态 ----
 InitialParams = St.InitialParams;
@@ -346,8 +346,9 @@ kap_env = zeros(MPCParameters.Np,1);
 nkap_   = min(numel(Kap_node), MPCParameters.Np);
 kap_env(1:nkap_) = Kap_node(1:nkap_);
 
-if MPCParameters.PrioMode == 1
-    eps_ub_ = inf(MPCParameters.Ne, 1);      % s1, s2 无上界(论文命题 1)
+if prio_on
+    eps_ub_ = zeros(MPCParameters.Ne, 1);
+    eps_ub_(1:2) = inf;                      % 仅 s1/s2 参与 PMPC 新优先级层
 else
     eps_ub_ = Constraints.eps_ub_scale * ...
               [Constraints.epsilon_r*ones(2,1);   Constraints.epsilon_alpha*ones(2,1); ...
@@ -384,13 +385,13 @@ W_dgamma   = diag(Wdg_v);                        % Delta-gamma 惩罚, 见 mdlIn
 
 %% ---- 约束 ----
 [A_cons, b_cons, lb, ub, umax, umin] = func_BuildQPConstraints( ...
-                          MPCParameters, Envelope, Pred, AI, Ut, zeta, Lim);
+                          MPCParameters, Constraints, Envelope, Pred, AI, Ut, zeta, Lim);
 
 %% ---- 优先级认证与安全权重 (论文 III-E, 仅 PMPC) ----
 %  解 QP 之前由候选 z^(上一拍解后移、投影进 Z)算裕度 delta_1/delta_2 与 F(z^),
 %  按式 weight_rule 给出 w1, w2 写进 f 的 s1, s2 分量; 同时判定定理 1 (a)(b)(c)。
 pc  = nan(14,1);  dUc = zeros(Nu*Nc,1);  gc = 0;  fb_used = 0;
-if MPCParameters.PrioMode == 1
+if prio_on
     [wpr, pc, dUc, gc] = func_PriorityCert(MPCParameters, Constraints, Pred, Wts, ...
                              zeta, Ut, ref_Vy, ref_r, H, f, A_cons, b_cons, WarmStart, umin, umax, Lim);
     f(Nu*Nc + (1:2)) = wpr;
@@ -398,19 +399,21 @@ end
 
 %% ---- 求解 ----
 [x_opt, exitflag, delta_U_first, rho_val, epsilon_val, WarmStart, cert] = ...
-    func_SolveMPCQP(H, f, A_cons, b_cons, lb, ub, WarmStart, MPCParameters);
+    func_SolveMPCQP(H, f, A_cons, b_cons, lb, ub, WarmStart, MPCParameters, Constraints);
 %  求解失败(如超迭代上限)且 delta_1, delta_2 > 0 时, 施加候选的第一拍输入:
 %  它在预测上满足第一、二层约束(论文注 rem:compute)。其余情况沿用原做法(增量为零)。
-if MPCParameters.PrioMode == 1 && exitflag ~= 1 && pc(1) > 0 && pc(2) > 0
+if prio_on && exitflag ~= 1 && pc(1) > 0 && pc(2) > 0
     delta_U_first = dUc(1:Nu);
     rho_val       = [1; gc; 1];
-    WarmStart     = func_WarmStart_shiftHorizon([dUc; zeros(Ne,1); gc*ones(Nr,1)], MPCParameters);
+    gtmp          = ones(Nr,1);
+    gtmp(local_db_gamma_idx(Constraints, Nr)) = gc;
+    WarmStart     = func_WarmStart_shiftHorizon([dUc; zeros(Ne,1); gtmp], MPCParameters);
     fb_used       = 1;
 end
 %  在线证书 cert(论文 III-E)只做记录, 不参与控制。
 %  不能在块里用 coder.extrinsic 记录: MATLAB Function 块会推不出输出维度
 %  (同上方计时那段的踩坑)。记录走 St.cert(24x1), 由 cert_replay.m 离线回放读出。
-if MPCParameters.PrioMode == 1
+if prio_on
     %  14 先验认证 + 5 后验证书 + [s1 s2] + gamma_DB + exitflag + 兜底标志
     St.cert = [pc; cert; epsilon_val; rho_val(2); double(exitflag); fb_used];
 else
@@ -561,7 +564,7 @@ InitialParams = func_ReportStatus(InitialParams, exitflag, PrjP, Vel, t_Elapsed,
 % --- 7. 系统输出 ---
 % 确保 epsilon_val 和 rho_val 存在
 eps_out = zeros(4,1);
-if MPCParameters.PrioMode == 1
+if prio_on
     %  [s2 s2 s1 s1]: 横摆、后轴侧偏同属第二层, LTR、车道同属第一层(归一化违反量)
     eps_out = [epsilon_val(2); epsilon_val(2); epsilon_val(1); epsilon_val(1)];
 elseif length(epsilon_val) >= 8
@@ -659,4 +662,12 @@ Fz_l = max(Fz_l, 1);   Fz_r = max(Fz_r, 1);
 xl = sqrt(max(1 - (Fx_l/(mu*Fz_l))^2, 0));
 xr = sqrt(max(1 - (Fx_r/(mu*Fz_r))^2, 0));
 xi = (Fz_l*xl + Fz_r*xr)/(Fz_l + Fz_r);
+end
+
+function idx = local_db_gamma_idx(Constraints, Nr)
+idx = 2;
+if isfield(Constraints,'GammaDBIndex') && ~isempty(Constraints.GammaDBIndex)
+    idx = round(Constraints.GammaDBIndex);
+end
+idx = min(max(1, idx), max(1, Nr));
 end

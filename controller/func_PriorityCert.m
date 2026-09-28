@@ -22,6 +22,11 @@ function [w, pc, dUc, gc] = func_PriorityCert(MPCParameters, Constraints, Pred, 
 % -------------------------------------------------------------------------
 Nu = MPCParameters.Nu;  Nc = MPCParameters.Nc;  Np = MPCParameters.Np;
 Ne = MPCParameters.Ne;  Nr = MPCParameters.Nr;  Ny = MPCParameters.Ny;
+gdb_idx = 2;
+if isfield(Constraints,'GammaDBIndex') && ~isempty(Constraints.GammaDBIndex)
+    gdb_idx = round(Constraints.GammaDBIndex);
+end
+gdb_idx = min(max(1, gdb_idx), max(1, Nr));
 N_sh  = min(max(1, round(MPCParameters.Ncons_sh )), Np);
 N_r   = min(max(1, round(MPCParameters.Ncons_r  )), Np);
 N_env = min(max(1, round(MPCParameters.Ncons_env)), Np);
@@ -40,8 +45,10 @@ dUws(~isfinite(dUws)) = 0;
 [dU0, ~ ] = local_project(dUws, u_prev, umin, umax, du, Nu, Nc, true);
 
 %% ---- 裕度 (式 margin) ----
-zc = [dUc; zeros(Ne,1); gc*ones(Nr,1)];
-z0 = [dU0; zeros(Ne,1); zeros(Nr,1)];
+gCvec = ones(Nr,1); gCvec(gdb_idx) = gc;
+g0vec = ones(Nr,1); g0vec(gdb_idx) = 0;
+zc = [dUc; zeros(Ne,1); gCvec];
+z0 = [dU0; zeros(Ne,1); g0vec];
 gC = A_cons*zc - b_cons;
 g0 = A_cons*z0 - b_cons;
 d1  = -max(gC(idx1));   d2  = -max(gC(idx2));

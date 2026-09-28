@@ -1,5 +1,5 @@
 function [x_opt, exitflag, delta_U_first, rho_val, epsilon_val, WarmStart, cert] = ...
-        func_SolveMPCQP(H, f, A_cons, b_cons, lb, ub, WarmStart, MPCParameters)
+        func_SolveMPCQP(H, f, A_cons, b_cons, lb, ub, WarmStart, MPCParameters, Constraints)
 %  cert (可选, 2026-09-25): 论文 III-E 的在线证书, 11x1, 只记录不参与控制
 %    cert(1:Ne)      松弛证书  sum(乘子 * 该松弛在约束行里的系数) / 该松弛的线性罚系数
 %                    eps_j = 0 时 <= 1 (< 1 即精确罚条件成立), eps_j > 0 时 > 1
@@ -25,14 +25,24 @@ function [x_opt, exitflag, delta_U_first, rho_val, epsilon_val, WarmStart, cert]
 % -------------------------------------------------------------------------
 
 if isfield(MPCParameters,'QPSolver'), qsel = MPCParameters.QPSolver; else, qsel = 0; end
+verbose = isfield(MPCParameters,'Verbose') && MPCParameters.Verbose;
 Nu = MPCParameters.Nu;  Nc = MPCParameters.Nc;
 Ne = MPCParameters.Ne;  Nr = MPCParameters.Nr;
 nvars = Nu*Nc + Ne + Nr;
 cert  = nan(Ne + 3, 1);     % codegen: 提前 return 的路径上也必须有定义
+prio_on = false;
+gdb_idx = 2;
+if nargin >= 9 && isstruct(Constraints)
+    prio_on = isfield(Constraints,'PrioModeRT') && (Constraints.PrioModeRT == 1);
+    if isfield(Constraints,'GammaDBIndex') && ~isempty(Constraints.GammaDBIndex)
+        gdb_idx = round(Constraints.GammaDBIndex);
+    end
+end
+gdb_idx = min(max(1, gdb_idx), max(1, Nr));
 
 % 热启动仅用于加速，不能让损坏的上一拍解终止本拍求解。
 if numel(WarmStart) ~= nvars || ~all(isfinite(WarmStart(:)))
-    if MPCParameters.Verbose
+    if verbose
         %  codegen(R2018a): warning 不支持 —— MATLAB Function 块里会报
         %    "Function 'warning' is not supported for code generation."
         %  改用 fprintf(2,..) 写 stderr: 信息一样, codegen 支持。
@@ -56,7 +66,7 @@ if ~all(isfinite(b_cons(:))), bad = [bad 'b_cons ']; end
 if ~all(isfinite(lb(:))),     bad = [bad 'lb ']; end
 if any(isnan(ub(:))),         bad = [bad 'ub(NaN) ']; end   % ub 允许 +Inf
 if ~isempty(bad)
-    if MPCParameters.Verbose
+    if verbose
         fprintf(2, 'func_SolveMPCQP: QP matrices contain Inf/NaN: %s-> holding previous control\n', bad);
     end
     x_opt         = zeros(nvars,1);   % codegen: 尺寸必须固定(原为 [])
@@ -74,7 +84,7 @@ Hx0 = H*WarmStart;
 Ax0 = A_cons*WarmStart;
 if ~all(isfinite(Hx0)) || ~isfinite(WarmStart'*Hx0) || ...
         ~isfinite(f'*WarmStart) || ~all(isfinite(Ax0))
-    if MPCParameters.Verbose
+    if verbose
         fprintf(2, 'func_SolveMPCQP: WarmStart produced Inf/NaN in QP; reset to zero.\n');
     end
     WarmStart = zeros(nvars,1);
@@ -143,9 +153,11 @@ if exitflag == 1
     %  codegen: rho_val 必须是固定 3x1。Nr = 3*(ContrlMode==1), 只可能是 0 或 3,
     %  所以把变尺寸切片 x_opt(end-Nr+1:end) 写成定长的后 3 个。
     rho_val = [1; 1; 1];            % 无优先级变量时默认全激活
-    if Nr == 3
+    if Nr == 3 && ~prio_on
         rho_val = x_opt(nvars-2:nvars);
-    elseif Nr == 1                  % PrioMode: 只有 gamma_DB, AFS/CDC 不定价
+    elseif Nr == 3 && prio_on
+        rho_val = [1; x_opt(Nu*Nc + Ne + gdb_idx); 1];
+    elseif Nr == 1                  % 兼容旧 PMPC 结构
         rho_val = [1; x_opt(nvars); 1];
     end
 
@@ -180,7 +192,7 @@ if qsel == 1 && exitflag == 1
     %  行布局: A_cons 前 6*Nc 行是优先级约束, 先 3*Nc 行上界再 3*Nc 行下界,
     %  第 i 拍第 j 个执行器在 3*(i-1)+j。只在 sigma_budget / fx_couple 关闭时成立
     %  (两者会往 gamma 列或输入块里加行, 命题 4 也不覆盖), 否则置 NaN。
-    if Nr == 3 && MPCParameters.sigma_budget == 0 && MPCParameters.fx_couple == 0
+    if Nr == 3 && ~prio_on && MPCParameters.sigma_budget == 0 && MPCParameters.fx_couple == 0
         for j = 1:3
             v = Nu*Nc + Ne + j;
             if f(v) > 0
@@ -194,10 +206,10 @@ if qsel == 1 && exitflag == 1
                 cert(Ne + j) = s / f(v);
             end
         end
-    elseif Nr == 1 && MPCParameters.PrioMode == 1
+    elseif prio_on && Nr > 0
         %  PrioMode 只有 gamma_DB(列 nvars), 行布局不变: DB 在每拍第 2 行。
         %  cert(Ne+2) = 净乘子和 / W_b, 与定理 1(c) 的先验界 L_b / W_b 对照。
-        v = nvars;
+        v = Nu*Nc + Ne + gdb_idx;
         if f(v) > 0
             s = 0;
             for i = 1:Nc
