@@ -239,6 +239,7 @@ function [A7,B7,D7] = local_delay(A, B, D, tau)
 %   原 B 第 3 列(Md 对侧倾的作用, 只有第 4 行 -1/Ix)挪到 A 的第 7 列: 侧倾只经
 %   已建立的 Md_a 受阻尼器作用; 输入 Md_c 只驱动时延状态。
 nx = size(A,1);  nd = size(D,2);
+tau = max(tau, 1e-6);  % finite fixed-size placeholder when NLCSNN is active
 aM = B(:,3);
 Bb = B;  Bb(:,3) = 0;
 A7 = [A, aM; zeros(1,nx), -1/tau];

@@ -1,4 +1,4 @@
-function [Q,R,S,Wshl,Wact,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,Fdu,Fdl,Mdnom] = func_CostWeightingRegulation_QuadSlacks(MPCParameters,CostWeights,Constraints,r_ssmax,ParaHAT,VehiclePara,VehStateMeasured)
+function [Q,R,S,Wshl,Wact,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,Fdu,Fdl,Mdnom] = func_CostWeightingRegulation_QuadSlacks(MPCParameters,CostWeights,Constraints,r_ssmax,ParaHAT,VehiclePara,VehStateMeasured,DamperLimits)
 
 %% -------- 参数/符号 --------
     Np  = MPCParameters.Np;
@@ -183,16 +183,31 @@ function [Q,R,S,Wshl,Wact,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,
     dFyfmax = dlt_rate * Ts_r;                                % rad/步
     
 %% -------- 3) Md 的幅值/速率上限 -------
-    % ---  上/下界力-速模型（分段）---
-    Gu = @(v) sign(v) .* ( (abs(v) <= v0) .* (k1.*abs(v)) + ...
-                           (abs(v) >  v0) .* (k2.*abs(v) + b) );
-    Gl = @(v) k3 .* v;
-    Fdu=zeros(4,1);Fdl=zeros(4,1);
-    % ---  四支减振器在当前速度下的可达上/下界力 ---
-    Fdu(1) = Gu(V_fl);  Fdl(1) = Gl(V_fl);
-    Fdu(2) = Gu(V_fr);  Fdl(2) = Gl(V_fr);
-    Fdu(3) = Gu(V_rl);  Fdl(3) = Gl(V_rl);
-    Fdu(4) = Gu(V_rr);  Fdl(4) = Gl(V_rr);
+    if DamperLimits.external
+        % NLCSNN supplies current-state reachable forces in controller
+        % order [L1;R1;L2;R2] and CarSim force polarity.
+        Fdu = DamperLimits.Fdu(:);
+        Fdl = DamperLimits.Fdl(:);
+        Fd_nom = DamperLimits.Fd_center(:);
+    else
+        % Explicit rollback only: legacy piecewise velocity-current model.
+        Gu = @(v) sign(v) .* ( (abs(v) <= v0) .* (k1.*abs(v)) + ...
+                               (abs(v) >  v0) .* (k2.*abs(v) + b) );
+        Gl = @(v) k3 .* v;
+        Fdu=zeros(4,1);Fdl=zeros(4,1);
+        Fdu(1) = Gu(V_fl);  Fdl(1) = Gl(V_fl);
+        Fdu(2) = Gu(V_fr);  Fdl(2) = Gl(V_fr);
+        Fdu(3) = Gu(V_rl);  Fdl(3) = Gl(V_rl);
+        Fdu(4) = Gu(V_rr);  Fdl(4) = Gl(V_rr);
+
+        if isfield(Constraints,'I_nom') && ~isempty(Constraints.I_nom)
+            I_nom = Constraints.I_nom;
+        else
+            I_nom = 2.0;
+        end
+        Fd_nom = [func_MRDamper(V_fl, I_nom); func_MRDamper(V_fr, I_nom); ...
+                  func_MRDamper(V_rl, I_nom); func_MRDamper(V_rr, I_nom)];
+    end
     
     % ---  由上/下界力构造“最大/最小”可用抗侧倾力矩 ---
     %  M_d = Bd_v'*Fd，Bd_v 各分量有正有负；线性函数在箱约束上的极值必须
@@ -211,13 +226,6 @@ function [Q,R,S,Wshl,Wact,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,
     %  保持标称电流 I_nom (= baseline 用的电流) 的被动阻尼。
     %  func_BuildQPConstraints 用它把 gamma_CDC 的含义改成"调制幅度",
     %  gamma_CDC=0 即退回被动。见 README_架构缺陷与救治方案 任务 #2。
-    if isfield(Constraints,'I_nom') && ~isempty(Constraints.I_nom)
-        I_nom = Constraints.I_nom;
-    else
-        I_nom = 2.0;                       % A, 与 InitialParams.BaselineCurrent 同值
-    end
-    Fd_nom = [func_MRDamper(V_fl, I_nom); func_MRDamper(V_fr, I_nom); ...
-              func_MRDamper(V_rl, I_nom); func_MRDamper(V_rr, I_nom)];
     Mdnom  = Bd_v.' * Fd_nom;
     Mdnom  = min(max(Mdnom, min(Mdmin,Mdmax)), max(Mdmin,Mdmax));   % 夹进可达区间
  
@@ -228,7 +236,13 @@ function [Q,R,S,Wshl,Wact,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,
     %  另: 原来 MR 用 Ts=0.05 而 AFS 用 Ts_exec=0.01 缩放, 同一种「每预测步
     %  增量上限」差 5 倍且无依据, 这里统一用 Ts_r(与 dFyfmax 同源)。
     %  两处修正几乎抵消: 2328/0.03*0.01 = 776 vs 原 (500/0.03)*0.05 = 833。
-    dMdmax = (Md_ref / Constraints.tau_MR) * Ts_r;
+    if DamperLimits.external
+        % NLCSNN already represents the physical current/state dynamics.
+        % The QP may use the full reachable moment span in this sample.
+        dMdmax = max(Mdmax - Mdmin, 1e-6);
+    else
+        dMdmax = (Md_ref / Constraints.tau_MR) * Ts_r;
+    end
 
 %% 归一化权重
 %  分母一律是第 0 节算出的常量基准, 不再出现瞬时可达值。

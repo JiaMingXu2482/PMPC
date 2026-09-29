@@ -148,7 +148,6 @@ Constraints.AFS_max    = deg2rad(Constraints.AFS_max_deg);
 %   与 MagneRide 同量级, 故取 15 ms。
 %   若要坐实, 需补一次「定速激励 + 阶跃电流」的响应时间测试。
 Constraints.tau_MR = 0.015;  % s, MR 力响应时间 (Delphi MagneRide)
-Constraints.I_nom = InitialParams.BaselineCurrent;  % sigma_MR 的中心电流, 与 baseline 同源
 % 归一化基准 (任务 #6)。这两个是"代价尺度"的参考量, 不是工况参数:
 % 换工况不要改它们, 否则同一个权重数字又会代表不同含义。
 %% ---- 先进对比方法: Zeng 2025 稳定性指标调权 ----
@@ -345,11 +344,16 @@ Constraints.prio_wmax  = [1e10; 1e8];     % [w1 上限; w2 上限], w1 须能压
 %  tau_d*dMd_a/dt = -Md_a + Md_c; 侧倾与 LTR 只经 Md_a 受阻尼器作用。
 MPCParameters.Nx = 7;
 MPCParameters.Ny = 7;
-%  tau_d: 暂用 MR 文献值占位(tau_MR), 待 CDC 阶跃电流试验出查表 T(v,dI) 后替换
-MPCParameters.tau_d = Constraints.tau_MR;
+%  NLCSNN directly models the damper state/current dynamics. Keep Nx=7 for
+%  a fixed QP, but make the legacy aggregate delay state near-instant.
+if NLCSNN.enabled
+    MPCParameters.tau_d = 1e-4;
+else
+    MPCParameters.tau_d = Constraints.tau_MR;
+end
 %  被控对象侧的阻尼器执行器模型(一阶滞后作用在"力在上下界间的位置"上, 保耗散):
 %  1 = 开(与预测模型一致), 0 = 关(阻尼力当拍直达 CarSim, 即 2026-09-25 前的行为)
-Constraints.dmp_act_on = localWsget('PMPC_DMP_ACT', 1);
+Constraints.dmp_act_on = localWsget('PMPC_DMP_ACT', double(~NLCSNN.enabled));
 %  预测步长 T_p = 0.05 s (触发子系统每 T_c = 0.01 s 重解一次, 滚动时域), N_p = 20 (1.0 s), N_c = 6。
 %  N_p 扫描(改进.md 18z, Fiala-C0 标定): 16/20/24/28 -> e_y RMS 0.3031/0.2531/0.2772/0.2709,
 %  出车道 5.8%/0/0/0。跟踪在 N_p = 20 取极值; 再加长跟踪略退而稳定性继续改善(beta 峰 3.49->2.45),

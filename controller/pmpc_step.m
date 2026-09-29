@@ -2,7 +2,7 @@ function [sys, St] = pmpc_step(u, Pm, St) %#codegen
 %PMPC_STEP  每拍的控制运算 (原 cq32019mpc 的 mdlOutputs 实体)
 %
 %   注: 变量名用 Pm/St 而非 P/S —— body 里 'S' 已被代价权重矩阵占用(实测踩坑)。
-%   u : 50x1 从 CarSim 来的测量 (顺序 = CarSim Export 列表)
+%   u : 54x1 从 CarSim 来的测量 (顺序 = CarSim Export 列表)
 %   Pm: 参数 (setup_pmpc 产出, 运行中不变)
 %   St: 跨拍状态 (InitialParams / WarmStart / rho), 进出都要
 %   sys : 54x1 输出
@@ -17,6 +17,7 @@ DiscreteModle = Pm.DiscreteModle;
 Reftraj = Pm.Reftraj;
 TireF = Pm.TireF;
 TireR = Pm.TireR;
+NLCSNN = Pm.NLCSNN;
 
 %% ---- 既是参数也是状态: 拍内被改写且**跨拍保留** ----
 %  VehiclePara 的 CbarF/CbarR/CafTan/CarTan (在线切线刚度)
@@ -54,6 +55,27 @@ LTR = ParaHAT.LTR;
 alpha_l2=ParaHAT.alpha_l2;
 alpha_r2=ParaHAT.alpha_r2;
 Roll = ParaHAT.Roll; Rollrate = ParaHAT.Rollrate;
+
+% NLCSNN coordinates and reachable force box. CarSim exports displacement
+% as [L1,L2,R1,R2], while the allocation order is [L1,R1,L2,R2].
+DamperContext = struct('x',zeros(4,1), 'v',zeros(4,1), ...
+    'a',zeros(4,1), 'F_lo',zeros(4,1), 'F_hi',zeros(4,1), ...
+    'F_center',zeros(4,1));
+DamperLimits = struct('Fdu',zeros(4,1), 'Fdl',zeros(4,1), ...
+    'Fd_center',zeros(4,1), 'external',false);
+if NLCSNN.enabled
+    cmpD = [VehStateMeasured.D_l1; VehStateMeasured.D_r1; ...
+            VehStateMeasured.D_l2; VehStateMeasured.D_r2];
+    cmpRD = 1000*[VehStateMeasured.V_l1; VehStateMeasured.V_r1; ...
+                  VehStateMeasured.V_l2; VehStateMeasured.V_r2];
+    [DamperContext, InitialParams.prevstate.nlcsnn] = ...
+        func_NLCSNNContext(NLCSNN.net, cmpD, cmpRD, ...
+        InitialParams.prevstate.nlcsnn, NLCSNN);
+    DamperLimits.Fdu = DamperContext.F_hi;
+    DamperLimits.Fdl = DamperContext.F_lo;
+    DamperLimits.Fd_center = DamperContext.F_center;
+    DamperLimits.external = true;
+end
 
 %%
 % ---- 仿射轮胎线性化（二维查表，f_bar 与 c_bar 同源）----
@@ -216,7 +238,7 @@ if Constraints.ZengRho_on
     CW.W1 = CostWeights.W1 * rho_zeng;    % sigma_s: 横摆角速度松弛
     CW.W2 = CostWeights.W2 * rho_zeng;    % sigma_s: 侧偏角松弛
 end
-[Q,R,S,W,V,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,Fdu,Fdl,Mdnom] = func_CostWeightingRegulation_QuadSlacks(MPCParameters,CW,Constraints,r_ssmax,ParaHAT,VehiclePara,VehStateMeasured);
+[Q,R,S,W,V,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,Fdu,Fdl,Mdnom] = func_CostWeightingRegulation_QuadSlacks(MPCParameters,CW,Constraints,r_ssmax,ParaHAT,VehiclePara,VehStateMeasured,DamperLimits);
 
 %% ==================================================================%
 %----------------  quadprog solver compute begin --------------------%
@@ -411,14 +433,14 @@ if prio_on && exitflag ~= 1 && pc(1) > 0 && pc(2) > 0
     fb_used       = 1;
 end
 %  在线证书 cert(论文 III-E)只做记录, 不参与控制。
-%  不能在块里用 coder.extrinsic 记录: MATLAB Function 块会推不出输出维度
-%  (同上方计时那段的踩坑)。记录走 St.cert(24x1), 由 cert_replay.m 离线回放读出。
+%  MATLAB Function 状态必须固定尺寸；统一布局为 36x1:
+%  [先验认证14; 后验证书11; 松弛8; gamma_DB1; exitflag; 兜底标志]。
 if prio_on
-    %  14 先验认证 + 5 后验证书 + [s1 s2] + gamma_DB + exitflag + 兜底标志
+    %  PMPC: 14 先验认证 + 11 后验证书 + 8 松弛 + gamma_DB + 两个状态标志
     St.cert = [pc; cert; epsilon_val; rho_val(2); double(exitflag); fb_used];
 else
-    %  11 证书 + 8 松弛 + 3 gamma + 2 占位
-    St.cert = [cert; epsilon_val; rho_val; nan(2,1)];
+    %  其它控制器没有先验认证，前 14 项用 NaN 占位；gamma 只记录 DB 项。
+    St.cert = [nan(14,1); cert; epsilon_val; rho_val(2); nan(2,1)];
 end
 
 if exitflag == 1
@@ -533,21 +555,37 @@ end
 [Tb_L1,Tb_L2,Tb_R1,Tb_R2]  = func_QPA_DB(VehiclePara,InitialParams,Constraints,ParaHAT,MFx_next,delta_wheel,Tb_u,Fx_dem,MPCParameters.Verbose);
 InitialParams.prevstate.Tb = [Tb_L1;Tb_R1;Tb_L2;Tb_R2];
 [Fd_L1,Fd_L2,Fd_R1,Fd_R2,Md_real,exitflag_Fd]  = func_QPA_CDC(VehiclePara,InitialParams,VehStateMeasured,Md_next,Fdu,Fdl,MPCParameters.Verbose);
-InitialParams.prevstate.Fd = [Fd_L1;Fd_R1;Fd_L2;Fd_R2];   % 指令力, 供分配 QP 热启动
+Fd_cmd = [Fd_L1;Fd_R1;Fd_L2;Fd_R2];
 if MPCParameters.abl == 2
-    %  消融 PMPC-noSAS: 输出标称电流下的被动阻尼力(与 Mdnom 同一电流), 不经执行器时延
-    Ib_nom = 2.0;
-    if isfield(Constraints,'I_nom') && ~isempty(Constraints.I_nom), Ib_nom = Constraints.I_nom; end
-    Fd_L1 = func_MRDamper(VehStateMeasured.V_l1, Ib_nom);  Fd_L2 = func_MRDamper(VehStateMeasured.V_l2, Ib_nom);
-    Fd_R1 = func_MRDamper(VehStateMeasured.V_r1, Ib_nom);  Fd_R2 = func_MRDamper(VehStateMeasured.V_r2, Ib_nom);
+    if NLCSNN.enabled
+        % noSAS keeps the force-space midpoint; no fabricated nominal current.
+        Fd_cmd = DamperContext.F_center;
+    else
+        Ib_nom = 2.0;
+        if isfield(Constraints,'I_nom') && ~isempty(Constraints.I_nom), Ib_nom = Constraints.I_nom; end
+        Fd_cmd = [func_MRDamper(VehStateMeasured.V_l1, Ib_nom); ...
+                  func_MRDamper(VehStateMeasured.V_r1, Ib_nom); ...
+                  func_MRDamper(VehStateMeasured.V_l2, Ib_nom); ...
+                  func_MRDamper(VehStateMeasured.V_r2, Ib_nom)];
+    end
 end
-% ---- 被控对象侧: 阻尼器响应时延 (执行器模型, 见 func_DamperActuator) ----
-%  预测模型里已有时延状态 Md_a, 被控对象这边也要有, 否则模型与对象失配。
-if Constraints.dmp_act_on && MPCParameters.abl ~= 2
+InitialParams.prevstate.Fd = Fd_cmd;   % command force, QPA warm start
+if NLCSNN.enabled
+    [Fd_act, ~, InitialParams.prevstate.nlcsnn] = func_NLCSNNApply( ...
+        NLCSNN.net, DamperContext, Fd_cmd, ...
+        InitialParams.prevstate.nlcsnn, NLCSNN);
+    Fd_L1 = Fd_act(1);  Fd_R1 = Fd_act(2);  Fd_L2 = Fd_act(3);  Fd_R2 = Fd_act(4);
+    Bd_act = 0.5*[-VehiclePara.ldf, VehiclePara.ldf, ...
+                  -VehiclePara.ldr, VehiclePara.ldr];
+    Md_real = Bd_act*Fd_act;
+elseif Constraints.dmp_act_on && MPCParameters.abl ~= 2
+    % Explicit rollback path for the legacy first-order actuator.
     [Fd_act, InitialParams.prevstate.s_act] = func_DamperActuator( ...
-        [Fd_L1;Fd_R1;Fd_L2;Fd_R2], Fdl, Fdu, InitialParams.prevstate.s_act, ...
+        Fd_cmd, Fdl, Fdu, InitialParams.prevstate.s_act, ...
         MPCParameters.Ts_exec, MPCParameters.tau_d);
     Fd_L1 = Fd_act(1);  Fd_R1 = Fd_act(2);  Fd_L2 = Fd_act(3);  Fd_R2 = Fd_act(4);
+else
+    Fd_L1 = Fd_cmd(1);  Fd_R1 = Fd_cmd(2);  Fd_L2 = Fd_cmd(3);  Fd_R2 = Fd_cmd(4);
 end
 % if abs(ParaHAT.LTR)>=0.8
 %     disp('abs(LTR)已达到0.8，停止仿真');
@@ -585,6 +623,12 @@ Npdc = 6;               % 预测提前量（步）
         VehiclePara, MPCParameters, VehStateMeasured, ParaHAT, ...
         Y, x_opt, exitflag, AI, Ut, Md_next, Npdc);
 
+% 诊断通道 14:16 共用固定接口：ZENG 输出其自适应稳定性指标，
+% MPC/PMPC 保持原来的执行器优先级因子。
+diag_rho = rho_val;
+if Constraints.ZengRho_on
+    diag_rho = [rho_zeng; Ib_zeng; Ir_zeng];
+end
 
 sys = [ Tb_L1;  Tb_L2;  Tb_R1;  Tb_R2; 
         Fd_L1;  Fd_L2;  Fd_R1;  Fd_R2; 
@@ -593,9 +637,9 @@ sys = [ Tb_L1;  Tb_L2;  Tb_R1;  Tb_R2;
         eps_out(2);         
         eps_out(3);   
         eps_out(4);   
-        rho_val(1);    % rho_AFS
-        rho_val(2);    % rho_DB
-        rho_val(3);    % rho_CDC
+        diag_rho(1);   % ZENG: rho_zeng；其它: rho_AFS
+        diag_rho(2);   % ZENG: I_beta； 其它: rho_DB
+        diag_rho(3);   % ZENG: I_r；    其它: rho_CDC
         MFxmax; MFx_next; -MFxmax;
         Mdmax;  Md_next;   Mdmin;
         Fyfmax; Fyf_next; -Fyfmax;
