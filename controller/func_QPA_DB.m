@@ -2,6 +2,7 @@ function [Tb_L1,Tb_L2,Tb_R1,Tb_R2] = func_QPA_DB(VehiclePara,InitialParams,Const
 %   verbose=0 时不打印失败警告(失败计数不受影响)。见 setup_pmpc 的 MPCParameters.Verbose
 %  Fx_dem (可选): 纵向制动力需求 (N, 正=减速)。为 0 时与原版**逐位等价**。
 if nargin < 8 || isempty(Fx_dem), Fx_dem = 0; end
+if nargin < 9 || isempty(verbose), verbose = false; end
 
     lf          = VehiclePara.lf;
     mu          = VehiclePara.mu;
@@ -43,7 +44,10 @@ if nargin < 8 || isempty(Fx_dem), Fx_dem = 0; end
     Fz_tot = Fz_L1 + Fz_R1 + Fz_L2 + Fz_R2;
     T_ref  = max(rt*mu*Fz_tot/4, 1);       % N*m, 单轮制动力矩能力
     M_ref  = max(mu*Fz_tot*tf/4,  1);      % N*m, 差动制动的纯横摆能力(粗略)
-    lam_d  = Constraints.QPA_lamd;
+    lam_d = 0;
+    if isfield(Constraints, 'QPA_lamd')
+        lam_d = Constraints.QPA_lamd;
+    end
     if lam_d > 0
         Tb_pre = InitialParams.prevstate.Tb(:);
         if numel(Tb_pre) ~= 4 || any(~isfinite(Tb_pre)), Tb_pre = zeros(4,1); end
