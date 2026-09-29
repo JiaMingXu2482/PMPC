@@ -1,5 +1,64 @@
 # 运行配置
 
+## 在 CarSim 手动改 R69 初速度并运行
+
+1. 首次使用时重启 CarSim，让新建的 Run 出现在列表中。只选 **PMPC** 类别中的 `JT72_R69_mu0.85_PMPC`、`_MPC` 或 `_ZENG`，不要选旧的 `JT80` Run。进入其 **Procedure**：`J-turn 72km/h, Mu=0.85`。修改初速度 `SV_VXS`（界面单位 **km/h**；20 m/s 填 **72 km/h**）并保存。这三个 Run 共用该 Procedure，只需改一次速度。
+2. 逐个选择三个 Run，分别点击 **Send to Simulink**。每 Send 一个，就在项目根目录的 MATLAB 命令行执行一次：
+
+   ```matlab
+   run_current_carsim
+   ```
+
+   结果写入该 Run 在 CarSim 中的 `LastRun`，可直接用 CarSim Plot 查看；画图时也要选新的 `JT72` Run，不要继续叠加旧 `JT80` 结果。执行前脚本会核对当前有效初速度与 Send 后的展开值；若未重新 Send，会直接报错而不会用旧车速运行。
+
+三个 Run 的纵向设置相同，ZENG 独有纵向限速设为 0。运行中实际车速可能因各控制器的制动力不同而分开。`JT72` 是当前数据集名称；以后改车速后可在 CarSim 中按新速度重命名，避免图例误导。
+
+---
+
+## NLCSNN 减振器配置
+
+MPC、ZENG 和 PMPC 全部使用同一个 NLCSNN 包络和被控对象，不再使用
+`func_MRDamper` 或 `func_DamperActuator` 作为三个控制器的实际减振器。默认参数：
+
+| 参数 | 默认值 |
+|---|---:|
+| `PMPC_NLCSNN` | `1`（启用） |
+| 电流范围 | `0~1.6 A` |
+| 初始电流 | `0 A` |
+| 温度 | `42.5 degC` |
+| 参考长度 `x_ref` | `281.0645 mm` |
+| 控制周期 | `0.01 s` |
+| 加速度低通时常数 | `0.02 s` |
+
+旧的 `PMPC_DMP_ACT` 一阶延迟在 NLCSNN 启用时不进入主路径；NLCSNN 自己的
+8 维隐状态和电流反演描述真实执行器动态。若要显式回退到旧模型：
+
+```matlab
+PMPC_NLCSNN = 0;
+```
+
+### CarSim 54 路 Export 顺序
+
+原有 1–50 路顺序不变；只在末尾追加：
+
+| 通道 | CarSim 变量 |
+|---:|---|
+| 51 | `CmpD_L1` |
+| 52 | `CmpD_L2` |
+| 53 | `CmpD_R1` |
+| 54 | `CmpD_R2` |
+
+`CmpD`/`CmpRD` 在 CarSim 中以压缩为正，适配器只在一个位置转换为 NLCSNN
+的回弹为正约定。切换 Run Control、修改工况或车速后，必须重新点击
+**Send to Simulink**；这会重新生成 `Run_all.par` 和 `simfile.sim`。发送后确认
+`simfile.sim` 中是 `PORTS_EXP 1,54`，然后只需一条命令：
+
+```matlab
+run_current_carsim
+```
+
+---
+
 三个 base workspace 变量控制运行模式。都在 `mdlInitializeSizes` 里读取，
 **必须在仿真开始前设好**。仿真启动时命令窗口会打印一行配置横幅，以此确认。
 
