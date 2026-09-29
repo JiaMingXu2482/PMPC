@@ -17,6 +17,16 @@ startup_pmpc();
 
 InitialParams = localInitialParams();
 
+% ---- NLCSNN CDC model shared by MPC, ZENG, and PMPC ----
+NLCSNN = struct();
+NLCSNN.enabled = logical(localWsget('PMPC_NLCSNN', 1));
+NLCSNN.net = nlcsnn_damper_init();
+NLCSNN.i_max = 1.6;
+NLCSNN.temp = 42.5;
+NLCSNN.x_ref = 281.0645;
+NLCSNN.dt = 0.01;
+NLCSNN.tau_accel = 0.02;
+
 %% ==== 运行配置 (详见 README_运行配置.md) ====
 InitialParams.BaselineMode    = localWsget('PMPC_BASELINE',   0);   % 1=无控制baseline
 InitialParams.BaselineCurrent = localWsget('PMPC_BASELINE_I', 2.0); % A, baseline 时 MR 电流
@@ -536,10 +546,11 @@ P.TireR = TireR;
 %  上面那 16 个扁平字段保留不动 —— S-function 那条路还在用。
 P.Pm = struct('MPCParameters',MPCParameters, 'CostWeights',CostWeights, ...
               'DiscreteModle',DiscreteModle, ...
-              'Reftraj',Reftraj, 'TireF',TireF, 'TireR',TireR);
+              'Reftraj',Reftraj, 'TireF',TireF, 'TireR',TireR, ...
+              'NLCSNN',NLCSNN);
 P.S0 = struct('InitialParams',InitialParams, 'WarmStart',WarmStart, 'rho',rho, ...
               'VehiclePara',VehiclePara, 'Constraints',Constraints, ...
-              'cert', nan(24, 1));   % 记录用(不参与控制), 布局随 PrioMode 而异, 见 cert_replay.m
+              'cert', nan(36, 1));   % 固定证书布局，供 MATLAB Function 状态推断和离线回放
 
 % 没有输出参数时, 顺手写进 base 工作区
 if nargout == 0
@@ -570,6 +581,9 @@ Pa.prevstate.Tb = zeros(4,1);
 Pa.prevstate.Fd = zeros(4,1);
 Pa.prevstate.s_act = -ones(4,1);
 Pa.prevstate.Vd = zeros(4,1);
+Pa.prevstate.nlcsnn = struct('h', zeros(8,4), ...
+    'i_prev', zeros(4,1), 'v_prev', zeros(4,1), ...
+    'a_filt', zeros(4,1), 'initialized', false);
 Pa.prevstate.gamma = [0; 0; 1];
 Pa.prevstate.Vpid = NaN;
 Pa.prevstate.iA = false(0,1);

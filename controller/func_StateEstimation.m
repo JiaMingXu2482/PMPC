@@ -5,13 +5,14 @@ function [VehStatemeasured, HATParameter] = func_StateEstimation(ModelInput,Vehi
 % Update the state vector according to the input of the S function,
 %           usually do State Estimation from measured Vehicle Configuration
 %***************************************************************%
-%   ModelInput : 50x1, **顺序就是 CarSim 的 I/O Channels: Export 列表**
+%   ModelInput : 54x1, **顺序就是 CarSim 的 I/O Channels: Export 列表**
 %                (1 CmpRD_L1 .. 4 CmpRD_R2, 5 Alpha_L1 .. 8, 9 Fx .. 12,
 %                 13 Fy .. 16, 17 Fz .. 20, 21 Fd .. 24, 25 AVy .. 28,
 %                 29 My_Dr .. 32, 33 AVx, 34 AVz, 35 Ax, 36 Ay, 37 Beta,
 %                 38 Roll, 39 Yaw, 40 Xo, 41 Yo, 42 Vx, 43 Vy, 44 AAx,
 %                 45 AAz, 46 Steer_L1, 47 Steer_R1, 48 Steer_SW,
-%                 49 VxTarget, 50 LTR)
+%                 49 VxTarget, 50 LTR, 51 CmpD_L1, 52 CmpD_L2,
+%                 53 CmpD_R1, 54 CmpD_R2)
 %
 %   ⚠️ 2026-09-18 从 62 路改成 50 路: CarSim 的 Export 去掉了 CmpD_* / Zgnd_* /
 %   Z_* 共 12 路(旧编号 5-16), 这里所有下标跟着重编 —— 旧的 n(>=17) 对应新的 n-12。
@@ -20,12 +21,21 @@ function [VehStatemeasured, HATParameter] = func_StateEstimation(ModelInput,Vehi
     %******输入接口转换***%        
     g = 9.81;
 %% ---- codegen: 结构体被读取后不能再加新字段, 先声明全部字段 ----
-VehStatemeasured = struct('V_l1',0, 'V_l2',0, 'V_r1',0, 'V_r2',0, 'X',0, 'Y',0, 'x_dot',0, 'y_dot',0, 'Yaw',0, 'Yawrate',0, 'Yawaccel',0, 'beta',0, 'delta_l',0, 'delta_r',0, 'Steer_SW',0, 'Ax',0, 'Ay',0, 'omega_L1',0, 'omega_L2',0, 'omega_R1',0, 'omega_R2',0, 'VxTarget',0, 'delta_f',0);
+VehStatemeasured = struct('V_l1',0, 'V_l2',0, 'V_r1',0, 'V_r2',0, ...
+    'D_l1',0, 'D_l2',0, 'D_r1',0, 'D_r2',0, ...
+    'X',0, 'Y',0, 'x_dot',0, 'y_dot',0, 'Yaw',0, 'Yawrate',0, ...
+    'Yawaccel',0, 'beta',0, 'delta_l',0, 'delta_r',0, 'Steer_SW',0, ...
+    'Ax',0, 'Ay',0, 'omega_L1',0, 'omega_L2',0, 'omega_R1',0, ...
+    'omega_R2',0, 'VxTarget',0, 'delta_f',0);
 HATParameter = struct('Roll',0, 'Rollrate',0, 'Rollaccel',0, 'alpha_l1',0, 'alpha_l2',0, 'alpha_r1',0, 'alpha_r2',0, 'Fx_l1',0, 'Fx_l2',0, 'Fx_r1',0, 'Fx_r2',0, 'Fy_l1',0, 'Fy_l2',0, 'Fy_r1',0, 'Fy_r2',0, 'Fz_l1',0, 'Fz_l2',0, 'Fz_r1',0, 'Fz_r2',0, 'Fd_L1',0, 'Fd_L2',0, 'Fd_R1',0, 'Fd_R2',0, 'Td_L1',0, 'Td_L2',0, 'Td_R1',0, 'Td_R2',0, 'LTR',0, 'MFx',0, 'Fyf',0, 'Fyr',0, 'Md',0, 'alphaf',0, 'alphar',0, 'Fzf',0, 'Fzr',0, 'Fxf',0, 'Fxr',0);
     VehStatemeasured.V_l1       = ModelInput(1)/1000;
     VehStatemeasured.V_l2       = ModelInput(2)/1000;
     VehStatemeasured.V_r1       = ModelInput(3)/1000;
     VehStatemeasured.V_r2       = ModelInput(4)/1000;
+    VehStatemeasured.D_l1       = ModelInput(51); % mm, CarSim compression positive
+    VehStatemeasured.D_l2       = ModelInput(52);
+    VehStatemeasured.D_r1       = ModelInput(53);
+    VehStatemeasured.D_r2       = ModelInput(54);
     VehStatemeasured.X       = ModelInput(40);%单位为m, 保留2位小数
     VehStatemeasured.Y       = ModelInput(41);%单位为m, 保留2位小数    
     VehStatemeasured.x_dot   = ModelInput(42)/3.6; %Unit:km/h-->m/s，保留1位小数  
