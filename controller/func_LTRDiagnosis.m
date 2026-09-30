@@ -34,7 +34,7 @@ bta     = 2/(m*g*tf);
 % a_y 对状态/输入的系数（与 func_Envelope 的 c_ay/d_ay 逐项同式）
 cd_f = cos(delta_f);
 c_ay = [ (CbF*cd_f + CbR)/(m*Vel), ...
-         (CbF*lf_v*cd_f - CbR*lr_v)/(m*Vel), 0, 0, 0, 0, 0 ];   % 第 7 列 Md_a 不进 a_y
+         (CbF*lf_v*cd_f - CbR*lr_v)/(m*Vel), zeros(1,Nx-2) ];
 d_ay = [ -CbF*cd_f/m, 0, 0 ];
 
 %% ---- CarSim 真值 ----
@@ -67,8 +67,13 @@ u_Npdc   = U_pred_Nc(bu+1 : bu+Nu);   % [Fyf; MFx; Md]
 Md_Npdc  = u_Npdc(3);
 
 ay_Npdc  = c_ay*xi_Npdc + d_ay*u_Npdc;
-%  2026-09-25: 与 LTR 约束一致, 用预测的已建立力矩 Md_a(状态第 7 个), 不再用指令
-Md_Npdc  = xi_Npdc(7);
+% Delay-aware predictors use the established aggregate moment. The six-state
+% MPC deliberately has no actuator-delay state, so its no-delay command is used.
+if Nx == 7
+    Md_Npdc = xi_Npdc(7);
+else
+    Md_Npdc = u_Npdc(3);
+end
 LTR_Npdc = bta*( kappa_g*ay_Npdc + Kt*phi_Npdc + Md_Npdc );
 
 end

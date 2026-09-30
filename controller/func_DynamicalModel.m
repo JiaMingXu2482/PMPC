@@ -52,7 +52,7 @@ Vel     = VehStateMeasured.x_dot;
 delta_f = VehStateMeasured.delta_f;
 
 Np = MPCParameters.Np;
-Nx = MPCParameters.Nx;
+Nx = coder.const(MPCParameters.Nx);
 Nu = MPCParameters.Nu;
 Ts = MPCParameters.Ts;
 
@@ -72,8 +72,12 @@ StateSpaceModel.off_valid = false;
 
 if nargin < 5 || isempty(LTV)
     %% ============ 方案二: 单工作点, 时域内冻结 ============
-    [A,B,D] = local_ABD(P, CbF, CbR, Vel_eff, cos(delta_f));
-    [A,B,D] = local_delay(A, B, D, MPCParameters.tau_d);   % + Md_a 时延状态
+    [A6,B6,D6] = local_ABD(P, CbF, CbR, Vel_eff, cos(delta_f));
+    if Nx == 7
+        [A,B,D] = local_delay(A6, B6, D6, MPCParameters.tau_d);
+    else
+        A = A6; B = B6; D = D6;
+    end
     [~,~,~, Aa,Ba,Da] = local_disc(A,B,D,Ts,Mode,Nx,Nu);
     for i = 1:Np
         StateSpaceModel.A_aug(:,:,i) = Aa;
@@ -130,8 +134,12 @@ for i = 1:Np
     off(2,i) = fbr - cbr*ar;
 
     % --- 该节点的状态空间矩阵 ---
-    [A,B,D] = local_ABD(P, cbf, cbr, Vel_eff, cos(dtot));
-    [A,B,D] = local_delay(A, B, D, MPCParameters.tau_d);
+    [A6,B6,D6] = local_ABD(P, cbf, cbr, Vel_eff, cos(dtot));
+    if Nx == 7
+        [A,B,D] = local_delay(A6, B6, D6, MPCParameters.tau_d);
+    else
+        A = A6; B = B6; D = D6;
+    end
     [Ad,Bd,Dd, Aa,Ba,Da] = local_disc(A,B,D,Ts,Mode,Nx,Nu);
     StateSpaceModel.A_aug(:,:,i) = Aa;
     StateSpaceModel.B_aug(:,:,i) = Ba;

@@ -5,8 +5,8 @@ function [x_opt, exitflag, delta_U_first, rho_val, epsilon_val, WarmStart, cert]
 %                    eps_j = 0 时 <= 1 (< 1 即精确罚条件成立), eps_j > 0 时 > 1
 %    cert(Ne+1:end)  执行器证书 rho_gamma_j = 1'mu_j / (Nc*W_gamma_j)
 %                    gamma_j = 0 时 <= 1 (< 1 即命题 4 条件成立), gamma_j > 0 时 > 1
-%    PrioMode (Ne=2, Nr=1): cert(1:2) = 1'lambda_l / w_l (两层), cert(4) = DB 净乘子和 / W_b,
-%                    cert(3)、cert(5) 为 NaN。
+%    PrioMode (Ne=8, Nr=3 的统一编译布局): cert(1:8) 为通用松弛证书，
+%                    cert(10) 为 DB 净乘子和 / W_b，cert(9)、cert(11) 为 NaN。
 %    求解失败或非 KWIK 路径时为 NaN。
 %  KWIK 的活动集热启动在 func_QPKwik 内部用 persistent 维护。
 %  MPCParameters.QPSolver: 0 = quadprog(默认,与原版逐位等价) / 1 = KWIK

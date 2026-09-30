@@ -1,11 +1,31 @@
-function info = run_current_carsim(simfile)
-%RUN_CURRENT_CARSIM Run the CarSim dataset most recently sent to Simulink.
+function info = run_current_carsim(simfile, model)
+%RUN_CURRENT_CARSIM Run the current CarSim dataset with one fixed model.
 %   In CarSim: edit Procedure speed -> Send to Simulink.
-%   In MATLAB, from the project root: run_current_carsim
+%   In MATLAB: run_current_carsim('mpc_mil'|'zeng_mil'|'pmpc_mil')
 %   A relative .sim path can be supplied for an isolated verification run.
 
 root = startup_pmpc();
-if nargin < 1 || isempty(simfile), simfile = 'simfile.sim'; end
+validModels = {'mpc_mil','zeng_mil','pmpc_mil'};
+if nargin < 1 || isempty(simfile)
+    simfile = 'simfile.sim';
+end
+if nargin < 2 || isempty(model)
+    if ischar(simfile) || isstring(simfile)
+        candidate = char(simfile);
+        if any(strcmp(candidate, validModels))
+            model = candidate;
+            simfile = 'simfile.sim';
+        else
+            model = 'pmpc_mil';
+        end
+    else
+        model = 'pmpc_mil';
+    end
+end
+if ~any(strcmp(model, validModels))
+    error('run_current_carsim:InvalidModel', ...
+        'model must be mpc_mil, zeng_mil, or pmpc_mil.');
+end
 if ~ischar(simfile) && ~isstring(simfile)
     error('run_current_carsim:BadSimfile', 'simfile 必须是文件路径。');
 end
@@ -50,34 +70,35 @@ assert(~isempty(vAll) && abs(vAll(end) - requested) < 1e-9, ...
     'CarSim 当前设定 %.3f km/h，但 Send 后输入仍是 %.3f km/h；请重新 Send to Simulink。', ...
     requested, vAll(end));
 
-func_SimModel(expanded);
+func_SimModel(expanded, model);
 assert(func_CarSimRunning(), 'run_current_carsim:NoCarSim', ...
     '请保持 CarSim Browser 运行。');
 func_CarSimLib();
-evalin('base', 'clear PMPC_SIMFILE PMPC_MODE PMPC_ZENGRHO PMPC_P');
+evalin('base', 'clear PMPC_SIMFILE PMPC_MODE PMPC_ZENGRHO PMPC_P MPC_P ZENG_P');
 assignin('base', 'PMPC_SIMFILE', simfile);
 clearOverride = onCleanup(@() evalin('base', 'clear PMPC_SIMFILE')); %#ok<NASGU>
-if ~evalin('base', 'exist(''PMPC_VERBOSE'',''var'')')
-    assignin('base', 'PMPC_VERBOSE', 0);
+switch model
+    case 'mpc_mil',  mil_init_MPC;
+    case 'zeng_mil', mil_init_ZENG;
+    case 'pmpc_mil', mil_init_PMPC;
 end
-evalin('base', 'setup_pmpc;');
 
-load_system('pmpc_mil');
+load_system(model);
 modelSimfile = strrep(simfile, [root filesep], '');
-set_param('pmpc_mil/CarSim', 'SIMFILE', modelSimfile);
+set_param([model '/CarSim'], 'SIMFILE', modelSimfile);
 logfile = fullfile(resdir, 'LastRun_log.txt');
 oldLog = dir(logfile);
 if isempty(oldLog), logstamp = 0; else, logstamp = oldLog.datenum; end
 fprintf('当前 CarSim Run：%s，初速度 %.3f km/h (%.3f m/s)。\n', ...
     sourceName, requested, requested/3.6);
-sim('pmpc_mil');
+sim(model);
 func_WaitERD(resdir, logstamp);
 D = func_ReadERD(fullfile(resdir, 'LastRun'));
 assert(strcmp(D.Dataset, sourceName) && abs(D.Vx(1) - requested) < 0.05, ...
     'run_current_carsim:WrongResult', ...
     '结果标签或实际初速度不匹配：%s / %.3f km/h。', D.Dataset, D.Vx(1));
 info = struct('name', sourceName, 'speed_kmh', requested, ...
-              'resdir', resdir, 't_end', D.t(end));
+              'resdir', resdir, 't_end', D.t(end), 'model', model);
 fprintf('CarSim 结果已生成：%s (实际初速度 %.3f km/h)。\n', ...
     resdir, D.Vx(1));
 end

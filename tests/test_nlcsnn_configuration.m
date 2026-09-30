@@ -22,12 +22,13 @@ verifyTrue(testCase, P.Pm.NLCSNN.enabled);
 verifyEqual(testCase, P.Pm.NLCSNN.i_max, 1.6, 'AbsTol', 0);
 verifyEqual(testCase, P.Pm.NLCSNN.temp, 42.5, 'AbsTol', 0);
 verifyEqual(testCase, P.Pm.NLCSNN.x_ref, 281.0645, 'AbsTol', 0);
+verifyEqual(testCase, P.Pm.NLCSNN.dt_plant, 0.001, 'AbsTol', 0);
+verifyEqual(testCase, P.Pm.NLCSNN.tau_accel, 0.04, 'AbsTol', 0);
 verifySize(testCase, P.Pm.NLCSNN.net.Wx1, [256 63]);
-verifySize(testCase, P.S0.InitialParams.prevstate.nlcsnn.h, [8 4]);
+% Multirate (2026-09-29): the controller state keeps only i_prev; the
+% plant Unit Delays own h / v_prev / a_filt / initialized.
 verifySize(testCase, P.S0.InitialParams.prevstate.nlcsnn.i_prev, [4 1]);
-verifySize(testCase, P.S0.InitialParams.prevstate.nlcsnn.v_prev, [4 1]);
-verifySize(testCase, P.S0.InitialParams.prevstate.nlcsnn.a_filt, [4 1]);
-verifyFalse(testCase, P.S0.InitialParams.prevstate.nlcsnn.initialized);
+verifyFalse(testCase, isfield(P.S0.InitialParams.prevstate.nlcsnn, 'h'));
 end
 
 function testStateEstimationAppendsDisplacementWithoutRenumbering(testCase)
@@ -44,7 +45,8 @@ end
 
 function testPmpcBlockRejectsLegacyInputSize(testCase)
 P = setup_pmpc();
-verifyError(testCase, @() pmpc_block(zeros(50,1), P), ...
+verifyError(testCase, @() pmpc_block(zeros(50,1), zeros(8,4), ...
+    zeros(4,1), zeros(4,1), zeros(4,1), P), ...
     'pmpc_block:InvalidInputSize');
 end
 

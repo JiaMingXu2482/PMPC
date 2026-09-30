@@ -24,8 +24,19 @@ NLCSNN.net = nlcsnn_damper_init();
 NLCSNN.i_max = 1.6;
 NLCSNN.temp = 42.5;
 NLCSNN.x_ref = 281.0645;
-NLCSNN.dt = 0.01;
-NLCSNN.tau_accel = 0.02;
+NLCSNN.dt_plant = 0.001;   % 1 kHz plant 步长 (多速率: 正模型在 plant 侧跑)
+% 旧 NLCSNN.dt = 0.01 是 10 ms 控制器宏步, 新架构下正/逆模型不再共用, 已弃用
+% Causal vehicle-side acceleration preprocessing only. It does not delay
+% the 100 Hz current command or the NLCSNN hidden-state force response.
+% 0.04 s suppresses the 15--16 Hz finite-difference feedback that produced
+% late-run wheel-hop in DLC/J-turn while preserving the 1 kHz plant update.
+NLCSNN.tau_accel = 0.04;
+% Smooth 1 kHz dissipative projection after the neural forward model.
+% c_min is the measured 1.6 A soft-state equivalent damping at 1.66 Hz;
+% it prevents an out-of-training-band neural prediction from removing all
+% wheel-hop damping. Units: c_min [N/(mm/s)], v_eps [mm/s],
+% power_eps [N*mm/s].
+NLCSNN.passivity = struct('c_min', 0.8, 'v_eps', 5, 'power_eps', 50);
 
 %% ==== 运行配置 (详见 README_运行配置.md) ====
 InitialParams.BaselineMode    = localWsget('PMPC_BASELINE',   0);   % 1=无控制baseline
@@ -340,17 +351,13 @@ MPCParameters.PrioMode = 0;
 Constraints.prio_vartheta = 2;
 Constraints.prio_wmin  = 1;
 Constraints.prio_wmax  = [1e10; 1e8];     % [w1 上限; w2 上限], w1 须能压过 w2*|delta2|/delta1
-%  状态 [Vy r phi dphi ey epsi Md_a] (2026-09-25 加阻尼器时延状态 Md_a, 论文 III-A):
-%  tau_d*dMd_a/dt = -Md_a + Md_c; 侧倾与 LTR 只经 Md_a 受阻尼器作用。
-MPCParameters.Nx = 7;
-MPCParameters.Ny = 7;
-%  NLCSNN directly models the damper state/current dynamics. Keep Nx=7 for
-%  a fixed QP, but make the legacy aggregate delay state near-instant.
-if NLCSNN.enabled
-    MPCParameters.tau_d = 1e-4;
-else
-    MPCParameters.tau_d = Constraints.tau_MR;
-end
+%  控制器变体在“对比模式”段确定后再设置状态维度：
+%    1 = MPC  : [Vy r phi dphi ey epsi]，不在 QP 中建执行器时延；
+%    2 = ZENG : 上述 6 状态 + Md_a 执行器时延状态；
+%    3 = PMPC : 上述 6 状态 + Md_a 执行器时延状态。
+%  三个变体仍共用 NLCSNN 正/逆模型；这里的 Nx 只决定车辆预测 QP 是否显式
+%  传播一个聚合阻尼力矩状态。
+ControllerVariant = localWsget('PMPC_CONTROLLER_VARIANT', 0);
 %  被控对象侧的阻尼器执行器模型(一阶滞后作用在"力在上下界间的位置"上, 保耗散):
 %  1 = 开(与预测模型一致), 0 = 关(阻尼力当拍直达 CarSim, 即 2026-09-25 前的行为)
 Constraints.dmp_act_on = localWsget('PMPC_DMP_ACT', double(~NLCSNN.enabled));
@@ -429,8 +436,45 @@ DiscreteModle = 4;  % 1=Euler; 2=Taylor4; 3=FOH; 4=精确 ZOH(expm)
 %      baseline 权重会把"权重不同"和"机制不同"混在一起。
 %  先进对比方法(Zeng 2025)在 baseline MPC 基础上开 Constraints.ZengRho_on。
 [md_auto, zg_auto, ds_auto] = func_RunMode();   % 从数据集名自动识别
-ContrlMode    = localWsget('PMPC_MODE', md_auto);
-Constraints.ZengRho_on = localWsget('PMPC_ZENGRHO', zg_auto);
+if ControllerVariant == 1
+    ContrlMode = 2; Constraints.ZengRho_on = 0;
+elseif ControllerVariant == 2
+    ContrlMode = 2; Constraints.ZengRho_on = 1;
+elseif ControllerVariant == 3
+    ContrlMode = 1; Constraints.ZengRho_on = 0;
+elseif ControllerVariant == 0
+    ContrlMode    = localWsget('PMPC_MODE', md_auto);
+    Constraints.ZengRho_on = localWsget('PMPC_ZENGRHO', zg_auto);
+else
+    error('setup_pmpc:InvalidControllerVariant', ...
+        'PMPC_CONTROLLER_VARIANT must be 0 (auto), 1 (MPC), 2 (ZENG), or 3 (PMPC).');
+end
+% 旧的模式开关仍可直接驱动默认模型；把它归一化为显式变体字段，便于
+% MATLAB Function block、测试和三套独立 slx 使用同一份参数结构。
+if ControllerVariant == 0
+    if ContrlMode == 1
+        ControllerVariant = 3;
+    elseif Constraints.ZengRho_on
+        ControllerVariant = 2;
+    else
+        ControllerVariant = 1;
+    end
+end
+if ControllerVariant == 1
+    MPCParameters.Nx = 6;
+    MPCParameters.Ny = 6;
+    MPCParameters.tau_d = 0;       % 明确不调用 local_delay
+else
+    MPCParameters.Nx = 7;
+    MPCParameters.Ny = 7;
+    % NLCSNN 自身在 plant 侧以 1 kHz 正模型推进；控制器的 7 状态
+    % 仍保留文献中的聚合阻尼器执行器滞后预测。
+    % 当前固定为 15 ms；func_DamperDelayTau 预留后续按四角减振器状态
+    % 查表得到 tau_j 后取 max(tau_j) 的保守聚合规则。
+    MPCParameters.tau_d = func_DamperDelayTau(zeros(4,1), zeros(4,1), ...
+        zeros(4,1), Constraints.tau_MR);
+end
+MPCParameters.ControllerVariant = ControllerVariant;
 ctlStr = {'① 固定权重 MPC (无 sigma/gamma)','② Zeng rho 调权','③ 本文 PMPC'};
 if ContrlMode==1, ic=3; elseif Constraints.ZengRho_on, ic=2; else ic=1; end
 disp(['  数据集 ' ds_auto '   ->   控制器 ' ctlStr{ic}]);
@@ -559,6 +603,10 @@ P.S0 = struct('InitialParams',InitialParams, 'WarmStart',WarmStart, 'rho',rho, .
 % 没有输出参数时, 顺手写进 base 工作区
 if nargout == 0
     assignin('base','PMPC_P',P);
+    % 多速率 (2026-09-29): NLCSNN_Plant/plant_fn 的 Scope=Parameter 叫 NLCSNN,
+    % 值从 base workspace 取. 不导出的话 sim 会报
+    % "参数 'NLCSNN' 中的 'NLCSNN_Plant/plant_fn' 设置无效 / 变量 'NLCSNN' 无法识别".
+    assignin('base','NLCSNN',P.Pm.NLCSNN);
     fprintf('  PMPC_P 已写入工作区 (%d 个字段)\n', numel(fieldnames(P)));
     clear P
 end
@@ -585,9 +633,9 @@ Pa.prevstate.Tb = zeros(4,1);
 Pa.prevstate.Fd = zeros(4,1);
 Pa.prevstate.s_act = -ones(4,1);
 Pa.prevstate.Vd = zeros(4,1);
-Pa.prevstate.nlcsnn = struct('h', zeros(8,4), ...
-    'i_prev', zeros(4,1), 'v_prev', zeros(4,1), ...
-    'a_filt', zeros(4,1), 'initialized', false);
+% The 1 kHz NLCSNN_Forward_1kHz subsystem owns h/v/a filter state.
+% The 100 Hz controller retains only the previous inverse-solver current.
+Pa.prevstate.nlcsnn = struct('i_prev', zeros(4,1));
 Pa.prevstate.gamma = [0; 0; 1];
 Pa.prevstate.Vpid = NaN;
 Pa.prevstate.iA = false(0,1);

@@ -1,9 +1,16 @@
-function mdl = func_SimModel(allPar)
-%FUNC_SIMMODEL  Verify that a CarSim run is configured for pmpc_mil.
-%   PMPC now has one Simulink model only. A stale CarSim dataset that still
-%   points elsewhere is rejected explicitly instead of running the wrong model.
+function mdl = func_SimModel(allPar, expectedModel)
+%FUNC_SIMMODEL  Verify an explicit CarSim/Simulink model pairing.
+%   expectedModel is optional for legacy callers and defaults to pmpc_mil.
 
-mdl = 'pmpc_mil';
+if nargin < 2 || isempty(expectedModel)
+    expectedModel = 'pmpc_mil';
+end
+validModels = {'mpc_mil','zeng_mil','pmpc_mil'};
+if ~any(strcmp(expectedModel, validModels))
+    error('func_SimModel:InvalidExpectedModel', ...
+        'expectedModel must be mpc_mil, zeng_mil, or pmpc_mil.');
+end
+mdl = expectedModel;
 if exist(allPar,'file') ~= 2
     warning('func_SimModel:NoPar', '找不到 %s, 退回默认模型 %s', allPar, mdl);
     return
@@ -22,6 +29,7 @@ if isempty(nm)
 end
 if ~strcmp(nm, mdl)
     error('func_SimModel:WrongModel', ...
-        'CarSim 数据集仍指向模型 %s；请改为 pmpc_mil 后重新 Send to Simulink。', nm);
+        'CarSim 数据集指向模型 %s；当前控制器需要 %s，请修改后重新 Send to Simulink。', ...
+        nm, mdl);
 end
 end

@@ -3,7 +3,7 @@ tests = functiontests(localfunctions);
 end
 
 function testPredictorMatchesStepStartForce(testCase)
-[net, cfg, state] = fixture();
+[net, cfg] = fixture();
 x = 276.2;
 v = -37.0;
 a = 125.0;
@@ -12,98 +12,105 @@ h = linspace(-0.2, 0.2, 8)';
 
 F_predict = nlcsnn_predict_force(net, x, v, a, curr, cfg.temp, h);
 [F_step, ~] = nlcsnn_damper_step(net, x, v, a, curr, 0, ...
-    cfg.temp, cfg.dt, h);
+    cfg.temp, cfg.dt_plant, h);
 
 verifyEqual(testCase, F_predict, F_step, 'AbsTol', 1e-9);
-verifySize(testCase, state.h, [8 4]);
 end
 
-function testCompressionMapping(testCase)
-[net, cfg, state] = fixture();
-cmpD = [1; 2; 3; 4];
-cmpRD = [10; -20; 30; -40];
+function testPlantKinematicsMapping(testCase)
+% Multirate (2026-09-29): the plant owns the CarSim->NLCSNN kinematics and
+% the first-step accel guard; the controller only reads (x,v,a,h).
+[net, cfg] = fixture();
+cmpD = [1; 2; 3; 4];        % CarSim order [L1;L2;R1;R2]
+cmpRD = [10; -20; 30; -40]; % CarSim order, [mm/s]
 
-[ctx, state] = func_NLCSNNContext(net, cmpD, cmpRD, state, cfg);
+[~, ~, ~, ~, ~, xp, vp_, ap] = func_NLCSNNPlant4(net, cmpD, cmpRD, ...
+    zeros(4,1), zeros(8,4), zeros(4,1), zeros(4,1), 0, cfg);
 
-verifyEqual(testCase, ctx.x, cfg.x_ref - cmpD, 'AbsTol', 0);
-verifyEqual(testCase, ctx.v, -cmpRD, 'AbsTol', 0);
-verifyEqual(testCase, ctx.a, zeros(4,1), 'AbsTol', 0);
+o = [1 3 2 4];  % CarSim -> controller [L1;R1;L2;R2]
+verifyEqual(testCase, xp, cfg.x_ref - cmpD(o), 'AbsTol', 0);
+verifyEqual(testCase, vp_, -cmpRD(o), 'AbsTol', 0);
+verifyEqual(testCase, ap, zeros(4,1), 'AbsTol', 0);  % no spike, init = 0
+
+ctx = func_NLCSNNContext(net, xp, vp_, ap, zeros(8,4), cfg);
 verifyLessThanOrEqual(testCase, ctx.F_lo, ctx.F_hi);
 verifyEqual(testCase, ctx.F_center, 0.5*(ctx.F_lo+ctx.F_hi), ...
     'AbsTol', 1e-12);
-verifyTrue(testCase, state.initialized);
 end
 
-function testCornerStatesAreIndependent(testCase)
-[net, cfg, stateA] = fixture();
-[ctxA, stateA] = func_NLCSNNContext(net, zeros(4,1), ...
-    [15; -25; 35; -45], stateA, cfg);
-stateB = stateA;
-stateB.h(:,2) = linspace(0.01, 0.08, 8)';
-ctxB = func_NLCSNNContext(net, zeros(4,1), ...
-    [15; -25; 35; -45], stateB, cfg);
-Fdes = ctxA.F_center;
+function testPlantCornerStatesAreIndependent(testCase)
+% The per-corner independence property moved with h into the plant.
+[net, cfg] = fixture();
+cmpD = zeros(4,1);
+cmpRD = [15; -25; 35; -45];   % CarSim order
+hA = zeros(8,4);
+hB = zeros(8,4);
+% NOTE: plant h is controller order [L1;R1;L2;R2]; perturb corner 2 (R1).
+hB(:,2) = linspace(0.01, 0.08, 8)';
+for k = 1:10
+    [~, hA, ~, ~, ~, ~, ~, ~] = func_NLCSNNPlant4(net, cmpD, cmpRD, ...
+        zeros(4,1), hA, zeros(4,1), zeros(4,1), 1, cfg);
+    [~, hB, ~, ~, ~, ~, ~, ~] = func_NLCSNNPlant4(net, cmpD, cmpRD, ...
+        zeros(4,1), hB, zeros(4,1), zeros(4,1), 1, cfg);
+end
 
-[~, ~, outA] = func_NLCSNNApply(net, ctxA, Fdes, stateA, cfg);
-[~, ~, outB] = func_NLCSNNApply(net, ctxB, Fdes, stateB, cfg);
-
-verifyEqual(testCase, outA.h(:,[1 3 4]), outB.h(:,[1 3 4]), ...
-    'AbsTol', 1e-12);
-verifyNotEqual(testCase, outA.h(:,2), outB.h(:,2));
+verifyEqual(testCase, hA(:,[1 3 4]), hB(:,[1 3 4]), 'AbsTol', 1e-12);
+verifyNotEqual(testCase, hA(:,2), hB(:,2));
 end
 
 function testCurrentIsBounded(testCase)
-[net, cfg, state] = fixture();
-[ctx, state] = func_NLCSNNContext(net, zeros(4,1), ...
-    [80; -80; 120; -120], state, cfg);
+[net, cfg] = fixture();
+[~, hp, ~, ~, ~, xp, vp_, ap] = func_NLCSNNPlant4(net, zeros(4,1), ...
+    [80; -80; 120; -120], zeros(4,1), ...
+    zeros(8,4), zeros(4,1), zeros(4,1), 0, cfg);
+ctx = func_NLCSNNContext(net, xp, vp_, ap, hp, cfg);
 Fdes = [1e9; -1e9; 1e9; -1e9];
 
-[Factual, icmd] = func_NLCSNNApply(net, ctx, Fdes, state, cfg);
+[i_cmd, F_pred, ~] = func_NLCSNNApply(net, ctx, Fdes, zeros(4,1), cfg);
 
-verifyGreaterThanOrEqual(testCase, icmd, zeros(4,1));
-verifyLessThanOrEqual(testCase, icmd, cfg.i_max*ones(4,1));
-verifyTrue(testCase, all(isfinite(Factual)));
+verifyGreaterThanOrEqual(testCase, i_cmd, zeros(4,1));
+verifyLessThanOrEqual(testCase, i_cmd, cfg.i_max*ones(4,1));
+verifyTrue(testCase, all(isfinite(F_pred)));
 end
 
 function testNearZeroAuthorityIsFinite(testCase)
-[net, cfg, state] = fixture();
-[ctx, state] = func_NLCSNNContext(net, zeros(4,1), zeros(4,1), ...
-    state, cfg);
+[net, cfg] = fixture();
+[~, hp, ~, ~, ~, xp, vp_, ap] = func_NLCSNNPlant4(net, zeros(4,1), ...
+    zeros(4,1), zeros(4,1), ...
+    zeros(8,4), zeros(4,1), zeros(4,1), 0, cfg);
+ctx = func_NLCSNNContext(net, xp, vp_, ap, hp, cfg);
 
-[Factual, icmd, state] = func_NLCSNNApply(net, ctx, ...
-    1e6*ones(4,1), state, cfg);
+[i_cmd, F_pred, i_prev_new] = func_NLCSNNApply(net, ctx, ...
+    1e6*ones(4,1), zeros(4,1), cfg);
 
-verifyTrue(testCase, all(isfinite(Factual)));
-verifyTrue(testCase, all(isfinite(icmd)));
-verifyTrue(testCase, all(isfinite(state.h(:))));
+verifyTrue(testCase, all(isfinite(F_pred)));
+verifyTrue(testCase, all(isfinite(i_cmd)));
+verifyTrue(testCase, all(isfinite(i_prev_new)));
 end
 
-function testNonFiniteAccelerationFallsBackSafely(testCase)
-[net, cfg, state] = fixture();
-[~, state] = func_NLCSNNContext(net, zeros(4,1), ...
-    [1; 2; 3; 4], state, cfg);
+function testNonFiniteInputsFallBackSafely(testCase)
+[net, cfg] = fixture();
+[Fp, hp, ~, ~, ~, xp, vp_, ap] = func_NLCSNNPlant4(net, ...
+    [NaN; 2; Inf; 4], [NaN; 5; Inf; 7], zeros(4,1), ...
+    zeros(8,4), zeros(4,1), zeros(4,1), 0, cfg);
+ctx = func_NLCSNNContext(net, xp, vp_, ap, hp, cfg);
+[i_cmd, F_pred, ~] = func_NLCSNNApply(net, ctx, ctx.F_center, ...
+    zeros(4,1), cfg);
 
-[ctx, state] = func_NLCSNNContext(net, [NaN; 2; Inf; 4], ...
-    [NaN; 5; Inf; 7], state, cfg);
-[Factual, icmd, state] = func_NLCSNNApply(net, ctx, ...
-    ctx.F_center, state, cfg);
-
-verifyTrue(testCase, all(isfinite(ctx.x)));
-verifyTrue(testCase, all(isfinite(ctx.v)));
-verifyTrue(testCase, all(isfinite(ctx.a)));
-verifyTrue(testCase, all(isfinite(Factual)));
-verifyTrue(testCase, all(isfinite(icmd)));
-verifyTrue(testCase, all(isfinite(state.h(:))));
+verifyTrue(testCase, all(isfinite(xp)));
+verifyTrue(testCase, all(isfinite(vp_)));
+verifyTrue(testCase, all(isfinite(ap)));
+verifyTrue(testCase, all(isfinite(Fp)));
+verifyTrue(testCase, all(isfinite(hp(:))));
+verifyTrue(testCase, all(isfinite(F_pred)));
+verifyTrue(testCase, all(isfinite(i_cmd)));
 end
 
-function [net, cfg, state] = fixture()
+function [net, cfg] = fixture()
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'controller'));
 addpath(fullfile(root, 'nlcsnn'));
 net = nlcsnn_damper_init(fullfile(root, 'nlcsnn', 'nlcsnn_weights.mat'));
-cfg = struct('dt', 0.01, 'temp', 42.5, 'i_max', 1.6, ...
+cfg = struct('dt_plant', 0.001, 'temp', 42.5, 'i_max', 1.6, ...
     'x_ref', 281.0645, 'tau_accel', 0.02);
-state = struct('h', zeros(8,4), 'i_prev', zeros(4,1), ...
-    'v_prev', zeros(4,1), 'a_filt', zeros(4,1), ...
-    'initialized', false);
 end

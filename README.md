@@ -5,7 +5,7 @@
 在 MATLAB 中把当前目录设为项目根目录，然后运行：
 
 ```matlab
-run_current_carsim
+run_current_carsim('pmpc_mil')
 ```
 
 运行前在 CarSim 中选定 Run Control，修改 Procedure 的初速度并点击 **Send to Simulink**。
@@ -30,7 +30,9 @@ MPC、ZENG 和 PMPC 现在共用 `nlcsnn/` 中的 CDC 减振器模型。默认�
 | `simulation_results/output/` | 新仿真的默认输出 |
 | `tests/` | MATLAB 自动化测试 |
 
-唯一模型 `pmpc_mil.slx`、`simfile.sim` 和 `setup_pmpc.m` 保留在根目录，以兼容 CarSim/Simulink 的相对路径。
+根目录保留三个固定控制器模型和 CarSim 句柄文件：`mpc_mil.slx`（6 状态、无预测时延）、
+`zeng_mil.slx`（7 状态、15 ms 时延）和 `pmpc_mil.slx`（7 状态、15 ms 时延）。三者共用
+NLCSNN、车辆参数、状态估计和 54 路 CarSim 接口。
 
 当前基准：`simulation_results/current/erd_0927_base/`。
 

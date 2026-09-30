@@ -11,6 +11,8 @@ P = setup_pmpc();
 verifyEqual(testCase, P.Pm.MPCParameters.Ne, 8);
 verifyEqual(testCase, P.Pm.MPCParameters.Nr, 3);
 verifySize(testCase, P.S0.cert, [36 1]);
-verifySize(testCase, P.S0.InitialParams.prevstate.nlcsnn.h, [8 4]);
+% Multirate (2026-09-29): the controller keeps only i_prev; h / v_prev /
+% a_filt / initialized moved to the 1 kHz plant Unit Delays.
 verifySize(testCase, P.S0.InitialParams.prevstate.nlcsnn.i_prev, [4 1]);
+verifyFalse(testCase, isfield(P.S0.InitialParams.prevstate.nlcsnn, 'h'));
 end

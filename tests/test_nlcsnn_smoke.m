@@ -11,15 +11,26 @@ end
 function testMpcZengAndPmpcAdvanceCommonPlant(testCase)
 mode = [2 2 1];
 zeng = [0 1 0];
+nxExpected = [6 7 7];
 for controller = 1:3
     [P, cleanup] = configuredController(mode(controller), zeng(controller)); %#ok<ASGLU>
     S = P.S0;
     S.InitialParams.InitialGapflag = 1;
+    % Multirate emulation (2026-09-29): the 1 kHz plant integrates between
+    % the 100 Hz controller ticks; i_cmd is ZOH-held across each 10 ms
+    % window. The hidden state h lives in the plant, not in S.
+    hp = zeros(8,4); afp = zeros(4,1); vpp = zeros(4,1); initp = 0;
+    i_hold = zeros(4,1);
     for step = 1:3
         u = deterministicInput(step);
-        [sys, S] = pmpc_step(u, P.Pm, S);
+        for k = 1:10
+            [~, hp, afp, vpp, initp, xp, vp_, ap] = func_NLCSNNPlant4( ...
+                P.Pm.NLCSNN.net, u(51:54), u(1:4), i_hold, ...
+                hp, afp, vpp, initp, P.Pm.NLCSNN);
+        end
+        [sys, S, i_hold] = pmpc_step(u, P.Pm, S, hp, xp, vp_, ap);
         verifyTrue(testCase, all(isfinite(sys(5:8))));
-        verifyTrue(testCase, all(isfinite(S.InitialParams.prevstate.nlcsnn.h(:))));
+        verifyTrue(testCase, all(isfinite(hp(:))));
         verifyGreaterThanOrEqual(testCase, ...
             S.InitialParams.prevstate.nlcsnn.i_prev, zeros(4,1));
         verifyLessThanOrEqual(testCase, ...
@@ -27,10 +38,9 @@ for controller = 1:3
             P.Pm.NLCSNN.i_max*ones(4,1));
     end
 
-    h = S.InitialParams.prevstate.nlcsnn.h;
-    verifySize(testCase, h, [8 4]);
-    verifyGreaterThan(testCase, max(max(abs(h-h(:,1)))), 0);
-    verifyEqual(testCase, P.Pm.MPCParameters.Nx, 7);
+    verifySize(testCase, hp, [8 4]);
+    verifyGreaterThan(testCase, max(max(abs(hp-hp(:,1)))), 0);
+    verifyEqual(testCase, P.Pm.MPCParameters.Nx, nxExpected(controller));
     verifyEqual(testCase, P.Pm.MPCParameters.Ne, 8);
     verifyEqual(testCase, P.Pm.MPCParameters.Nr, 3);
     verifySize(testCase, S.cert, [36 1]);

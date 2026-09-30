@@ -1,5 +1,5 @@
 function info = run_ds(tag, varargin)
-%RUN_DS  按 CarSim 数据集跑仿真; 控制器由数据集名自动决定
+%RUN_DS  按 CarSim 数据集跑仿真; 控制器和模型由 tag 显式决定
 %   run_ds('PMPC')          切到名字以 _PMPC 结尾的数据集并跑一次
 %   run_ds('PMPC','-nosim') 只切指向, 不跑
 %   run_ds('PMPC','-force') 展开结果过期也照跑(只发警告)
@@ -18,6 +18,7 @@ function info = run_ds(tag, varargin)
 %   run3b 就是对 MPC/ZENG/PMPC 三个 tag 依次调用本函数。
 
 dosim = true;  prefix = '';  force = false;
+model = func_ControllerModelForTag(tag);
 i = 1;
 while i <= numel(varargin)
     switch lower(varargin{i})
@@ -98,15 +99,14 @@ if ~strcmp(guid, curGuid)
 end
 fprintf('  数据集 -> %s  (Run_%s)\n', name, guid(1:8));
 
-%  项目只保留 pmpc_mil；func_SimModel 会拒绝仍指向旧模型的数据集。
 info = struct('name',name,'guid',guid,'resdir',fullfile(RES,['Run_' guid]), ...
-              'model','', 'nb',0);
-info.model = func_SimModel(fullfile(info.resdir,'Run_all.par'));
+              'model',model, 'nb',0);
+func_SimModel(fullfile(info.resdir,'Run_all.par'), info.model);
 if ~dosim, return; end
 
 %  ---- 跑 ----
 %  必须清掉, 否则工作区残留会盖掉 func_RunMode 的自动识别(见 wsget 优先级)
-evalin('base','clear PMPC_MODE PMPC_ZENGRHO');
+evalin('base','clear PMPC_MODE PMPC_ZENGRHO PMPC_P MPC_P ZENG_P');
 dl = dir(fullfile(info.resdir,'LastRun_log.txt'));
 if isempty(dl), ls0 = 0; else, ls0 = dl.datenum; end
 %  CarSim Browser 没开的话, vs_sf 会弹模态对话框把整个批量作业挂死(见
@@ -115,7 +115,14 @@ assert(func_CarSimRunning(), 'run_ds:NoCarSim', ...
       ['CarSim Browser (或 CSLM.exe) 没在运行 —— 求解器取不到许可。\n' ...
        '直接跑的话 vs_sf 会弹一个模态对话框, 在 matlab -batch 里没人点, ' ...
        '作业会一直挂着。\n先打开 CarSim 再跑。']);
-evalin('base','setup_pmpc;');
+switch info.model
+    case 'mpc_mil'
+        mil_init_MPC;
+    case 'zeng_mil'
+        mil_init_ZENG;
+    case 'pmpc_mil'
+        mil_init_PMPC;
+end
 func_CarSimLib();     % 独立会话(matlab -batch)里没有 CarSim 的库路径, 自己挂上
 evalc(sprintf('sim(''%s'');', info.model));
 info.nb = func_WaitERD(info.resdir, ls0);

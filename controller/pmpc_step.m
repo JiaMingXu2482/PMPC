@@ -1,17 +1,24 @@
-function [sys, St] = pmpc_step(u, Pm, St) %#codegen
+function [sys, St, i_cmd] = pmpc_step(u, Pm, St, h_plant, x_plant, v_plant, a_plant) %#codegen
 %PMPC_STEP  每拍的控制运算 (原 cq32019mpc 的 mdlOutputs 实体)
 %
 %   注: 变量名用 Pm/St 而非 P/S —— body 里 'S' 已被代价权重矩阵占用(实测踩坑)。
 %   u : 54x1 从 CarSim 来的测量 (顺序 = CarSim Export 列表)
 %   Pm: 参数 (setup_pmpc 产出, 运行中不变)
 %   St: 跨拍状态 (InitialParams / WarmStart / rho), 进出都要
+%   h_plant/x_plant/v_plant/a_plant: 1 kHz plant 在拍首采样的状态
+%     (控制器角序 [L1;R1;L2;R2]; h_plant 8x4, 其余 4x1)
 %   sys : 54x1 输出
+%   i_cmd : 4x1 电流指令 [A], 控制器角序; plant 侧 ZOH 保持到下一拍
+%
+%   多速率架构 (2026-09-29): NLCSNN 正模型(plant)在 1000 Hz 独立积分,
+%   拥有隐状态 h; 本函数只做 100 Hz 逆解, 不再推进 h。
 %
 %   阶段 C+D (2026-09-17): 从 S-function 里抽出来, 目标是让 MATLAB Function block
 %   里只写一行 `[sys,St] = pmpc_step(u,Pm,St);`。原 mdlOutputs 用 t/x 为 0 次, 故不传。
 
 %% ---- 参数(只读) ----
 MPCParameters = Pm.MPCParameters;
+Nx = coder.const(MPCParameters.Nx);
 CostWeights = Pm.CostWeights;
 DiscreteModle = Pm.DiscreteModle;
 Reftraj = Pm.Reftraj;
@@ -42,6 +49,7 @@ if InitialParams.InitialGapflag == 0
     St.rho = rho;
     St.VehiclePara = VehiclePara;
     St.Constraints = Constraints;
+    i_cmd = zeros(4,1);   % 首拍无逆解, plant 保持 0 A
     return; % 早期直接返回，减少缩进
 end 
 InitialParams.InitialGapflag = InitialParams.InitialGapflag + 1;
@@ -56,21 +64,19 @@ alpha_l2=ParaHAT.alpha_l2;
 alpha_r2=ParaHAT.alpha_r2;
 Roll = ParaHAT.Roll; Rollrate = ParaHAT.Rollrate;
 
-% NLCSNN coordinates and reachable force box. CarSim exports displacement
-% as [L1,L2,R1,R2], while the allocation order is [L1,R1,L2,R2].
+% NLCSNN coordinates and reachable force box, sampled from the 1 kHz plant
+% at the tick. Corner order is [L1;R1;L2;R2] (allocation order); the plant
+% owns the hidden state h, the controller never integrates it.
 DamperContext = struct('x',zeros(4,1), 'v',zeros(4,1), ...
-    'a',zeros(4,1), 'F_lo',zeros(4,1), 'F_hi',zeros(4,1), ...
+    'a',zeros(4,1), 'h',zeros(8,4), ...
+    'F_lo',zeros(4,1), 'F_hi',zeros(4,1), ...
     'F_center',zeros(4,1));
 DamperLimits = struct('Fdu',zeros(4,1), 'Fdl',zeros(4,1), ...
     'Fd_center',zeros(4,1), 'external',false);
+i_cmd = zeros(4,1);
 if NLCSNN.enabled
-    cmpD = [VehStateMeasured.D_l1; VehStateMeasured.D_r1; ...
-            VehStateMeasured.D_l2; VehStateMeasured.D_r2];
-    cmpRD = 1000*[VehStateMeasured.V_l1; VehStateMeasured.V_r1; ...
-                  VehStateMeasured.V_l2; VehStateMeasured.V_r2];
-    [DamperContext, InitialParams.prevstate.nlcsnn] = ...
-        func_NLCSNNContext(NLCSNN.net, cmpD, cmpRD, ...
-        InitialParams.prevstate.nlcsnn, NLCSNN);
+    DamperContext = func_NLCSNNContext(NLCSNN.net, ...
+        x_plant, v_plant, a_plant, h_plant, NLCSNN);
     DamperLimits.Fdu = DamperContext.F_hi;
     DamperLimits.Fdl = DamperContext.F_lo;
     DamperLimits.Fd_center = DamperContext.F_center;
@@ -150,7 +156,7 @@ VehiclePara.CafTan = cb_f;  VehiclePara.CarTan = cb_r;   % 兼容旧引用
 F_off_f = fb_f - cb_f*ab_f - cb_f*delta_robot;           % 已折进 delta_robot
 F_off_r = fb_r - cb_r*ab_r;
 
-%% ==== Baseline: 跳过 MPC, 四角输出实测 MR 标称电流下的阻尼力 ====
+%% ==== Baseline: 跳过 MPC, 四角输出实测 MR 标称电流下的阻尼力 ===
 if InitialParams.BaselineMode
     Ib = InitialParams.BaselineCurrent;
     sys(5) = func_MRDamper(VehStateMeasured.V_l1, Ib);   % Fd_L1 前左
@@ -175,6 +181,7 @@ if InitialParams.BaselineMode
     St.rho = rho;
     St.VehiclePara = VehiclePara;
     St.Constraints = Constraints;
+    i_cmd = zeros(4,1);   % baseline 不用 NLCSNN, plant 保持 0 A
     return
 end
 
@@ -202,79 +209,109 @@ else
     ref_Vy = RefU(2:3:end);     
     ref_r  = RefU(3:3:end);
 end
-
 % 线性化模型与包络
 % 方案三的输入无条件构造(开关关闭时也给预测精度诊断用)
-LTVin = struct('TireF',TireF, 'TireR',TireR, ...
-                   'delta_robot',dr_seq, ...       % Np x 1, 见上方外推
-                   'Fzf',ParaHAT.Fzf, 'Fzr',ParaHAT.Fzr, ...
-                   'kap',Kap_dyn, ...
-                   'x0',[Vy; yawrate; Roll; Rollrate; PrjP.ey; PrjP.epsi; ParaHAT.Md], ...
-                   'u0',[VehStateMeasured.delta_f - delta_robot; ...
-                         InitialParams.U(2); InitialParams.U(3)], ...
-                   'dU',reshape(WarmStart(1:MPCParameters.Nc*MPCParameters.Nu), ...
-                                MPCParameters.Nu, MPCParameters.Nc), ...
-               'Ctan_floor_frac',Constraints.Ctan_floor_frac);
+x0_ltv = zeros(Nx,1);
+x0_ltv(1:6) = [Vy; yawrate; Roll; Rollrate; PrjP.ey; PrjP.epsi];
+if Nx == 7
+    x0_ltv(7) = ParaHAT.Md;
+end
+LTVin = struct('TireF',TireF, 'TireR',TireR,...
+'delta_robot',dr_seq,... % Np x 1, 见上方外推
+'Fzf',ParaHAT.Fzf, 'Fzr',ParaHAT.Fzr,...
+'kap',Kap_dyn,...
+'x0',x0_ltv,...
+'u0',[VehStateMeasured.delta_f - delta_robot;...
+InitialParams.U(2); InitialParams.U(3)],...
+'dU',reshape(WarmStart(1:MPCParameters.Nc*MPCParameters.Nu),...
+MPCParameters.Nu, MPCParameters.Nc),...
+'Ctan_floor_frac',Constraints.Ctan_floor_frac);
 if MPCParameters.LTV_on
-    % 方案三: 名义轨迹由上一拍解移位(热启动)给出, 逐节点重算 alpha -> c_bar/f_bar
-    [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, DiscreteModle, LTVin);
+% 方案三: 名义轨迹由上一拍解移位(热启动)给出, 逐节点重算 alpha -> c_bar/f_bar
+[StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, DiscreteModle, LTVin);
 else
-    [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, DiscreteModle);
+[StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, DiscreteModle);
 end
 % ---- Zeng 2025 先进对比: 先算 rho 与稳定性边界, 供 Envelope 和代价共用 ----
-rho_zeng = 1;  Iind_zeng = 0;  Ib_zeng = 0;  Ir_zeng = 0;
+rho_zeng = 1; Iind_zeng = 0; Ib_zeng = 0; Ir_zeng = 0;
 if Constraints.ZengRho_on
-    [rho_zeng, Iind_zeng, Ib_zeng, Ir_zeng, bL_z, bR_z, rmax_z] = func_ZengRho( ...
-        Vel, VehiclePara.mu, VehStateMeasured.delta_f, ...
-        VehStateMeasured.beta, yawrate, VehiclePara.g);
-    Constraints.Zeng_bL = bL_z;  Constraints.Zeng_bR = bR_z;  Constraints.Zeng_rmax = rmax_z;
-    if Constraints.ZengRho_on == 2, rho_zeng = 1; end   % 约束用 Zeng 的, 但不调度
+[rho_zeng, Iind_zeng, Ib_zeng, Ir_zeng, bL_z, bR_z, rmax_z] = func_ZengRho(...
+Vel, VehiclePara.mu, VehStateMeasured.delta_f,...
+VehStateMeasured.beta, yawrate, VehiclePara.g);
+Constraints.Zeng_bL = bL_z; Constraints.Zeng_bR = bR_z; Constraints.Zeng_rmax = rmax_z;
+if Constraints.ZengRho_on == 2, rho_zeng = 1; end % 约束用 Zeng 的, 但不调度
 end
 
-[Envelope,r_ssmax] = func_Envelope(VehiclePara,Constraints,VehStateMeasured); 
+[Envelope7,r_ssmax] = func_Envelope(VehiclePara, Constraints, VehStateMeasured);
+if Nx == 6
+    % func_Envelope is legacy 7-state. Trim its Md_a column and move the
+    % no-delay damper moment into the direct LTR input term for MPC.
+    Henv = Envelope7.Henv(:,1:6);
+    Hsh  = Envelope7.Hsh(:,1:6);
+    Hr   = Envelope7.Hr(:,1:6);
+    ltrGain = 2/(VehiclePara.m*VehiclePara.g*VehiclePara.tf);
+    Or = Envelope7.Or + [0 0 ltrGain; 0 0 -ltrGain];
+else
+    Henv = Envelope7.Henv;
+    Hsh  = Envelope7.Hsh;
+    Hr   = Envelope7.Hr;
+    Or   = Envelope7.Or;
+end
+Envelope = struct( ...
+    'Henv',Henv, 'Genv',Envelope7.Genv, 'Eenv',Envelope7.Eenv, ...
+    'gkap',Envelope7.gkap, 'Hsh',Hsh, 'Gsh',Envelope7.Gsh, ...
+    'Hr',Hr, 'Or',Or, 'Gr',Envelope7.Gr, ...
+    'sc_sh',Envelope7.sc_sh, 'sc_r',Envelope7.sc_r, ...
+    'sc_env',Envelope7.sc_env);
 % ---- Zeng 2025: 用 rho 调度稳定性松弛权重 (仅先进对比方法启用) ----
 CW = CostWeights;
 if Constraints.ZengRho_on
-    CW.W1 = CostWeights.W1 * rho_zeng;    % sigma_s: 横摆角速度松弛
-    CW.W2 = CostWeights.W2 * rho_zeng;    % sigma_s: 侧偏角松弛
+CW.W1 = CostWeights.W1 * rho_zeng; % sigma_s: 横摆角速度松弛
+CW.W2 = CostWeights.W2 * rho_zeng; % sigma_s: 侧偏角松弛
 end
 [Q,R,S,W,V,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,Fdu,Fdl,Mdnom] = func_CostWeightingRegulation_QuadSlacks(MPCParameters,CW,Constraints,r_ssmax,ParaHAT,VehiclePara,VehStateMeasured,DamperLimits);
 
 %% ==================================================================%
-%----------------  quadprog solver compute begin --------------------%
+%---------------- quadprog solver compute begin --------------------%
 
 % --- 2. QP问题构建 ---
-Nu=MPCParameters.Nu; Nx=MPCParameters.Nx; Ny=MPCParameters.Ny;
-Nc=MPCParameters.Nc; Np=MPCParameters.Np; Ne=MPCParameters.Ne; 
+Nu=MPCParameters.Nu; Ny=MPCParameters.Ny;
+Nc=MPCParameters.Nc; Np=MPCParameters.Np; Ne=MPCParameters.Ne;
 Nr=MPCParameters.Nr; % 注意这里Nr可能为0 (Case 2)
 
 Fyf_0 = InitialParams.U(1); MFx_0 = InitialParams.U(2); Md_0 = InitialParams.U(3);
 
 % ---- 阻尼器时延状态的初值与投影 (论文 III-C 式 Md_projection, 2026-09-25) ----
-%  Md_a(k): 由实测阻尼力按 Md = 0.5*[-df df -dr dr]*Fd 合成(func_StateEstimation),
-%  再投影到当前速度下的可达区间 [Mdmin, Mdmax]。上一拍指令 Md_0 同样投影:
-%  阻尼器在当前速度下出不了区间外的力矩, 投影后 box_relax 不再放宽 CDC 通道,
-%  离散一阶滞后是凸组合 -> 整个时域内预测的 Md_a 都落在区间内(满足耗散性),
-%  速度全为零时区间退化为 {0}, Md_a 与 Md_0 均被置零。
-Md_lo = min(Mdmin, Mdmax);   Md_hi = max(Mdmin, Mdmax);
-Mda_0 = min(max(ParaHAT.Md, Md_lo), Md_hi);
-Md_0  = min(max(Md_0,       Md_lo), Md_hi);
+% Md_a(k): 由实测阻尼力按 Md = 0.5*[-df df -dr dr]*Fd 合成(func_StateEstimation),
+% 再投影到当前速度下的可达区间 [Mdmin, Mdmax]。上一拍指令 Md_0 同样投影:
+% 阻尼器在当前速度下出不了区间外的力矩, 投影后 box_relax 不再放宽 CDC 通道,
+% 离散一阶滞后是凸组合 -> 整个时域内预测的 Md_a 都落在区间内(满足耗散性),
+% 速度全为零时区间退化为 {0}, Md_a 与 Md_0 均被置零。
+Md_lo = min(Mdmin, Mdmax); Md_hi = max(Mdmin, Mdmax);
+Md_0 = min(max(Md_0, Md_lo), Md_hi);
 if MPCParameters.abl == 2
-    %  消融 PMPC-noSAS: 减振器是标称电流下的被动阻尼, 不可控。控制器的 CDC 通道冻结在
-    %  当前速度下的被动力矩 Mdnom 上(增量限幅为 0), 与 Fz、上下界一样在时域内冻结。
-    Md_0   = min(max(Mdnom, Md_lo), Md_hi);
-    dMdmax = 0;
+% 消融 PMPC-noSAS: 减振器是标称电流下的被动阻尼, 不可控。控制器的 CDC 通道冻结在
+% 当前速度下的被动力矩 Mdnom 上(增量限幅为 0), 与 Fz、上下界一样在时域内冻结。
+Md_0 = min(max(Mdnom, Md_lo), Md_hi);
+dMdmax = 0;
 end
 
-% 构造初始状态向量 zeta = [x; u_prev],  x = [Vy r phi dphi ey epsi Md_a]
-zeta = [Vy; yawrate; Roll; Rollrate; PrjP.ey; PrjP.epsi; Mda_0; Fyf_0; MFx_0; Md_0];
+% MPC is deliberately no-delay (six vehicle states). ZENG/PMPC append the
+% established aggregate damper moment Md_a for their 15 ms predictor.
+zeta = zeros(Nx + Nu,1);
+zeta(1:6) = [Vy; yawrate; Roll; Rollrate; PrjP.ey; PrjP.epsi];
+if Nx == 7
+    Mda_0 = min(max(ParaHAT.Md, Md_lo), Md_hi);
+    zeta(7) = Mda_0;
+end
+zeta(Nx+(1:Nu)) = [Fyf_0; MFx_0; Md_0];
 
 % 预测矩阵
 % 方案三时偏置逐节点, 方案二时用当前工作点的常值
-if ~StateSpaceModel.off_valid          % codegen: 原为 isempty(off)
-    distIn = [F_off_f; F_off_r];
+if ~StateSpaceModel.off_valid % codegen: 原为 isempty(off)
+distIn = [F_off_f; F_off_r];
 else
-    distIn = StateSpaceModel.off;
+distIn = StateSpaceModel.off;
 end
 [PSI, THETA, GAMMA, PHI] = func_SystemFurture(MPCParameters, StateSpaceModel, Kap_dyn, distIn);
 
@@ -286,166 +323,166 @@ Ut  = kron(ones(Nc,1), zeta(Nx+(1:Nu)));
 
 %% ---- 打包传给下层函数的参数 ----
 Pred = struct('PSI',PSI, 'THETA',THETA, 'PHI',PHI, 'GAMMA',GAMMA);
-Wts  = struct('Q',Q, 'R',R, 'S',S, 'W',W, 'V',V);
+Wts = struct('Q',Q, 'R',R, 'S',S, 'W',W, 'V',V);
 % ---- AFS 控制量的幅值界: 机械限 + 前轴摩擦圆 ----
-%  预测模型 (func_DynamicalModel 第 53 行):
-%    Fyf = CbF*(vy+lf*r)/vx - CbF*u + F_off_f_eff
-%  代入 (vy+lf*r)/vx = ab_f + delta_f 与 F_off_f_eff = fb_f - cb_f*ab_f - cb_f*delta_robot,
-%  并记当前工作点 u_op = delta_f - delta_robot, 得到关于当前点的形式:
-%    Fyf(u) = fb_f + |cb_f|*(u - u_op)          <- cb_f<0, -CbF*u = +|cb_f|*u
-%  要求 |Fyf| <= Flim 即给出以 u_op 为中心的余量界, 见下。
-%  力限用**实测的可实现侧向附着** mu_eff, 不是路面设定的 mu(=0.9)。
-%  CarSim ERD 实测 |Fy|/Fz 的上限: 轴级 0.751/0.754(前) 0.740/0.698(后),
-%  单轮最大 0.785, 合力最大 0.788 —— 轮胎的可实现附着约 0.78, 明显低于
-%  路面设定的 0.9(载荷敏感性)。用 0.9 会高估约 15~20% 的可用力。
-%  也不用轮胎表的 mu(0.70/0.75) —— 那是为了让 Fiala 的**形状**贴合而拟出的
-%  参数, 不是真实饱和水平; 用它会把 AFS 掐死(实测 DLC 路径误差 +54%)。
-Flim    = 0.95*VehiclePara.mu_eff*xi_f*ParaHAT.Fzf;   % 纵向力占用的附着同样扣除, 与 fb_f 的降额一致
-Cm      = max(abs(cb_f), 5e3);
+% 预测模型 (func_DynamicalModel 第 53 行):
+% Fyf = CbF*(vy+lf*r)/vx - CbF*u + F_off_f_eff
+% 代入 (vy+lf*r)/vx = ab_f + delta_f 与 F_off_f_eff = fb_f - cb_f*ab_f - cb_f*delta_robot,
+% 并记当前工作点 u_op = delta_f - delta_robot, 得到关于当前点的形式:
+% Fyf(u) = fb_f + |cb_f|*(u - u_op) <- cb_f<0, -CbF*u = +|cb_f|*u
+% 要求 |Fyf| <= Flim 即给出以 u_op 为中心的余量界, 见下。
+% 力限用**实测的可实现侧向附着** mu_eff, 不是路面设定的 mu(=0.9)。
+% CarSim ERD 实测 |Fy|/Fz 的上限: 轴级 0.751/0.754(前) 0.740/0.698(后),
+% 单轮最大 0.785, 合力最大 0.788 —— 轮胎的可实现附着约 0.78, 明显低于
+% 路面设定的 0.9(载荷敏感性)。用 0.9 会高估约 15~20% 的可用力。
+% 也不用轮胎表的 mu(0.70/0.75) —— 那是为了让 Fiala 的**形状**贴合而拟出的
+% 参数, 不是真实饱和水平; 用它会把 AFS 掐死(实测 DLC 路径误差 +54%)。
+Flim = 0.95*VehiclePara.mu_eff*xi_f*ParaHAT.Fzf; % 纵向力占用的附着同样扣除, 与 fb_f 的降额一致
+Cm = max(abs(cb_f), 5e3);
 % DLC(Replace): u 是**总转角**, 界为整车转向上限;
-% 鱼钩(Add):     u 是 **AFS 增量**, 界为 AFS 叠加电机权限。
-%  【修复 2026-09-12】上一版把两者统一成 AFS_max(5.73deg) 是 09-12
-%  "改成辅助驾驶"那次改动的残留; 回滚到自动驾驶时漏改了这一处。
-%  后果: DLC 下总转角被卡在 5.73deg(方向盘 97.4deg), 仅为应有权限的 41%,
-%  实测三个控制器的 |SW| 峰值都精确等于 97.41deg —— 长时间贴顶、反复撞限,
-%  造成限幅相位滞后型振荡。
+% 鱼钩(Add): u 是 **AFS 增量**, 界为 AFS 叠加电机权限。
+% 上一版把两者统一成 AFS_max(5.73deg) 是 09-12
+% "改成辅助驾驶"那次改动的残留; 回滚到自动驾驶时漏改了这一处。
+% 后果: DLC 下总转角被卡在 5.73deg(方向盘 97.4deg), 仅为应有权限的 41%,
+% 实测三个控制器的 |SW| 峰值都精确等于 97.41deg —— 长时间贴顶、反复撞限,
+% 造成限幅相位滞后型振荡。
 if MPCParameters.FishhookMode || MPCParameters.AFS_add
-    dlt_mec = Constraints.AFS_max;                                  % AFS 叠加电机权限
+dlt_mec = Constraints.AFS_max; % AFS 叠加电机权限
 else
-    dlt_mec = min(Constraints.SW_max/VehiclePara.isw, deg2rad(20)); % 整车转向上限
+dlt_mec = min(Constraints.SW_max/VehiclePara.isw, deg2rad(20)); % 整车转向上限
 end
 % ---- 力限转角界: 以当前工作点为中心表达余量, 不外推到 u=0 ----
-%  原写法 dlt_ub=(Flim-Fy0)/Cm 把切线外推到 u=0, 而 Fy0 是幻觉力:
-%  |Fy0| 轻易超过 Flim, 于是 dlt_ub<0 或 dlt_lb>0, 箱体变单边,
-%  AFS 只能往一个方向打, 最终被钳死 (2026-08-31 实测 DLC t>5.5s
-%  SW 恒为 0、横向漂移 -2.97 m; dlt_ub==0 占 6.3%, dlt_lb==0 占 27.6%)。
-%  改为以 u_op 为中心:  Fyf(u) = fb_f + |cb_f|*(u - u_op)
-%    => u in [u_op - (Flim+fb_f)/Cm , u_op + (Flim-fb_f)/Cm]
-%  余量取 max(.,0), 箱体恒含当前转角; cb_f->0 (轮胎饱和) 时余量发散,
-%  力限自动退出、只剩机械限 —— 饱和时切线模型本就说不出话。
-u_op    = VehStateMeasured.delta_f - delta_robot;   % 当前 u 的实测值
-head_up = max(Flim - fb_f, 0)/Cm;                   % 正方向余量
-head_dn = max(Flim + fb_f, 0)/Cm;                   % 负方向余量
+% 原写法 dlt_ub=(Flim-Fy0)/Cm 把切线外推到 u=0, 而 Fy0 是幻觉力:
+% |Fy0| 轻易超过 Flim, 于是 dlt_ub<0 或 dlt_lb>0, 箱体变单边,
+% AFS 只能往一个方向打, 最终被钳死 (2026-08-31 实测 DLC t>5.5s
+% SW 恒为 0、横向漂移 -2.97 m; dlt_ub==0 占 6.3%, dlt_lb==0 占 27.6%)。
+% 改为以 u_op 为中心: Fyf(u) = fb_f + |cb_f|*(u - u_op)
+% => u in [u_op - (Flim+fb_f)/Cm, u_op + (Flim-fb_f)/Cm]
+% 余量取 max(.,0), 箱体恒含当前转角; cb_f->0 (轮胎饱和) 时余量发散,
+% 力限自动退出、只剩机械限 —— 饱和时切线模型本就说不出话。
+u_op = VehStateMeasured.delta_f - delta_robot; % 当前 u 的实测值
+head_up = max(Flim - fb_f, 0)/Cm; % 正方向余量
+head_dn = max(Flim + fb_f, 0)/Cm; % 负方向余量
 if Constraints.afs_box_exact
-    %  诊断开关 (改进.md 18z): 切线外推在轮胎曲线的凹段偏保守 —— 相似缩放表的
-    %  小角刚度是旧表的约 1.8 倍, 外推余量中位数只剩约 1 deg。改为查表反解:
-    %  |xi*Fbar(alpha_lim)| = Flim, 余量 = 从当前 ab_f 走到 -/+alpha_lim 的转角。
-    a_lim   = local_alim(TireF, ParaHAT.Fzf, Flim/max(xi_f, 1e-3));
-    head_up = max(ab_f + a_lim, 0);                 % u 增 -> ab_f 减, 到 -a_lim 时 Fyf = +Flim
-    head_dn = max(a_lim - ab_f, 0);
+% 诊断开关 (改进.md 18z): 切线外推在轮胎曲线的凹段偏保守 —— 相似缩放表的
+% 小角刚度是旧表的约 1.8 倍, 外推余量中位数只剩约 1 deg。改为查表反解:
+% |xi*Fbar(alpha_lim)| = Flim, 余量 = 从当前 ab_f 走到 -/+alpha_lim 的转角。
+a_lim = local_alim(TireF, ParaHAT.Fzf, Flim/max(xi_f, 1e-3));
+head_up = max(ab_f + a_lim, 0); % u 增 -> ab_f 减, 到 -a_lim 时 Fyf = +Flim
+head_dn = max(a_lim - ab_f, 0);
 end
-dlt_ub  = min( dlt_mec, u_op + head_up);
-dlt_lb  = max(-dlt_mec, u_op - head_dn);
+dlt_ub = min( dlt_mec, u_op + head_up);
+dlt_lb = max(-dlt_mec, u_op - head_dn);
 % 再保证含 0: gamma->0 要能退到 u=0, 且"不打方向"绝不违反摩擦极限
-dlt_ub  = max(dlt_ub, 0);
-dlt_lb  = min(dlt_lb, 0);
+dlt_ub = max(dlt_ub, 0);
+dlt_lb = min(dlt_lb, 0);
 
 % LTR 约束里 a_y 的常值部分 (F_off_f*cos(delta) + F_off_r)/m 移到右端
-bta_l  = 2/(VehiclePara.m*VehiclePara.g*VehiclePara.tf);
-kap_g  = VehiclePara.m*VehiclePara.h_TL - VehiclePara.ms*VehiclePara.h_S2R;
+bta_l = 2/(VehiclePara.m*VehiclePara.g*VehiclePara.tf);
+kap_g = VehiclePara.m*VehiclePara.h_TL - VehiclePara.ms*VehiclePara.h_S2R;
 ay_off = (F_off_f*cos(VehStateMeasured.delta_f) + F_off_r)/VehiclePara.m;
 Envelope.Gr = Envelope.Gr - bta_l*kap_g*ay_off*[1; -1];
 
 % ---- 前轴摩擦耦合系数 (方案 B) ----
-%  MFxmax 用的是**实测**的 Fy 算摩擦余量: Fx_u = sqrt((mu*Fz)^2 - Fy^2)。
-%  但 AFS 打算改变 Fyf —— 这部分没被计入, 即模型以为制动能力比实际多。
-%  一阶修正: dFx_u/dFy = -Fy/Fx_u, 而 AFS 使前轴侧向力变化
-%    dFy_axle = |cb_f| * (u_AFS - u_op),  单个前轮取一半。
-%  差动制动的横摆力矩 MFx = (tf/2)*Fx, 故可用力矩的削减量为
-%    kappa * |u_AFS - u_op|,  kappa = (tf/2)*(|Fy_f|/Fx_u_f)*|cb_f|/2
-%  取轴平均并对称施加(保守: 不会高估可用能力), 见 func_BuildQPConstraints 3c。
+% MFxmax 用的是**实测**的 Fy 算摩擦余量: Fx_u = sqrt((mu*Fz)^2 - Fy^2)。
+% 但 AFS 打算改变 Fyf —— 这部分没被计入, 即模型以为制动能力比实际多。
+% 一阶修正: dFx_u/dFy = -Fy/Fx_u, 而 AFS 使前轴侧向力变化
+% dFy_axle = |cb_f| * (u_AFS - u_op), 单个前轮取一半。
+% 差动制动的横摆力矩 MFx = (tf/2)*Fx, 故可用力矩的削减量为
+% kappa * |u_AFS - u_op|, kappa = (tf/2)*(|Fy_f|/Fx_u_f)*|cb_f|/2
+% 取轴平均并对称施加(保守: 不会高估可用能力), 见 func_BuildQPConstraints 3c。
 Fy_f_avg = 0.5*(abs(ParaHAT.Fy_l1) + abs(ParaHAT.Fy_r1));
 Fz_f_avg = 0.5*(ParaHAT.Fz_l1 + ParaHAT.Fz_r1);
-Fxu_f    = sqrt(max((VehiclePara.mu*Fz_f_avg)^2 - Fy_f_avg^2, 1));
+Fxu_f = sqrt(max((VehiclePara.mu*Fz_f_avg)^2 - Fy_f_avg^2, 1));
 kappa_fx = (VehiclePara.tf/2) * (Fy_f_avg/Fxu_f) * abs(cb_f)/2;
 
 % 优先级因子的惯性/耦合都要用到上一拍的 gamma, 初始化必须在 Lim 之前
-%  codegen: gamma 已在 setup_pmpc 里初始化为 [0;0;1], 无需惰性创建
+% codegen: gamma 已在 setup_pmpc 里初始化为 [0;0;1], 无需惰性创建
 
-%  各预测节点处的路径曲率, 供四角点弯道修正 -kappa*a^2/2 用(动力学用的是每步平均曲率 Kap_dyn)。
-%  鱼钩模式下为空(无路径), 与 func_SystemFurture 一样补零。
+% 各预测节点处的路径曲率, 供四角点弯道修正 -kappa*a^2/2 用(动力学用的是每步平均曲率 Kap_dyn)。
+% 鱼钩模式下为空(无路径), 与 func_SystemFurture 一样补零。
 kap_env = zeros(MPCParameters.Np,1);
-nkap_   = min(numel(Kap_node), MPCParameters.Np);
+nkap_ = min(numel(Kap_node), MPCParameters.Np);
 kap_env(1:nkap_) = Kap_node(1:nkap_);
 
 if prio_on
-    eps_ub_ = zeros(MPCParameters.Ne, 1);
-    eps_ub_(1:2) = inf;                      % 仅 s1/s2 参与 PMPC 新优先级层
+eps_ub_ = zeros(MPCParameters.Ne, 1);
+eps_ub_(1:2) = inf; % 仅 s1/s2 参与 PMPC 新优先级层
 else
-    eps_ub_ = Constraints.eps_ub_scale * ...
-              [Constraints.epsilon_r*ones(2,1);   Constraints.epsilon_alpha*ones(2,1); ...
-               Constraints.epsilon_LTR*ones(2,1); Constraints.epsilon_e*ones(2,1)];
+eps_ub_ = Constraints.eps_ub_scale *...
+[Constraints.epsilon_r*ones(2,1); Constraints.epsilon_alpha*ones(2,1);...
+Constraints.epsilon_LTR*ones(2,1); Constraints.epsilon_e*ones(2,1)];
 end
-Lim  = struct('kap',kap_env, ...
-              'Fyfmax',Fyfmax,   'MFxmax',MFxmax,   'Mdmax',Mdmax, 'Mdmin',Mdmin, ...
-              'Mdnom',Mdnom, ...
-              'eps_ub', eps_ub_, ...
-              'sigma_budget',MPCParameters.sigma_budget, ...
-              'gamma_prev',InitialParams.prevstate.gamma, ...
-              'kappa_fx',kappa_fx, 'u_op',u_op, ...
-              'fx_couple',MPCParameters.fx_couple, ...
-              'dFyfmax',dFyfmax, 'dMFxmax',dMFxmax, 'dMdmax',dMdmax, ...
-              'dlt_ub',dlt_ub,   'dlt_lb',dlt_lb);
+Lim = struct('kap',kap_env,...
+'Fyfmax',Fyfmax, 'MFxmax',MFxmax, 'Mdmax',Mdmax, 'Mdmin',Mdmin,...
+'Mdnom',Mdnom,...
+'eps_ub', eps_ub_,...
+'sigma_budget',MPCParameters.sigma_budget,...
+'gamma_prev',InitialParams.prevstate.gamma,...
+'kappa_fx',kappa_fx, 'u_op',u_op,...
+'fx_couple',MPCParameters.fx_couple,...
+'dFyfmax',dFyfmax, 'dMFxmax',dMFxmax, 'dMdmax',dMdmax,...
+'dlt_ub',dlt_ub, 'dlt_lb',dlt_lb);
 
 %% ---- 代价 ----
-lambda_L1 = 1.0;        % L1 精确罚强度；0 = 退回纯二次罚
+lambda_L1 = 1.0; % L1 精确罚强度；0 = 退回纯二次罚
 
 % ---- 优先级因子的惯性 ----
 gamma_prev = InitialParams.prevstate.gamma;
 if isfield(CostWeights,'tau_gamma') && ~isempty(CostWeights.tau_gamma) && CostWeights.tau_gamma > 0
-    rho_g = exp(-MPCParameters.Ts_exec / CostWeights.tau_gamma);
-    Wdg_v = rho_g/(1-rho_g) * MPCParameters.Nc * ...
-            [CostWeights.V1, CostWeights.V2, CostWeights.V3];
+rho_g = exp(-MPCParameters.Ts_exec / CostWeights.tau_gamma);
+Wdg_v = rho_g/(1-rho_g) * MPCParameters.Nc *...
+[CostWeights.V1, CostWeights.V2, CostWeights.V3];
 else
-    Wdg_v = CostWeights.Wdg;
+Wdg_v = CostWeights.Wdg;
 end
-W_dgamma   = diag(Wdg_v);                        % Delta-gamma 惩罚, 见 mdlInitializeSizes
+W_dgamma = diag(Wdg_v); % Delta-gamma 惩罚, 见 mdlInitializeSizes
 
-[H, f] = func_BuildQPCost(MPCParameters, Constraints, Pred, Wts, ...
-                          zeta, AI, Ut, ref_Vy, ref_r, lambda_L1, ...
-                          gamma_prev, W_dgamma);
+[H, f] = func_BuildQPCost(MPCParameters, Constraints, Pred, Wts,...
+zeta, AI, Ut, ref_Vy, ref_r, lambda_L1,...
+gamma_prev, W_dgamma);
 
 %% ---- 约束 ----
-[A_cons, b_cons, lb, ub, umax, umin] = func_BuildQPConstraints( ...
-                          MPCParameters, Constraints, Envelope, Pred, AI, Ut, zeta, Lim);
+[A_cons, b_cons, lb, ub, umax, umin] = func_BuildQPConstraints(...
+MPCParameters, Constraints, Envelope, Pred, AI, Ut, zeta, Lim);
 
 %% ---- 优先级认证与安全权重 (论文 III-E, 仅 PMPC) ----
-%  解 QP 之前由候选 z^(上一拍解后移、投影进 Z)算裕度 delta_1/delta_2 与 F(z^),
-%  按式 weight_rule 给出 w1, w2 写进 f 的 s1, s2 分量; 同时判定定理 1 (a)(b)(c)。
-pc  = nan(14,1);  dUc = zeros(Nu*Nc,1);  gc = 0;  fb_used = 0;
+% 解 QP 之前由候选 z^(上一拍解后移、投影进 Z)算裕度 delta_1/delta_2 与 F(z^),
+% 按式 weight_rule 给出 w1, w2 写进 f 的 s1, s2 分量; 同时判定定理 1 (a)(b)(c)。
+pc = nan(14,1); dUc = zeros(Nu*Nc,1); gc = 0; fb_used = 0;
 if prio_on
-    [wpr, pc, dUc, gc] = func_PriorityCert(MPCParameters, Constraints, Pred, Wts, ...
-                             zeta, Ut, ref_Vy, ref_r, H, f, A_cons, b_cons, WarmStart, umin, umax, Lim);
-    f(Nu*Nc + (1:2)) = wpr;
+[wpr, pc, dUc, gc] = func_PriorityCert(MPCParameters, Constraints, Pred, Wts,...
+zeta, Ut, ref_Vy, ref_r, H, f, A_cons, b_cons, WarmStart, umin, umax, Lim);
+f(Nu*Nc + (1:2)) = wpr;
 end
 
 %% ---- 求解 ----
-[x_opt, exitflag, delta_U_first, rho_val, epsilon_val, WarmStart, cert] = ...
-    func_SolveMPCQP(H, f, A_cons, b_cons, lb, ub, WarmStart, MPCParameters, Constraints);
-%  求解失败(如超迭代上限)且 delta_1, delta_2 > 0 时, 施加候选的第一拍输入:
-%  它在预测上满足第一、二层约束(论文注 rem:compute)。其余情况沿用原做法(增量为零)。
+[x_opt, exitflag, delta_U_first, rho_val, epsilon_val, WarmStart, cert] =...
+func_SolveMPCQP(H, f, A_cons, b_cons, lb, ub, WarmStart, MPCParameters, Constraints);
+% 求解失败(如超迭代上限)且 delta_1, delta_2 > 0 时, 施加候选的第一拍输入:
+% 它在预测上满足第一、二层约束(论文注 rem:compute)。其余情况沿用原做法(增量为零)。
 if prio_on && exitflag ~= 1 && pc(1) > 0 && pc(2) > 0
-    delta_U_first = dUc(1:Nu);
-    rho_val       = [1; gc; 1];
-    gtmp          = ones(Nr,1);
-    gtmp(local_db_gamma_idx(Constraints, Nr)) = gc;
-    WarmStart     = func_WarmStart_shiftHorizon([dUc; zeros(Ne,1); gtmp], MPCParameters);
-    fb_used       = 1;
+delta_U_first = dUc(1:Nu);
+rho_val = [1; gc; 1];
+gtmp = ones(Nr,1);
+gtmp(local_db_gamma_idx(Constraints, Nr)) = gc;
+WarmStart = func_WarmStart_shiftHorizon([dUc; zeros(Ne,1); gtmp], MPCParameters);
+fb_used = 1;
 end
-%  在线证书 cert(论文 III-E)只做记录, 不参与控制。
-%  MATLAB Function 状态必须固定尺寸；统一布局为 36x1:
-%  [先验认证14; 后验证书11; 松弛8; gamma_DB1; exitflag; 兜底标志]。
+% 在线证书 cert(论文 III-E)只做记录, 不参与控制。
+% MATLAB Function 状态必须固定尺寸；统一布局为 36x1:
+% [先验认证14; 后验证书11; 松弛8; gamma_DB1; exitflag; 兜底标志]。
 if prio_on
-    %  PMPC: 14 先验认证 + 11 后验证书 + 8 松弛 + gamma_DB + 两个状态标志
-    St.cert = [pc; cert; epsilon_val; rho_val(2); double(exitflag); fb_used];
+% PMPC: 14 先验认证 + 11 后验证书 + 8 松弛 + gamma_DB + 两个状态标志
+St.cert = [pc; cert; epsilon_val; rho_val(2); double(exitflag); fb_used];
 else
-    %  其它控制器没有先验认证，前 14 项用 NaN 占位；gamma 只记录 DB 项。
-    St.cert = [nan(14,1); cert; epsilon_val; rho_val(2); nan(2,1)];
+% 其它控制器没有先验认证，前 14 项用 NaN 占位；gamma 只记录 DB 项。
+St.cert = [nan(14,1); cert; epsilon_val; rho_val(2); nan(2,1)];
 end
 
 if exitflag == 1
-    rho = diag(rho_val);                          % 更新全局变量供绘图使用
-    InitialParams.prevstate.gamma = rho_val(:);   % 供下一拍的 Delta-gamma 惩罚
+rho = diag(rho_val); % 更新全局变量供绘图使用
+InitialParams.prevstate.gamma = rho_val(:); % 供下一拍的 Delta-gamma 惩罚
 end
 
 
@@ -456,8 +493,7 @@ InitialParams.U(3) = zeta(Nx+3) + delta_U_first(3); % Md
 
 Fyf_next = InitialParams.U(1);
 MFx_next = InitialParams.U(2);
-Md_next  = InitialParams.U(3);
-
+Md_next = InitialParams.U(3);
 %% ---- 预测输出轨迹 Y (ZENG 纵向控制要用预测 r, 故提到分配之前) ----
 if exitflag == 1
     Y   = PSI*zeta + THETA*x_opt(1:Nu*Nc) + PHI*GAMMA;
@@ -571,13 +607,17 @@ if MPCParameters.abl == 2
 end
 InitialParams.prevstate.Fd = Fd_cmd;   % command force, QPA warm start
 if NLCSNN.enabled
-    [Fd_act, ~, InitialParams.prevstate.nlcsnn] = func_NLCSNNApply( ...
-        NLCSNN.net, DamperContext, Fd_cmd, ...
-        InitialParams.prevstate.nlcsnn, NLCSNN);
-    Fd_L1 = Fd_act(1);  Fd_R1 = Fd_act(2);  Fd_L2 = Fd_act(3);  Fd_R2 = Fd_act(4);
+    % Inverse only: the 1 kHz plant owns h and applies i_cmd over the next
+    % 10 ms. F_pred is the controller's force prediction at the tick state
+    % for logging (sys 5:8); the force that actually reaches CarSim is
+    % F_plant from the plant subsystem -- do not wire F_pred to CarSim.
+    [i_cmd, F_pred, InitialParams.prevstate.nlcsnn.i_prev] = ...
+        func_NLCSNNApply(NLCSNN.net, DamperContext, Fd_cmd, ...
+        InitialParams.prevstate.nlcsnn.i_prev, NLCSNN);
+    Fd_L1 = F_pred(1);  Fd_R1 = F_pred(2);  Fd_L2 = F_pred(3);  Fd_R2 = F_pred(4);
     Bd_act = 0.5*[-VehiclePara.ldf, VehiclePara.ldf, ...
                   -VehiclePara.ldr, VehiclePara.ldr];
-    Md_real = Bd_act*Fd_act;
+    Md_real = Bd_act*F_pred;
 elseif Constraints.dmp_act_on && MPCParameters.abl ~= 2
     % Explicit rollback path for the legacy first-order actuator.
     [Fd_act, InitialParams.prevstate.s_act] = func_DamperActuator( ...
@@ -615,6 +655,7 @@ end
 % % [Steer_Wheel, state_sw] = func_realTimeSignalFilter(Steer_Wheel,200,15,InitialParams.prevstate.sw);
 % % InitialParams.prevstate.sw=state_sw;%必须要滤波
 % 
+
 
 
 %% ============ LTR 三路对照（记录用，不参与控制） ============
@@ -674,6 +715,7 @@ sys = [ Tb_L1;  Tb_L2;  Tb_R1;  Tb_R2;
    
 
 
+
 %% ------------------------------------------------------------------
 
 %% ---- 回写状态 ----
@@ -688,7 +730,7 @@ end
 function a_lim = local_alim(T, Fz, Ft)
 %LOCAL_ALIM  |Fy| 首次达到 Ft 的侧偏角 (>0); Ft 超过饱和力时取饱和角。
 %  Fiala 可闭式反解: F = muFz*[1-(1-u)^3], u = C*tan(a)/(3*muFz)
-%    => u = 1 - (1 - F/muFz)^(1/3),  a = atan(3*muFz*u/C)
+%    => u = 1 - (1 - min(max(Ft/muFz, 0), 1))^(1/3),  a = atan(3*muFz*u/Cst)
 z    = min(max(Fz, T.fzlo), T.fzhi);
 Cst  = max(Fz, 0) * (T.cq(1)*z*z + T.cq(2)*z + T.cq(3));
 muFz = max(Fz, 0) * (T.mq(1)*z*z + T.mq(2)*z + T.mq(3));

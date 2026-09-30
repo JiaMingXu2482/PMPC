@@ -18,6 +18,8 @@
 *.bak
 *.bak_*
 *.original
+*_backup_*.slx
+/nlcsnn_pmpc_refactor*.zip
 
 # CarSim and controller experiment outputs
 /erd_*/

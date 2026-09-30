@@ -11,6 +11,9 @@ function mil_init(mode)
 if nargin < 1, mode = 0; end
 
 assignin('base', 'PMPC_VERBOSE', 1);        % MIL 保留每拍打印
+% Legacy auto/manual mode must not inherit a fixed-model initializer's
+% compile-time variant selection.
+evalin('base', 'clear PMPC_CONTROLLER_VARIANT');
 if mode > 0
     assignin('base', 'PMPC_MODE',    mode);
     assignin('base', 'PMPC_ZENGRHO', 0);

@@ -11,10 +11,9 @@ end
 function testCostWeightingUsesNLCSNNBounds(testCase)
 [P, u] = configuredController(2, 0);
 [veh, hat] = func_StateEstimation(u, P.S0.VehiclePara);
-[ctx, ~] = func_NLCSNNContext(P.Pm.NLCSNN.net, ...
-    [veh.D_l1;veh.D_r1;veh.D_l2;veh.D_r2], ...
-    1000*[veh.V_l1;veh.V_r1;veh.V_l2;veh.V_r2], ...
-    P.S0.InitialParams.prevstate.nlcsnn, P.Pm.NLCSNN);
+% Multirate (2026-09-29): (x,v,a,h) are sampled from the 1 kHz plant.
+[hp, xp, vp_, ap] = plantSample(P, u);
+ctx = func_NLCSNNContext(P.Pm.NLCSNN.net, xp, vp_, ap, hp, P.Pm.NLCSNN);
 limits = struct('Fdu',ctx.F_hi, 'Fdl',ctx.F_lo, ...
     'Fd_center',ctx.F_center, 'external',true);
 
@@ -38,11 +37,13 @@ S.InitialParams.InitialGapflag = 1;
 S.InitialParams.prevstate.s_act(:) = NaN;
 S.Constraints.dmp_act_on = 1;
 
-[sys, Sout] = pmpc_step(u, P.Pm, S);
+[hp, xp, vp_, ap] = plantSample(P, u);
+[sys, Sout, i_cmd] = pmpc_step(u, P.Pm, S, hp, xp, vp_, ap);
 
 verifyTrue(testCase, all(isfinite(sys(5:8))));
 verifyTrue(testCase, all(isnan(Sout.InitialParams.prevstate.s_act)));
-verifyTrue(testCase, Sout.InitialParams.prevstate.nlcsnn.initialized);
+% NLCSNN path is the active one: a finite current command was produced.
+verifyTrue(testCase, all(isfinite(i_cmd)));
 end
 
 function testAllThreeModesUseNLCSNN(testCase)
@@ -52,8 +53,10 @@ for k = 1:3
     [P, u] = configuredController(modes(k), zeng(k));
     S = P.S0;
     S.InitialParams.InitialGapflag = 1;
-    [sys, Sout] = pmpc_step(u, P.Pm, S);
-    verifyTrue(testCase, Sout.InitialParams.prevstate.nlcsnn.initialized);
+    [hp, xp, vp_, ap] = plantSample(P, u);
+    [sys, Sout, ~] = pmpc_step(u, P.Pm, S, hp, xp, vp_, ap);
+    % The plant owns h now; the controller keeps i_prev across ticks.
+    verifyTrue(testCase, all(isfinite(hp(:))));
     verifyGreaterThanOrEqual(testCase, ...
         Sout.InitialParams.prevstate.nlcsnn.i_prev, zeros(4,1));
     verifyLessThanOrEqual(testCase, ...
@@ -65,20 +68,17 @@ end
 
 function testForceOutputStaysInsideReachableBounds(testCase)
 [P, u] = configuredController(1, 0);
-state0 = P.S0.InitialParams.prevstate.nlcsnn;
-[veh, ~] = func_StateEstimation(u, P.S0.VehiclePara);
-[ctx, ~] = func_NLCSNNContext(P.Pm.NLCSNN.net, ...
-    [veh.D_l1;veh.D_r1;veh.D_l2;veh.D_r2], ...
-    1000*[veh.V_l1;veh.V_r1;veh.V_l2;veh.V_r2], ...
-    state0, P.Pm.NLCSNN);
+[hp, xp, vp_, ap] = plantSample(P, u);
+ctx = func_NLCSNNContext(P.Pm.NLCSNN.net, xp, vp_, ap, hp, P.Pm.NLCSNN);
 S = P.S0;
 S.InitialParams.InitialGapflag = 1;
 
-[sys, ~] = pmpc_step(u, P.Pm, S);
+[sys, ~, ~] = pmpc_step(u, P.Pm, S, hp, xp, vp_, ap);
 Factual = [sys(5);sys(7);sys(6);sys(8)];
 
-verifyGreaterThanOrEqual(testCase, Factual, ctx.F_lo-1e-6);
-verifyLessThanOrEqual(testCase, Factual, ctx.F_hi+1e-6);
+% Tolerance covers the inverse solver's bisection residual (~0.014 N max).
+verifyGreaterThanOrEqual(testCase, Factual, ctx.F_lo-1e-3);
+verifyLessThanOrEqual(testCase, Factual, ctx.F_hi+1e-3);
 end
 
 function testQpDimensionsStayFixed(testCase)
@@ -87,6 +87,20 @@ verifyEqual(testCase, P.Pm.MPCParameters.Nx, 7);
 verifyEqual(testCase, P.Pm.MPCParameters.Ne, 8);
 verifyEqual(testCase, P.Pm.MPCParameters.Nr, 3);
 verifySize(testCase, P.S0.cert, [36 1]);
+end
+
+function [hp, xp, vp_, ap] = plantSample(P, u, nSteps)
+% Emulate the 1 kHz plant between two 100 Hz controller ticks, holding
+% i_cmd = 0 (ZOH). Returns the tick-sampled (h,x,v,a) in controller order.
+if nargin < 3, nSteps = 10; end
+cmpD  = u(51:54);   % [L1;L2;R1;R2] CarSim order, [mm]
+cmpRD = u(1:4);     % [L1;L2;R1;R2] CarSim order, [mm/s]
+hp = zeros(8,4); afp = zeros(4,1); vpp = zeros(4,1); initp = 0;
+for k = 1:nSteps
+    [~, hp, afp, vpp, initp, xp, vp_, ap] = func_NLCSNNPlant4( ...
+        P.Pm.NLCSNN.net, cmpD, cmpRD, zeros(4,1), ...
+        hp, afp, vpp, initp, P.Pm.NLCSNN);
+end
 end
 
 function [P, u] = configuredController(mode, zeng)

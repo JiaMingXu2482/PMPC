@@ -23,7 +23,8 @@ yawRate = 0.25;
 u = local_input(P.S0.VehiclePara, vx, delta, beta, yawRate);
 S = P.S0;
 S.InitialParams.InitialGapflag = 1;
-[sys, ~] = pmpc_step(u, P.Pm, S);
+[hPlant, xPlant, vPlant, aPlant] = local_plant_state(P);
+[sys, ~] = pmpc_step(u, P.Pm, S, hPlant, xPlant, vPlant, aPlant);
 
 [rhoZeng, ~, iBeta, iR] = func_ZengRho(vx, P.S0.VehiclePara.mu, ...
     delta, beta, yawRate, P.S0.VehiclePara.g);
@@ -41,9 +42,18 @@ P = setup_pmpc();
 u = local_input(P.S0.VehiclePara, 20, 0.02, 0.03, 0.25);
 S = P.S0;
 S.InitialParams.InitialGapflag = 1;
-[sys, ~] = pmpc_step(u, P.Pm, S);
+[hPlant, xPlant, vPlant, aPlant] = local_plant_state(P);
+[sys, ~] = pmpc_step(u, P.Pm, S, hPlant, xPlant, vPlant, aPlant);
 
 verifyEqual(testCase, sys(14:16), ones(3,1), 'AbsTol', 1e-9);
+end
+
+function [hPlant, xPlant, vPlant, aPlant] = local_plant_state(P)
+% pmpc_step now receives the state sampled from the external 1 kHz plant.
+hPlant = zeros(8,4);
+xPlant = P.Pm.NLCSNN.x_ref * ones(4,1);
+vPlant = zeros(4,1);
+aPlant = zeros(4,1);
 end
 
 function u = local_input(V, vx, delta, beta, yawRate)

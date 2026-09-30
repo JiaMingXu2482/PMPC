@@ -3,15 +3,41 @@
 ## 在 CarSim 手动改 R69 初速度并运行
 
 1. 首次使用时重启 CarSim，让新建的 Run 出现在列表中。只选 **PMPC** 类别中的 `JT72_R69_mu0.85_PMPC`、`_MPC` 或 `_ZENG`，不要选旧的 `JT80` Run。进入其 **Procedure**：`J-turn 72km/h, Mu=0.85`。修改初速度 `SV_VXS`（界面单位 **km/h**；20 m/s 填 **72 km/h**）并保存。这三个 Run 共用该 Procedure，只需改一次速度。
-2. 逐个选择三个 Run，分别点击 **Send to Simulink**。每 Send 一个，就在项目根目录的 MATLAB 命令行执行一次：
+2. 逐个选择三个 Run，分别点击 **Send to Simulink**。Run 的 `SIMULINK_MODEL_FILE` 必须与控制器固定配对：
+
+| CarSim Run 后缀 | Simulink 模型 | 控制器预测状态 |
+|---|---|---|
+| `_MPC` | `mpc_mil.slx` | 6 状态，无控制器侧减振器时延 |
+| `_ZENG` | `zeng_mil.slx` | 7 状态，固定 15 ms |
+| `_PMPC` | `pmpc_mil.slx` | 7 状态，固定 15 ms |
+
+   Send 后，在项目根目录的 MATLAB 命令行执行对应的一条命令：
 
    ```matlab
-   run_current_carsim
+   run_current_carsim('mpc_mil')
+   run_current_carsim('zeng_mil')
+   run_current_carsim('pmpc_mil')
    ```
+
+   该命令会自动加载对应的参数包和模型；不能拿 `_ZENG` Run 去运行 `mpc_mil`，路径校验会直接报错，避免控制器串台。
 
    结果写入该 Run 在 CarSim 中的 `LastRun`，可直接用 CarSim Plot 查看；画图时也要选新的 `JT72` Run，不要继续叠加旧 `JT80` 结果。执行前脚本会核对当前有效初速度与 Send 后的展开值；若未重新 Send，会直接报错而不会用旧车速运行。
 
 三个 Run 的纵向设置相同，ZENG 独有纵向限速设为 0。运行中实际车速可能因各控制器的制动力不同而分开。`JT72` 是当前数据集名称；以后改车速后可在 CarSim 中按新速度重命名，避免图例误导。
+
+### 直接在 Simulink 调参/运行
+
+不需要依赖数据集名称推断控制器。按下面的配对初始化后，修改该模型对应的参数，再点击 Simulink 运行即可：
+
+```matlab
+mil_init_MPC;  open_system('mpc_mil')
+mil_init_ZENG; open_system('zeng_mil')
+mil_init_PMPC; open_system('pmpc_mil')
+```
+
+ZENG 的顶层有标量线 `rho_ZENG`，它来自控制器诊断向量第 14 项。用户可在这根线上自行添加 Scope；MPC 和 PMPC 的同一诊断位置不是 ZENG rho，不能用于观察 ZENG 调权。
+
+MATLAB Function 块只保留各自可见的入口（`mpc_block`、`zeng_block`、`pmpc_block`）。QP、NLCSNN、状态估计、车辆模型等公共算法仍放在外部 M 文件，便于三个模型共用、Git 对比、单元测试和检索。
 
 ---
 
