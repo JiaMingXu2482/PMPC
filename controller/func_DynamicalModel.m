@@ -1,4 +1,4 @@
-function [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, Mode, LTV)
+function [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, Mode, LTV, Vx_pred)
 % func_DynamicalModel
 % -------------------------------------------------------------------------
 % 生成离散增广状态空间模型。支持两种线性化方案:
@@ -57,6 +57,7 @@ Nu = MPCParameters.Nu;
 Ts = MPCParameters.Ts;
 
 Vel_eff = max(abs(Vel), 0.5) * sign(Vel + 1e-6);   % 防止低速除零
+useScheduledSpeed = nargin >= 6 && ~isempty(Vx_pred);
 
 C_aug = [eye(Nx) zeros(Nx,Nu)];
 StateSpaceModel.C_aug = C_aug;
@@ -72,6 +73,26 @@ StateSpaceModel.off_valid = false;
 
 if nargin < 5 || isempty(LTV)
     %% ============ 方案二: 单工作点, 时域内冻结 ============
+    if useScheduledSpeed
+        for i = 1:Np
+            Vel_node = max(abs(Vx_pred(i)),0.5)*sign(Vx_pred(i)+1e-6);
+            [A6,B6,D6] = local_ABD(P,CbF,CbR,Vel_node,cos(delta_f));
+            if Nx == 7
+                [A,B,D] = local_delay(A6,B6,D6,MPCParameters.tau_d);
+            else
+                A = A6; B = B6; D = D6;
+            end
+            dt = Ts;
+            if i == 1 && MPCParameters.first_Tc
+                dt = MPCParameters.Ts_exec;
+            end
+            [~,~,~,Aa,Ba,Da] = local_disc(A,B,D,dt,Mode,Nx,Nu);
+            StateSpaceModel.A_aug(:,:,i) = Aa;
+            StateSpaceModel.B_aug(:,:,i) = Ba;
+            StateSpaceModel.D_aug(:,:,i) = Da;
+        end
+        return;
+    end
     [A6,B6,D6] = local_ABD(P, CbF, CbR, Vel_eff, cos(delta_f));
     if Nx == 7
         [A,B,D] = local_delay(A6, B6, D6, MPCParameters.tau_d);
@@ -118,10 +139,14 @@ for i = 1:Np
         u = u + LTV.dU(:,i);
     end
     dtot = dr(i) + u(1);                    % 该节点的总前轮转角(驾驶员已外推)
+    Vel_node = Vel_eff;
+    if useScheduledSpeed
+        Vel_node = max(abs(Vx_pred(i)),0.5)*sign(Vx_pred(i)+1e-6);
+    end
 
     % --- 该节点的侧偏角 (由名义状态给出) ---
-    af = (x(1) + lf*x(2))/Vel_eff - dtot;   % alpha_f
-    ar = (x(1) - lr*x(2))/Vel_eff;          % alpha_r
+    af = (x(1) + lf*x(2))/Vel_node - dtot;   % alpha_f
+    ar = (x(1) - lr*x(2))/Vel_node;          % alpha_r
 
     % --- 查表得该节点的 f_bar / c_bar (同源), 并施加切线刚度下限 ---
     [fbf, cbf] = func_TireTable('eval', LTV.TireF, af, LTV.Fzf);
@@ -134,13 +159,17 @@ for i = 1:Np
     off(2,i) = fbr - cbr*ar;
 
     % --- 该节点的状态空间矩阵 ---
-    [A6,B6,D6] = local_ABD(P, cbf, cbr, Vel_eff, cos(dtot));
+    [A6,B6,D6] = local_ABD(P, cbf, cbr, Vel_node, cos(dtot));
     if Nx == 7
         [A,B,D] = local_delay(A6, B6, D6, MPCParameters.tau_d);
     else
         A = A6; B = B6; D = D6;
     end
-    [Ad,Bd,Dd, Aa,Ba,Da] = local_disc(A,B,D,Ts,Mode,Nx,Nu);
+    dt = Ts;
+    if useScheduledSpeed && i == 1 && MPCParameters.first_Tc
+        dt = MPCParameters.Ts_exec;
+    end
+    [Ad,Bd,Dd, Aa,Ba,Da] = local_disc(A,B,D,dt,Mode,Nx,Nu);
     StateSpaceModel.A_aug(:,:,i) = Aa;
     StateSpaceModel.B_aug(:,:,i) = Ba;
     StateSpaceModel.D_aug(:,:,i) = Da;
