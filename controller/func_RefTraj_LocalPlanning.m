@@ -1,6 +1,6 @@
 function [WPIndex,RefU,Kap_dyn,PrjP,Kap_node] = func_RefTraj_LocalPlanning( ...
     MPCParameters, VehiclePara, WayPoints_Index, WayPoints_Collect, ...
-    VehStateMeasured, ParaHAT)
+    VehStateMeasured, ParaHAT, Projection, Vx_pred)
 % func_RefTraj_LocalPlanning
 % 输出：
 %   WPIndex   : 最近路点索引（>0有效；0/负值表示异常/末端）
@@ -56,46 +56,21 @@ RefU     = repmat([0;0;0], Np, 1);
 PrjP = struct('ey',0,'epsi',0,'Velr',Vel,'xr',PosX,'yr',PosY,'psir',PosPsi);
 
 %% ================= WaypointData2VehicleCoords ======================== %%
-WPNum = length(WayPoints_Collect(:,1));
-
-% -------- 寻找参考路径上距车辆最近的点 --------
-Dist_MIN  = 1000;
-index_min = 0;
-
-WayPoints_Index = max(1, min(WayPoints_Index, WPNum)); % 防护
-for i = WayPoints_Index:1:WPNum
-    deltax0 = WayPoints_Collect(i,2) - PosX;
-    deltay0 = WayPoints_Collect(i,3) - PosY;
-    Dist = sqrt(deltax0.^2 + deltay0.^2);
-    if Dist < Dist_MIN
-        Dist_MIN  = Dist;
-        index_min = i;
-    end
+WPNum = size(WayPoints_Collect,1);
+if nargin < 7
+    Projection = func_PathProjection(VehiclePara, WayPoints_Index, ...
+        WayPoints_Collect, VehStateMeasured);
 end
-
-if (index_min < 1)
-    WPIndex = -1;
+WPIndex = Projection.WPIndex;
+if ~Projection.valid
     return;
-else
-    if (index_min >= WPNum)
-        WPIndex = -2;
-        return;
-    else
-        WPIndex = index_min;
-    end
 end
+PrjP = Projection.PrjP;
+s0 = Projection.s0;
+useScheduledSpeed = nargin >= 8 && ~isempty(Vx_pred);
 
 %% ====================== If found nearest point ======================= %%
 if (WPIndex > 0)
-
-    % --- 计算投影点与误差（使用你文件里的 spline-window 方法） ---
-    [PPx, PPy, Psi0, ey, epsi] = func_error(WayPoints_Collect, PosX, PosY, PosPsi);
-    PrjP.ey   = -ey;
-    PrjP.epsi = -epsi;
-    PrjP.Velr = Vel;
-    PrjP.xr   = PPx;
-    PrjP.yr   = PPy;
-    PrjP.psir = Psi0;
 
     % --- 预测节点的弧长与路径曲率 (2026-09-26, 取代单段三次 Bezier 拟合) ---
     %  原做法: 在前方路径点上拟合一段三次 Bezier, 按 Bezier 参数(不是弧长)均匀采样求曲率;
@@ -108,12 +83,15 @@ if (WPIndex > 0)
     %  路径两端之外航向、曲率取端值, 即按直线延伸。
     StepLength_S = 0;
     for i = 1:Np
-        StepLength_S = StepLength_S + Vel * Tk(i);
+        Vel_i = Vel;
+        if useScheduledSpeed, Vel_i = Vx_pred(i); end
+        StepLength_S = StepLength_S + Vel_i * Tk(i);
     end
-    s0 = local_arcpos(WayPoints_Collect, index_min, PosX, PosY);
     s_prev = s0;
     for i = 1:Np
-        s_i = s_prev + Vel * Tk(i);
+        Vel_i = Vel;
+        if useScheduledSpeed, Vel_i = Vx_pred(i); end
+        s_i = s_prev + Vel_i * Tk(i);
         dpsi = local_interp(WayPoints_Collect(:,7), WayPoints_Collect(:,4), s_i) ...
              - local_interp(WayPoints_Collect(:,7), WayPoints_Collect(:,4), s_prev);
         Kap_dyn(i)  = dpsi / max(s_i - s_prev, 1e-6);
@@ -134,20 +112,22 @@ if (WPIndex > 0)
     %  (阶段 C 处理 func_SystemFurture / func_DynamicalModel 用的是同一手法。)
     RefU = zeros(3*Np, 1);
     for i = 1:Np
-        delta_des = L * Kap_node(i) * (1 + K * Vel^2);
+        Vel_i = Vel;
+        if useScheduledSpeed, Vel_i = Vx_pred(i); end
+        delta_des = L * Kap_node(i) * (1 + K * Vel_i^2);
 
-        numerator_vy   = (1 - (m*Lf*Vel^2)/(2*L*Cf*Lr)) * Lr * Vel * delta_des;
-        denominator_vy = L * (1 + K*Vel^2);
+        numerator_vy   = (1 - (m*Lf*Vel_i^2)/(2*L*Cf*Lr)) * Lr * Vel_i * delta_des;
+        denominator_vy = L * (1 + K*Vel_i^2);
         vy_ref_unconstrained = numerator_vy / max(1e-6, denominator_vy);
 
-        vy_friction_limit = Vel * atan(0.02*mu*g);
+        vy_friction_limit = Vel_i * atan(0.02*mu*g);
         Vyr = min(abs(vy_ref_unconstrained), vy_friction_limit) * sign(delta_des);
 
-        numerator_psi   = Vel * delta_des;
-        denominator_psi = L * (1 + K*Vel^2);
+        numerator_psi   = Vel_i * delta_des;
+        denominator_psi = L * (1 + K*Vel_i^2);
         psi_dot_ref_unconstrained = numerator_psi / max(1e-6, denominator_psi);
 
-        psi_dot_friction_limit = min(abs(psi_dot_ref_unconstrained), mu*g / max(1e-3, Vel));
+        psi_dot_friction_limit = min(abs(psi_dot_ref_unconstrained), mu*g / max(1e-3, Vel_i));
         Psidotr = psi_dot_friction_limit * sign(delta_des);
 
         RefU(3*i-2 : 3*i) = [delta_des; Vyr; Psidotr];
@@ -274,109 +254,6 @@ curvature = 4*K/(a*b*c);
 rotate_direction = (X2 - X1)*(Y3 - Y2) - (Y2 - Y1)*(X3 - X2);
 if (rotate_direction < 0)
     curvature = -curvature;
-end
-end
-
-function [PPx,PPy,Psi0,e_y,e_psi] = func_error(WayPoints_Collect, PosX, PosY, PosPsi)
-% spline-window 投影点与误差计算（保持原逻辑，修正形参命名更清晰）
-xo = PosX; yo = PosY; psi = PosPsi;
-
-interp_points = 1500;
-window_size   = 15;
-
-X_ref   = WayPoints_Collect(:,2);
-Y_ref   = WayPoints_Collect(:,3);
-psi_ref = WayPoints_Collect(:,4);
-
-dists = sqrt((X_ref - xo).^2 + (Y_ref - yo).^2);
-%  codegen(R2018a): 用 (:) 把输入强制成列向量, 消除"working dimension"歧义。
-%  变长向量上 min/max/sum 若无法在编译期确定沿哪一维, 运行到某一拍会报
-%    "The working dimension was selected automatically, is variable-length,
-%     and has length 1 at run time."
-%  对向量而言 v(:) 只是 reshape, 数值与线性下标都不变。
-[~, idx_nearest_] = min(dists(:));
-idx_nearest = idx_nearest_(1);       % 同上: 钉成标量
-
-
-start_idx = max(1, idx_nearest - floor(window_size/2));
-end_idx   = min(length(X_ref), start_idx + window_size);
-
-if end_idx - start_idx < 5
-    start_idx = max(1, end_idx - 5);
-end
-
-local_X   = X_ref(start_idx:end_idx);
-local_Y   = Y_ref(start_idx:end_idx);
-local_psi = psi_ref(start_idx:end_idx);
-
-interp_idx = linspace(1, length(local_X), interp_points);
-
-X_interp   = spline(1:length(local_X), local_X, interp_idx);
-Y_interp   = spline(1:length(local_Y), local_Y, interp_idx);
-psi_interp = spline(1:length(local_psi), local_psi, interp_idx);
-
-interp_dists = sqrt((X_interp - xo).^2 + (Y_interp - yo).^2);
-%  codegen(R2018a): 必须把索引强制成标量。
-%  local_X = X_ref(start_idx:end_idx) 的长度是运行时决定的, 于是 X_interp 变尺寸;
-%  min() 对可能为空的变尺寸向量, 其索引输出被推成 [1 x :?] 而不是 [1 x 1],
-%  X_interp(idx_interp) 随之变尺寸, 一路传到 PrjP.ey/epsi, 最后在
-%  func_ReportStatus 里撞上固定 1x1 的 emax.y, 报
-%    "Dimension 2 is fixed on the left-hand side but varies on the right"
-%  取 (1) 只是把类型钉成标量; 运行时 min 必然返回单个下标(1500 个插值点非空),
-%  所以数值完全不变。
-[~, idx_interp_] = min(interp_dists(:));   % 同上: 强制列向量
-idx_interp = idx_interp_(1);
-
-PPx = X_interp(idx_interp);
-PPy = Y_interp(idx_interp);
-
-dx = X_interp(idx_interp) - xo;
-dy = Y_interp(idx_interp) - yo;
-Psi0 = atan2(dy, dx);
-
-e_y = -dx*sin(psi) + dy*cos(psi);
-
-% wrapToPi 兼容：若没有 Mapping Toolbox，可用本地实现
-% codegen: exist(...,'file') 不支持; local_wrapToPi 与 wrapToPi 数学等价,
-% 只在恰好等于 ±pi 时端点归属不同(实际不会发生)。固定用本地实现。
-e_psi = local_wrapToPi(psi_interp(idx_interp) - psi);
-end
-
-function ang = local_wrapToPi(ang)
-%  必须与 MATLAB 的 wrapToPi 语义一致: 它对已在 [-pi,pi] 内的角度**原样返回**。
-%  无条件做 mod 会多一次浮点 round-trip, 改掉末位 —— 实测会让闭环结果变化。
-%
-%  codegen(R2018a): 原来直接写 `if ang < -pi || ang > pi`, R2018a 推不出 ang 是标量,
-%  报 "Expected a scalar. Non-scalars are not supported with logical operators."
-%  改成逐元素循环: 每次比较的都是标量, 且语义与原来**完全一致**(标量输入下逐位相同)。
-for k = 1:numel(ang)
-    a = ang(k);
-    if a < -pi || a > pi
-        ang(k) = mod(a + pi, 2*pi) - pi;
-    end
-end
-end
-
-function s = local_arcpos(W, idx, x, y)
-%LOCAL_ARCPOS  点 (x,y) 在参考折线上的投影点弧长 (第 7 列 = 弧长)
-%  只看最近路点两侧的两段; 首段允许负值(车在路径起点之前), 末段允许超出终点。
-n = size(W,1);
-s = W(idx,7);
-dmin = inf;
-for j = max(idx-1,1):min(idx,n-1)
-    tx = W(j+1,2) - W(j,2);  ty = W(j+1,3) - W(j,3);
-    L2 = tx*tx + ty*ty;
-    if L2 > 0
-        u = ((x - W(j,2))*tx + (y - W(j,3))*ty) / L2;
-        if j > 1,   u = max(u, 0); end
-        if j < n-1, u = min(u, 1); end
-        px = W(j,2) + u*tx;  py = W(j,3) + u*ty;
-        d  = (x - px)*(x - px) + (y - py)*(y - py);
-        if d < dmin
-            dmin = d;
-            s = W(j,7) + u*(W(j+1,7) - W(j,7));
-        end
-    end
 end
 end
 
