@@ -475,6 +475,28 @@ else
         zeros(4,1), Constraints.tau_MR);
 end
 MPCParameters.ControllerVariant = ControllerVariant;
+% PMPC-only road-feasibility speed coordination. MPC and ZENG never read it.
+% Mode 0 restores the original PMPC longitudinal branch; mode 2 retains a
+% curvature-only ablation for the comparison harness.
+if ControllerVariant == 3
+    Constraints.LongCoordMode = localWsget('PMPC_LONGCOORD',1);
+else
+    Constraints.LongCoordMode = 0;
+end
+Constraints.Long_mu_reserve = 0.85;       % lateral capacity below measured mu_eff*g
+Constraints.Long_brake_reserve = 0.70;    % leave tire/brake authority for yaw moment
+Constraints.Long_a_max = 3.0;            % m/s^2, comfort/actuator deceleration cap
+Constraints.Long_preview_nodes = 80;     % fixed array bound for code generation
+Constraints.Long_min_sustain_m = 12;     % ignore brief curvature peaks with road margin
+Constraints.Long_delay = 0.15;           % s, preview allowance for brake response
+Constraints.Long_tau = 0.35;             % s, speed-gap to brake-force conversion
+Constraints.Long_F_slew = 2e5;           % N/s, bounded by four wheel torque slew
+Constraints.Long_VdownRate = 4.0;        % m/s^2, speed-setpoint descent
+Constraints.Long_VupRate = 1.5;          % m/s^2, slower recovery
+Constraints.Long_margin_trigger = 0.20;  % m, predicted four-corner road margin
+Constraints.Long_margin_recover = 0.35;  % m, release hysteresis
+Constraints.Long_trigger_band = 0.10;    % m/s, early braking sensitivity
+Constraints.Long_release_band = 0.40;    % m/s, curvature persistence deadband
 ctlStr = {'① 固定权重 MPC (无 sigma/gamma)','② Zeng rho 调权','③ 本文 PMPC'};
 if ContrlMode==1, ic=3; elseif Constraints.ZengRho_on, ic=2; else ic=1; end
 disp(['  数据集 ' ds_auto '   ->   控制器 ' ctlStr{ic}]);
