@@ -1,4 +1,4 @@
-function [WayPoints_Collect] = func_WayPoints(maneuverType, Rjt)
+function [WayPoints_Collect] = func_WayPoints(maneuverType, Rjt, saveOutput)
 % func_WayPoints 生成参考路径点
 % 输入 maneuverType: 
 %   1 - Double Lane Change (DLC) [基于你的拟合参数]
@@ -11,6 +11,9 @@ function [WayPoints_Collect] = func_WayPoints(maneuverType, Rjt)
 % 默认参数为 1 (DLC)
 if nargin < 1
     maneuverType = 1;
+end
+if nargin < 3
+    saveOutput = true;
 end
 
 %% 1. 路径点生成 (X, Y)
@@ -257,8 +260,10 @@ if maneuverType == 5
 else
     outdir = fullfile(func_ProjectRoot(), 'data');
 end
-if exist(outdir,'dir') ~= 7, mkdir(outdir); end
-save(fullfile(outdir, filename), 'WayPoints_Collect');
+if saveOutput
+    if exist(outdir,'dir') ~= 7, mkdir(outdir); end
+    save(fullfile(outdir, filename), 'WayPoints_Collect');
+end
 % fprintf('路经类型 %d 生成完成，点数: %d，已保存至 %s\n', maneuverType, numPoints, filename);
 
 %% 4. (可选) 绘图验证

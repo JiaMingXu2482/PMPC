@@ -39,6 +39,19 @@ ZENG 的顶层有标量线 `rho_ZENG`，它来自控制器诊断向量第 14 项
 
 MATLAB Function 块只保留各自可见的入口（`mpc_block`、`zeng_block`、`pmpc_block`）。QP、NLCSNN、状态估计、车辆模型等公共算法仍放在外部 M 文件，便于三个模型共用、Git 对比、单元测试和检索。
 
+### PMPC 道路预瞄纵向协调
+
+仅 `pmpc_mil` 使用 `PMPC_LONGCOORD`：`1` 为默认的道路可行性预瞄与提前制动，`0` 关闭并回到原 PMPC，`2` 是只按曲率限速的消融。先在 MATLAB 命令行设置，再执行 `mil_init_PMPC` 或 `run_current_carsim('pmpc_mil')`；初始车速仍由 CarSim Procedure 决定，不要在这里把 80 km/h 改成 72 km/h。
+
+```matlab
+PMPC_LONGCOORD = 1;
+run_current_carsim('pmpc_mil')
+```
+
+参数集中在 `setup_pmpc.m` 的 `Long_*` 字段。顶层 `PMPC_LongCoord_Diagnostics` Scope 和 `PMPC_LongCoord_Log` 记录 12 路内部量：速度上界、可用减速度、道路余量、预瞄距离、最大曲率、触发原因、不可达标志、故障标志、制动力请求、实际分配制动力、下一拍道路余量、速度预测误差。CarSim 的 54 路输出编号不变。PID 油门门控按实际四轮制动力矩触发，包含左右对称制动。
+
+要核对 80 km/h 的 DLC/J-turn 数据集及模型配对，可运行 `compare_pmpc_longcoord('preflight')`。`compare_pmpc_longcoord()` 会跑完整的 PMPC 开/关、曲率消融和 ZENG 对照，结果保存在项目根目录的 `results_pmpc_longcoord`，不覆盖 CarSim 原有 `LastRun`。
+
 ---
 
 ## NLCSNN 减振器配置

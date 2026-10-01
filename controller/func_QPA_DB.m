@@ -1,4 +1,4 @@
-function [Tb_L1,Tb_L2,Tb_R1,Tb_R2] = func_QPA_DB(VehiclePara,InitialParams,Constraints,ParaHAT,MFx,delta_wheel,Tb_u,Fx_dem,verbose)
+function [Tb_L1,Tb_L2,Tb_R1,Tb_R2,exitflag_DB] = func_QPA_DB(VehiclePara,InitialParams,Constraints,ParaHAT,MFx,delta_wheel,Tb_u,Fx_dem,verbose)
 %   verbose=0 时不打印失败警告(失败计数不受影响)。见 setup_pmpc 的 MPCParameters.Verbose
 %  Fx_dem (可选): 纵向制动力需求 (N, 正=减速)。为 0 时与原版**逐位等价**。
 if nargin < 8 || isempty(Fx_dem), Fx_dem = 0; end

@@ -195,6 +195,39 @@ end
 %  要量单拍耗时用 time_step.m: 在**外部**循环调 pmpc_step, tic/toc 在函数外面。
 
 %% 路径规划
+longActive = MPCParameters.ControllerVariant == 3 ...
+    && Constraints.LongCoordMode ~= 0 && ~MPCParameters.FishhookMode;
+Vx_pred = Vel*ones(MPCParameters.Np,1);
+longFx = 0;
+longVset = VehStateMeasured.VxTarget;
+projDefault = struct('ey',0,'epsi',0,'Velr',Vel, ...
+    'xr',VehStateMeasured.X,'yr',VehStateMeasured.Y, ...
+    'psir',VehStateMeasured.Yaw);
+Projection = struct('WPIndex',-1,'PrjP',projDefault, ...
+    's0',0,'valid',false);
+if longActive
+    if ~isfinite(St.LongCoord.prev.Vset_prev)
+        St.LongCoord.prev.Vset_prev = VehStateMeasured.VxTarget;
+    end
+    if St.LongCoord.speed_planned > 0
+        St.LongCoord.speed_mismatch = Vel-St.LongCoord.Vx_pred(1);
+    end
+    Projection = func_PathProjection(VehiclePara, ...
+        InitialParams.WayPoints_IndexPre,Reftraj,VehStateMeasured);
+    [longPlan,longNext] = func_PMPCSpeedCoordinator( ...
+        MPCParameters,VehiclePara,Constraints,Reftraj,Projection, ...
+        VehStateMeasured,ParaHAT,St.LongCoord.margin_prev,St.LongCoord.prev);
+    St.LongCoord.prev = longNext;
+    St.LongCoord.diag = longPlan.diag;
+    St.LongCoord.Vx_pred = longPlan.Vx_pred;
+    St.LongCoord.Fx_request = longPlan.Fx_dem;
+    St.LongCoord.speed_actual = Vel;
+    St.LongCoord.speed_planned = longPlan.Vx_pred(1);
+    St.LongCoord.Vset_pid = longPlan.Vset_pid;
+    Vx_pred = longPlan.Vx_pred;
+    longFx = longPlan.Fx_dem;
+    longVset = longPlan.Vset_pid;
+end
 if MPCParameters.FishhookMode          % 鱼钩: 无路径
     Kap_dyn = [];  Kap_node = [];
     PrjP   = struct('ey',0,'epsi',0,'Velr',Vel,'xr',VehStateMeasured.X, ...
@@ -204,7 +237,15 @@ if MPCParameters.FishhookMode          % 鱼钩: 无路径
 else
     %  2026-09-26: e_y/e_psi 在质心处量; 曲率取路径真值按节点弧长采样 ——
     %  Kap_dyn 进预测模型(每步平均曲率), Kap_node 进车道约束(节点曲率)。见 改进.md 18q。
-    [WPIndex,RefU,Kap_dyn,PrjP,Kap_node] = func_RefTraj_LocalPlanning(MPCParameters,VehiclePara,InitialParams.WayPoints_IndexPre,Reftraj,VehStateMeasured,ParaHAT); 
+    if longActive
+        [WPIndex,RefU,Kap_dyn,PrjP,Kap_node] = func_RefTraj_LocalPlanning( ...
+            MPCParameters,VehiclePara,InitialParams.WayPoints_IndexPre, ...
+            Reftraj,VehStateMeasured,ParaHAT,Projection,Vx_pred);
+    else
+        [WPIndex,RefU,Kap_dyn,PrjP,Kap_node] = func_RefTraj_LocalPlanning( ...
+            MPCParameters,VehiclePara,InitialParams.WayPoints_IndexPre, ...
+            Reftraj,VehStateMeasured,ParaHAT);
+    end
     if WPIndex > 0, InitialParams.WayPoints_IndexPre = WPIndex; end
     ref_Vy = RefU(2:3:end);     
     ref_r  = RefU(3:3:end);
@@ -228,9 +269,21 @@ MPCParameters.Nu, MPCParameters.Nc),...
 'Ctan_floor_frac',Constraints.Ctan_floor_frac);
 if MPCParameters.LTV_on
 % 方案三: 名义轨迹由上一拍解移位(热启动)给出, 逐节点重算 alpha -> c_bar/f_bar
-[StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, DiscreteModle, LTVin);
+if longActive
+    [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, ...
+        VehStateMeasured, DiscreteModle, LTVin, Vx_pred);
 else
-[StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, DiscreteModle);
+    [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, ...
+        VehStateMeasured, DiscreteModle, LTVin);
+end
+else
+if longActive
+    [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, ...
+        VehStateMeasured, DiscreteModle, [], Vx_pred);
+else
+    [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, ...
+        VehStateMeasured, DiscreteModle);
+end
 end
 % ---- Zeng 2025 先进对比: 先算 rho 与稳定性边界, 供 Envelope 和代价共用 ----
 rho_zeng = 1; Iind_zeng = 0; Ib_zeng = 0; Ir_zeng = 0;
@@ -501,6 +554,21 @@ if exitflag == 1
 else
     Y   = PSI*zeta + PHI*GAMMA;      % 忽略控制增量项
 end
+if longActive
+    St.LongCoord.qp_exitflag = exitflag;
+    if all(isfinite(Y))
+        roadMargin = inf;
+        for p = 1:MPCParameters.Np
+            yp = Y((p-1)*Ny+(1:Nx));
+            residual = Envelope.Genv + kap_env(p)*Envelope.gkap ...
+                - Envelope.Henv*yp;
+            roadMargin = min(roadMargin,min(residual));
+        end
+        St.LongCoord.margin_prev = roadMargin;
+    else
+        St.LongCoord.margin_prev = -inf;
+    end
+end
 
 %% ============ Zeng 方法的纵向控制 (仅 ZENG 控制器) ============
 %  把 Zeng 的稳定性约束 |r| <= mu*g/Vx 解为速度上限 Vx <= mu*g/|r|,
@@ -508,7 +576,8 @@ end
 %  减速度受**摩擦菱形**限幅 (Wischnewski 2023 Eq.10a): 横向顶满时自动归零,
 %  避免抢走正需要的横向附着。执行走差动制动分配器(唯一有制动权限的通路)。
 Fx_dem = 0;   Vset_zg = VehStateMeasured.VxTarget;   Vset_pid = Vset_zg;
-if (Constraints.ZengRho_on || Constraints.LongLim_diag) && Constraints.ZengLong_on && exitflag == 1
+if ~longActive && (Constraints.ZengRho_on || Constraints.LongLim_diag) ...
+        && Constraints.ZengLong_on && exitflag == 1
     %  取**预测时域内最大** |r| —— 实测必需。
     %  原文 Eq.(26e) 是逐步约束且无需额外预瞄, 因为其 MPC **内部就有纵向自由度**
     %  (u 含 F_xf/F_xr), 预测时域里速度是决策变量, 自然会提前减速。
@@ -577,6 +646,10 @@ if (Constraints.ZengRho_on || Constraints.LongLim_diag) && Constraints.ZengLong_
         InitialParams.prevstate.Vpid = Vset_pid;
     end
 end
+if longActive
+    Fx_dem = longFx;
+    Vset_pid = longVset;
+end
 
 %% ==================================================================%
 %--------------------- QPA control allocation -----------------------%
@@ -588,7 +661,23 @@ if MPCParameters.FishhookMode || MPCParameters.AFS_add
 else
     [Steer_Wheel, delta_wheel] = func_AFS(VehiclePara,VehStateMeasured,MPCParameters,ParaHAT, delta_robot + Fyf_next);   % 总转角
 end
-[Tb_L1,Tb_L2,Tb_R1,Tb_R2]  = func_QPA_DB(VehiclePara,InitialParams,Constraints,ParaHAT,MFx_next,delta_wheel,Tb_u,Fx_dem,MPCParameters.Verbose);
+[Tb_L1,Tb_L2,Tb_R1,Tb_R2,exitflag_DB] = func_QPA_DB( ...
+    VehiclePara,InitialParams,Constraints,ParaHAT,MFx_next, ...
+    delta_wheel,Tb_u,Fx_dem,MPCParameters.Verbose);
+if longActive
+    St.LongCoord.allocation_exitflag = exitflag_DB;
+    St.LongCoord.prev.allocationFailed = exitflag_DB <= 0;
+    St.LongCoord.Fx_achieved = ...
+        ((Tb_L1+Tb_R1)*cos(delta_wheel)+Tb_L2+Tb_R2)/VehiclePara.rt;
+    if St.LongCoord.Fx_request > 1
+        St.LongCoord.prev.achievedRatio = min(max( ...
+            St.LongCoord.Fx_achieved/St.LongCoord.Fx_request,0),1);
+    else
+        St.LongCoord.prev.achievedRatio = 1;
+    end
+    St.LongCoord.brake_active = ...
+        Tb_L1+Tb_R1+Tb_L2+Tb_R2 > 1;
+end
 InitialParams.prevstate.Tb = [Tb_L1;Tb_R1;Tb_L2;Tb_R2];
 [Fd_L1,Fd_L2,Fd_R1,Fd_R2,Md_real,exitflag_Fd]  = func_QPA_CDC(VehiclePara,InitialParams,VehStateMeasured,Md_next,Fdu,Fdl,MPCParameters.Verbose);
 Fd_cmd = [Fd_L1;Fd_R1;Fd_L2;Fd_R2];

@@ -66,6 +66,7 @@ aBrake = max(aBrake,0);
 plan.diag(2) = aBrake;
 
 roadMargin = margin_prev;
+measuredMargin = margin_prev;
 if isfield(Constraints,'Roadwidth') && isfield(Constraints,'env_Wv') ...
         && isfield(Constraints,'env_es')
     measuredMargin = (Constraints.Roadwidth-Constraints.env_Wv)/2 ...
@@ -103,8 +104,8 @@ end
 plan.diag(5) = peakKappa;
 
 % A brief lane change can need high instantaneous lateral acceleration
-% without being a sustained infeasible bend. A real corridor-margin threat
-% bypasses this persistence filter. Mode 2 intentionally omits the filter.
+% without being a sustained infeasible bend. Severe measured corridor loss
+% shortens (but does not remove) persistence. Mode 2 omits this filter.
 marginThreshold = Constraints.Long_margin_trigger;
 if prev.trigger, marginThreshold = Constraints.Long_margin_recover; end
 marginRisk = roadMargin < marginThreshold;
@@ -117,7 +118,11 @@ for i = 1:nPreview+1
         runStart = i;
     elseif ~isActive && runStart > 0
         runLength = (i-runStart)*ds;
-        if runLength >= Constraints.Long_min_sustain_m || marginRisk || mode == 2
+        sustainNeeded = Constraints.Long_min_sustain_m;
+        if marginRisk && measuredMargin < -0.25
+            sustainNeeded = max(15,0.5*sustainNeeded);
+        end
+        if runLength >= sustainNeeded || mode == 2
             for j = runStart:i-1
                 effectiveLimit(j) = rawLimit(j);
             end
@@ -191,7 +196,7 @@ plan.Vset_pid = min(vset,targetKmh);
 
 % Only deceleration that the allocator could execute is credited to the
 % lateral prediction. An allocator failure disables that credit this tick.
-aPred = force/VehiclePara.m;
+aPred = force/VehiclePara.m*min(max(prev.achievedRatio,0),1);
 if prev.allocationFailed, aPred = 0; end
 t = 0;
 for i = 1:Np

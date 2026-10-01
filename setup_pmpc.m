@@ -46,7 +46,7 @@ InitialParams.FishhookMode    = localWsget('PMPC_FISHHOOK',   0);   % 1=鱼钩�
 %  DLC80_mu0.5_* 解析结果与 2026-09-26 前写死的 (DLC, mu = 0.5) 完全相同。
 [~, ~, ds_mv] = func_RunMode();
 MV = func_ManeuverFromName(ds_mv);
-[Reftraj] = func_WayPoints(MV.type, MV.R); % 1-DLC, 2-Slalom, 3-U-Turn, 5-J-turn
+[Reftraj] = func_WayPoints(MV.type, MV.R, false); % Runtime path is in memory; preserve MAT files.
 PMPC_cargo = localWsget('PMPC_CARGO', 0);   % 与横幅同源
 [VehiclePara] = func_VehicleParams(PMPC_cargo);
 %  模型基准试验开关 (改进.md 18z, 默认全关 = erd_0926_pi 版本, 用户 2026-09-27 定):
@@ -487,7 +487,7 @@ Constraints.Long_mu_reserve = 0.85;       % lateral capacity below measured mu_e
 Constraints.Long_brake_reserve = 0.70;    % leave tire/brake authority for yaw moment
 Constraints.Long_a_max = 3.0;            % m/s^2, comfort/actuator deceleration cap
 Constraints.Long_preview_nodes = 80;     % fixed array bound for code generation
-Constraints.Long_min_sustain_m = 12;     % ignore brief curvature peaks with road margin
+Constraints.Long_min_sustain_m = 30;     % DLC lobes are ~13 m; R69 J-turn is ~108 m
 Constraints.Long_delay = 0.15;           % s, preview allowance for brake response
 Constraints.Long_tau = 0.35;             % s, speed-gap to brake-force conversion
 Constraints.Long_F_slew = 2e5;           % N/s, bounded by four wheel torque slew
@@ -618,9 +618,16 @@ P.Pm = struct('MPCParameters',MPCParameters, 'CostWeights',CostWeights, ...
               'DiscreteModle',DiscreteModle, ...
               'Reftraj',Reftraj, 'TireF',TireF, 'TireR',TireR, ...
               'NLCSNN',NLCSNN);
+longPrev = struct('Fx_prev',0,'Vset_prev',NaN,'trigger',false, ...
+    'release_ticks',0,'allocationFailed',false,'achievedRatio',1);
+LongCoord = struct('prev',longPrev,'margin_prev',1000, ...
+    'diag',zeros(8,1),'Vx_pred',zeros(MPCParameters.Np,1), ...
+    'Fx_request',0,'Fx_achieved',0,'speed_actual',0, ...
+    'speed_planned',0,'Vset_pid',0,'speed_mismatch',0, ...
+    'allocation_exitflag',1,'qp_exitflag',1,'brake_active',false);
 P.S0 = struct('InitialParams',InitialParams, 'WarmStart',WarmStart, 'rho',rho, ...
               'VehiclePara',VehiclePara, 'Constraints',Constraints, ...
-              'cert', nan(36, 1));   % 固定证书布局，供 MATLAB Function 状态推断和离线回放
+              'cert', nan(36, 1),'LongCoord',LongCoord);
 
 % 没有输出参数时, 顺手写进 base 工作区
 if nargout == 0

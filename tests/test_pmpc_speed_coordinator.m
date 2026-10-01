@@ -41,6 +41,19 @@ verifyEqual(testCase,plan.Fx_dem,0,'AbsTol',1e-12);
 verifyEqual(testCase,plan.diag(1),state.x_dot,'AbsTol',1e-12);
 end
 
+function testActualDlcAlternatingLobesDoNotBrake(testCase)
+[mpc,vehicle,limits,state,loads,prev] = fixture();
+vehicle.mu = 0.5;
+vehicle.mu_eff = 0.855*vehicle.mu;
+limits.Long_min_sustain_m = 30;
+W = func_WayPoints(1,69,false);
+for station = [0 50 65 80 110 130]
+    [plan,~] = runPlanner(mpc,vehicle,limits,W,state,loads,prev,-0.5,station);
+    verifyTrue(testCase,plan.valid);
+    verifyEqual(testCase,plan.Fx_dem,0,'AbsTol',1e-12);
+end
+end
+
 function testLowerMuNeverRaisesSpeedCap(testCase)
 [mpc,vehicle,limits,state,loads,prev] = fixture();
 W = road('jturn');
@@ -94,6 +107,19 @@ verifyEqual(testCase,plan.Vx_pred,state.x_dot*ones(mpc.Np,1),'AbsTol',1e-12);
 verifyEqual(testCase,plan.diag(8),1);
 end
 
+function testUnachievedBrakeNotCredited(testCase)
+[mpc,vehicle,limits,state,loads,prev] = fixture();
+W = road('jturn');
+[fullCredit,~] = runPlanner(mpc,vehicle,limits,W,state,loads,prev,0.5,47);
+prev.achievedRatio = 0;
+[noCredit,~] = runPlanner(mpc,vehicle,limits,W,state,loads,prev,0.5,47);
+verifyGreaterThan(testCase,fullCredit.Fx_dem,0);
+verifyEqual(testCase,noCredit.Fx_dem,fullCredit.Fx_dem,'AbsTol',1e-9);
+verifyEqual(testCase,noCredit.Vx_pred, ...
+    state.x_dot*ones(mpc.Np,1),'AbsTol',1e-12);
+verifyLessThan(testCase,fullCredit.Vx_pred(end),state.x_dot);
+end
+
 function [plan,next] = runPlanner(mpc,vehicle,limits,W,state,loads,prev,margin,s0)
 projection = struct('WPIndex',max(1,round(s0)+1), ...
     'PrjP',struct('ey',0,'epsi',0,'Velr',state.x_dot, ...
@@ -107,14 +133,14 @@ mpc = struct('Np',20,'Ts',0.05,'Ts_exec',0.01,'first_Tc',false);
 vehicle = struct('m',1860,'mu',0.85,'mu_eff',0.855*0.85,'g',9.81,'rt',0.347);
 limits = struct('LongCoordMode',1,'Tb_max',3000,'Long_mu_reserve',0.85, ...
     'Long_brake_reserve',0.7,'Long_a_max',3,'Long_preview_nodes',80, ...
-    'Long_min_sustain_m',12,'Long_delay',0.15,'Long_tau',0.35, ...
+    'Long_min_sustain_m',30,'Long_delay',0.15,'Long_tau',0.35, ...
     'Long_F_slew',2e5,'Long_VdownRate',4,'Long_VupRate',1.5, ...
     'Long_margin_trigger',0.2,'Long_margin_recover',0.35, ...
     'Long_trigger_band',0.1,'Long_release_band',0.4);
 state = struct('x_dot',80/3.6,'VxTarget',80);
 loads = struct('Fz_l1',4800,'Fz_r1',4800,'Fz_l2',4300,'Fz_r2',4300);
 prev = struct('Fx_prev',0,'Vset_prev',80,'trigger',false, ...
-    'release_ticks',0,'allocationFailed',false);
+    'release_ticks',0,'allocationFailed',false,'achievedRatio',1);
 end
 
 function W = road(kind)

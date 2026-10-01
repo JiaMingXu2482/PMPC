@@ -1,4 +1,4 @@
-function [sys, i_cmd] = pmpc_block(u, h_plant, x_plant, v_plant, a_plant, PMPC_P) %#codegen
+function [sys, i_cmd, long_diag] = pmpc_block(u, h_plant, x_plant, v_plant, a_plant, PMPC_P) %#codegen
 %PMPC_BLOCK  MATLAB Function block 的全部内容(块里只写一行调用它)
 %   u      : 54x1 CarSim 量测 (顺序见 func_StateEstimation)
 %   h_plant/x_plant/v_plant/a_plant: 1 kHz plant 在拍首采样的状态
@@ -33,4 +33,7 @@ if isempty(St)
 end
 [sys, St, i_cmd] = pmpc_step(uc, PMPC_P.Pm, St, ...
                              h_plant, x_plant, v_plant, a_plant);
+long_diag = [St.LongCoord.diag; St.LongCoord.Fx_request; ...
+    St.LongCoord.Fx_achieved; St.LongCoord.margin_prev; ...
+    St.LongCoord.speed_mismatch];
 end
