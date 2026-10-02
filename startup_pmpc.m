@@ -1,6 +1,7 @@
 function root = startup_pmpc()
 %STARTUP_PMPC  Add the PMPC project folders to the MATLAB path.
 root = fileparts(mfilename('fullpath'));
+addpath(fullfile(root, 'config'));
 addpath(fullfile(root, 'controller'));
 addpath(fullfile(root, 'nlcsnn'));
 addpath(fullfile(root, 'data'));

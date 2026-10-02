@@ -12,6 +12,9 @@ function [WayPoints_Collect] = func_WayPoints(maneuverType, Rjt, saveOutput)
 if nargin < 1
     maneuverType = 1;
 end
+if nargin < 2 || isempty(Rjt)
+    Rjt = 69;
+end
 if nargin < 3
     saveOutput = true;
 end
@@ -193,6 +196,21 @@ case 4  % ===== Combined Maneuver: DLC -> U-Turn =====
         X_str3 = (L1 + Rjt)*ones(size(Y_str3));
         X = [X_str1; X_arc(2:end); X_str3(2:end)];
         Y = [Y_str1; Y_arc(2:end); Y_str3(2:end)];
+    case 6  % DLC -> recovery straight -> parameterized-radius J-turn, one continuous path
+        C = func_CombinedCourse(Rjt);
+        dlc = func_WayPoints(1,C.turn_radius,false);
+        X_dlc = dlc(:,2); Y_dlc = dlc(:,3);
+        ds = 0.5;
+        X_mid = (C.dlc_end_x+ds:ds:C.turn_x)';
+        Y_mid = zeros(size(X_mid));
+        n_arc = ceil((pi/2*C.turn_radius)/ds)+1;
+        theta = linspace(-pi/2,0,n_arc)';
+        X_arc = C.turn_x + C.turn_radius*cos(theta);
+        Y_arc = C.turn_radius*(1+sin(theta));
+        Y_exit = (C.turn_radius+ds:ds:C.turn_radius+C.exit_length)';
+        X_exit = (C.turn_x+C.turn_radius)*ones(size(Y_exit));
+        X = [X_dlc; X_mid; X_arc(2:end); X_exit];
+        Y = [Y_dlc; Y_mid; Y_arc(2:end); Y_exit];
     otherwise
         error('Maneuver Type unknown. Use 1 (DLC), 2 (Slalom), 3 (U-Turn) or 5 (J-turn).');
 end
@@ -215,7 +233,7 @@ dY = gradient(Y);
 psi_ref = atan2(dY, dX); 
 
 % 修正：对于 DLC 起始段，强制设为 0 以消除数值噪音
-if maneuverType == 1
+if maneuverType == 1 || maneuverType == 6
     psi_ref(X <= 20) = 0; 
     Y(X <= 20) = 0;      % 确保起始点完全对齐
     WayPoints_Collect(:,3) = Y;
@@ -255,7 +273,8 @@ WayPoints_Collect(:,5) = K;              % Curvature (1/m)
 %% 3. 保存与输出
 filename = sprintf('WayPoints_Type%d.mat', maneuverType);
 if maneuverType == 5, filename = sprintf('WayPoints_Type5_R%g.mat', Rjt); end   % 半径不同的 J-turn 分开存
-if maneuverType == 5
+if maneuverType == 6, filename = sprintf('WayPoints_Type6_R%g.mat', Rjt); end
+if maneuverType == 5 || maneuverType == 6
     outdir = fullfile(func_ProjectRoot(), 'data', 'generated');
 else
     outdir = fullfile(func_ProjectRoot(), 'data');

@@ -1,10 +1,11 @@
 function [plan,next] = func_PMPCSpeedCoordinator( ...
     MPCParameters,VehiclePara,Constraints,W,Proj,VehStateMeasured, ...
-    ParaHAT,margin_prev,prev)
+    ParaHAT,margin_prev,prev,previewEndStation)
 %FUNC_PMPCSPEEDCOORDINATOR Road-feasibility speed plan for PMPC only.
 % All speed values are m/s internally; Fx_dem is a positive brake force.
 % diag = [speed_cap; available_decel; road_margin; preview_length;
 %         peak_curvature; reason; unreachable; fault].
+if nargin < 10, previewEndStation = inf; end
 
 Np = MPCParameters.Np;
 vMeasured = VehStateMeasured.x_dot;
@@ -82,6 +83,12 @@ vTarget = targetKmh/3.6;
 previewLength = max(40,v*v/(2*max(aBrake,0.25)) ...
     + v*Constraints.Long_delay + 10);
 previewLength = min(previewLength,200);
+% Current-mu planning must stop at a known friction boundary. Otherwise a
+% future high-mu bend is falsely assessed using today's low-mu surface.
+if isfinite(previewEndStation)
+    previewLength = min(previewLength, ...
+        max(previewEndStation-Proj.s0-v*Constraints.Long_delay-1e-3,0.1));
+end
 plan.diag(4) = previewLength;
 nPreview = max(2,min(80,round(Constraints.Long_preview_nodes)));
 ds = previewLength/(nPreview-1);
@@ -99,7 +106,9 @@ for i = 1:nPreview
     if kappa > 1e-9
         rawLimit(i) = min(vTarget,sqrt(aLatSafe/kappa));
     end
-    active(i) = rawLimit(i) < v-Constraints.Long_release_band;
+    % A sustained geometric speed cap must not vanish as soon as the car
+    % slows to it. Compare with the scenario target, not measured speed.
+    active(i) = rawLimit(i) < vTarget-Constraints.Long_release_band;
 end
 plan.diag(5) = peakKappa;
 

@@ -32,6 +32,50 @@ verifyLessThanOrEqual(testCase,plan.Fx_dem,limits.Long_F_slew*mpc.Ts_exec+1e-9);
 verifyLessThanOrEqual(testCase,plan.Vset_pid,state.VxTarget);
 end
 
+function testFrictionBoundaryStopsLowMuPreview(testCase)
+[mpc,vehicle,limits,state,loads,prev] = fixture();
+W = func_WayPoints(6,69,false);
+vehicle.mu = 0.5;
+vehicle.mu_eff = 0.855*vehicle.mu;
+state.x_dot = 90/3.6;
+state.VxTarget = 90;
+prev.Vset_prev = 90;
+straight = W(:,2) <= 280;
+switchStation = interp1(W(straight,2),W(straight,7),230);
+projection = struct('WPIndex',201,'PrjP', ...
+    struct('ey',0,'epsi',0,'Velr',state.x_dot,'xr',200,'yr',0,'psir',0), ...
+    's0',200,'valid',true);
+[plan,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,switchStation);
+verifyEqual(testCase,plan.Fx_dem,0,'AbsTol',1e-9);
+verifyEqual(testCase,plan.Vset_pid,90,'AbsTol',1e-9);
+end
+
+function testLateralCapRetainsOriginalSafetyReserve(testCase)
+[mpc,vehicle,limits,state,loads,prev] = fixture();
+state.x_dot = 90/3.6;
+state.VxTarget = 90;
+prev.Vset_prev = 90;
+W = road('jturn');
+[plan,~] = runPlanner(mpc,vehicle,limits,W,state,loads,prev,0.5,100);
+expected = sqrt(vehicle.mu_eff*vehicle.g*limits.Long_mu_reserve*69);
+verifyEqual(testCase,plan.diag(1),expected,'AbsTol',1e-6);
+end
+
+function testSustainedBendCapDoesNotDisappearBelowReleaseSpeed(testCase)
+[mpc,vehicle,limits,state,loads,prev] = fixture();
+W = road('jturn');
+capKmh = 3.6*sqrt(vehicle.mu_eff*vehicle.g*limits.Long_mu_reserve*69);
+prev.Vset_prev = capKmh;
+for speedKmh = [72 73 73.8]
+    state.x_dot = speedKmh/3.6;
+    [plan,~] = runPlanner(mpc,vehicle,limits,W,state,loads,prev,0.5,100);
+    verifyEqual(testCase,plan.diag(1)*3.6,capKmh,'AbsTol',1e-6);
+    verifyEqual(testCase,plan.Vset_pid,capKmh,'AbsTol',1e-6);
+    verifyEqual(testCase,plan.Fx_dem,0,'AbsTol',1e-12);
+end
+end
+
 function testShortDlcBendDoesNotBrakeWhenReachable(testCase)
 [mpc,vehicle,limits,state,loads,prev] = fixture();
 W = road('short_bend');

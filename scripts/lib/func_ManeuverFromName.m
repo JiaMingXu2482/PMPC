@@ -8,11 +8,26 @@ function mv = func_ManeuverFromName(dsname)
 %   命名约定: <工况><车速>_[R<半径>_]mu<附着>_<控制器>, 例如
 %     DLC80_mu0.5_PMPC、JT80_R69_mu0.85_ZENG。
 %   解析不到时(部署机没有 simfile.sim 等)退回 DLC、mu = 0.5, 与 2026-09-26 之前写死的值相同。
-mv = struct('type', 1, 'R', NaN, 'mu', 0.5, 'wp', 'WayPoints_Type1.mat');
+mv = struct('type', 1, 'R', NaN, 'mu', 0.5, 'wp', 'WayPoints_Type1.mat', ...
+    'combined',false, 'mu_high',0.5, 'mu_switch_x',0);
 if nargin < 1 || isempty(dsname), return; end
 U  = upper(char(dsname));
 t  = regexp(U, 'MU([0-9]*\.?[0-9]+)', 'tokens', 'once');
 if ~isempty(t), mv.mu = str2double(t{1}); end
+if strncmp(U,'COMB',4)
+    r = regexp(U,'_JT_R?([0-9]+(?:\.[0-9]+)?)_', 'tokens','once');
+    assert(~isempty(r),'func_ManeuverFromName:NoCombinedRadius', ...
+        'Combined dataset must include _JT_R69_: %s',dsname);
+    C = func_CombinedCourse(str2double(r{1}));
+    mv.type = 6;
+    mv.R = C.turn_radius;
+    mv.mu = C.mu_dlc;
+    mv.mu_high = C.mu_jturn;
+    mv.mu_switch_x = C.mu_switch_x;
+    mv.combined = true;
+    mv.wp = sprintf('WayPoints_Type6_R%g.mat',mv.R);
+    return;
+end
 if strncmp(U, 'JT', 2)
     r = regexp(U, '_R([0-9]+(\.[0-9]+)?)_', 'tokens', 'once');
     assert(~isempty(r), 'func_ManeuverFromName:NoRadius', ...

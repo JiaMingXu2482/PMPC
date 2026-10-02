@@ -61,7 +61,7 @@ verifyEqual(testCase,S.LongCoord.prev.allocationFailed, ...
 verifyGreaterThanOrEqual(testCase,S.LongCoord.Fx_achieved,0);
 end
 
-function testNoThrottleBrakeFight(testCase)
+function testOnlyLongitudinalBrakeRequestGatesThrottle(testCase)
 P = configured(3,1);
 P.Pm.Reftraj = func_WayPoints(5,69,false);
 [sys,S] = step(P,activeState(P),controllerInput(80,50));
@@ -73,7 +73,7 @@ pidPorts = get_param('pmpc_mil/PID velocity control','PortHandles');
 gateLine = get_param(pidPorts.Inport(3),'Line');
 source = get_param(gateLine,'SrcPortHandle');
 verifyEqual(testCase,get_param(source,'Parent'), ...
-    'pmpc_mil/PMPC_BrakeTorqueSum');
+    'pmpc_mil/PMPC_LongBrakeRequest');
 verifyEqual(testCase,get_param( ...
     'pmpc_mil/PID velocity control/DB_on','const'),'1');
 end

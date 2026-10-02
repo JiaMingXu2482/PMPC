@@ -56,6 +56,21 @@ InitialParams.InitialGapflag = InitialParams.InitialGapflag + 1;
 
 % --- 1. 状态估计与预处理 ---
 [VehStateMeasured, ParaHAT] = func_StateEstimation(u,VehiclePara);  
+% The combined road changes friction on a straight section. Both Fiala
+% models were prepared by setup_pmpc; selecting one costs no online fit.
+if Pm.RoadMu.enabled
+    if VehStateMeasured.X >= Pm.RoadMu.switch_x
+        VehiclePara.mu = Pm.RoadMu.high;
+        VehiclePara.mu_eff = 0.855*Pm.RoadMu.high;
+        Constraints.arlim = Pm.RoadMu.arlim_high;
+        TireF = Pm.TireFHigh;
+        TireR = Pm.TireRHigh;
+    else
+        VehiclePara.mu = Pm.RoadMu.low;
+        VehiclePara.mu_eff = 0.855*Pm.RoadMu.low;
+        Constraints.arlim = Pm.RoadMu.arlim_low;
+    end
+end
 Vel = VehStateMeasured.x_dot;
 Vy  = VehStateMeasured.y_dot; 
 yawrate = VehStateMeasured.Yawrate; 
@@ -214,9 +229,14 @@ if longActive
     end
     Projection = func_PathProjection(VehiclePara, ...
         InitialParams.WayPoints_IndexPre,Reftraj,VehStateMeasured);
+    previewEndStation = inf;
+    if Pm.RoadMu.enabled && VehStateMeasured.X < Pm.RoadMu.switch_x
+        previewEndStation = Pm.RoadMu.switch_station;
+    end
     [longPlan,longNext] = func_PMPCSpeedCoordinator( ...
         MPCParameters,VehiclePara,Constraints,Reftraj,Projection, ...
-        VehStateMeasured,ParaHAT,St.LongCoord.margin_prev,St.LongCoord.prev);
+        VehStateMeasured,ParaHAT,St.LongCoord.margin_prev,St.LongCoord.prev, ...
+        previewEndStation);
     St.LongCoord.prev = longNext;
     St.LongCoord.diag = longPlan.diag;
     St.LongCoord.Vx_pred = longPlan.Vx_pred;
@@ -649,6 +669,13 @@ end
 if longActive
     Fx_dem = longFx;
     Vset_pid = longVset;
+end
+if Pm.RoadMu.enabled
+    [sharedVset,sharedFx] = func_CombinedSpeedReference( ...
+        Pm.RoadMu,VehStateMeasured.X,Vel, ...
+        VehStateMeasured.VxTarget,VehiclePara.m);
+    Vset_pid = min(Vset_pid,sharedVset);
+    Fx_dem = max(Fx_dem,sharedFx);
 end
 
 %% ==================================================================%

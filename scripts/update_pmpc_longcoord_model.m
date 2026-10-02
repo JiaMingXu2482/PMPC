@@ -1,5 +1,5 @@
 function update_pmpc_longcoord_model()
-%UPDATE_PMPC_LONGCOORD_MODEL Wire PMPC diagnostics and actual-brake PID gate.
+%UPDATE_PMPC_LONGCOORD_MODEL Wire PMPC diagnostics and longitudinal-brake gate.
 % Only pmpc_mil is changed. CarSim's 54-channel interface is untouched.
 root = fileparts(fileparts(mfilename('fullpath')));
 model = 'pmpc_mil';
@@ -18,28 +18,48 @@ chart.Script = fileread(fullfile(root,'controller','pmpc_block.m'));
 
 gate = [model '/PID velocity control'];
 sumBlock = [model '/PMPC_BrakeTorqueSum'];
-if getSimulinkBlockHandle(sumBlock) == -1
-    add_block('simulink/Math Operations/Sum',sumBlock, ...
-        'Inputs','++++','Position',[590 530 620 580]);
+requestBlock = [model '/PMPC_LongBrakeRequest'];
+if getSimulinkBlockHandle(requestBlock) == -1
+    add_block('simulink/Signal Routing/Selector',requestBlock, ...
+        'NumberOfDimensions','1','IndexMode','One-based', ...
+        'IndexOptions','Index vector (dialog)','Indices','9', ...
+        'InputPortWidth','12','Position',[575 540 610 570]);
 end
 pidPorts = get_param(gate,'PortHandles');
 oldLine = get_param(pidPorts.Inport(3),'Line');
 if oldLine ~= -1
     delete_line(oldLine);
 end
-sumPorts = get_param(sumBlock,'PortHandles');
-for k=1:4
-    if get_param(sumPorts.Inport(k),'Line') == -1
-        add_line(model,sprintf('split18/%d',k), ...
-            sprintf('PMPC_BrakeTorqueSum/%d',k),'autorouting','on');
-    end
+if getSimulinkBlockHandle(sumBlock) ~= -1
+    delete_block(sumBlock);
 end
-add_line(model,'PMPC_BrakeTorqueSum/1', ...
+requestPorts = get_param(requestBlock,'PortHandles');
+if get_param(requestPorts.Inport(1),'Line') == -1
+    add_line(model,'PMPC_MF/3','PMPC_LongBrakeRequest/1', ...
+        'autorouting','on');
+end
+add_line(model,'PMPC_LongBrakeRequest/1', ...
     'PID velocity control/3','autorouting','on');
-% DB_on already takes abs(signal), delays one tick and gates the throttle
-% and integrator. Its old 50 N*m threshold was on an unrelated channel;
-% 1 N*m rejects numerical noise but catches symmetric braking promptly.
+% Port 3 is now the PMPC longitudinal brake request (N), not yaw DB torque.
+% Keep the existing integrator freeze and also block throttle immediately.
 set_param([gate '/DB_on'],'const','1');
+throttleGate = [gate '/LongBrakeThrottleGate'];
+if getSimulinkBlockHandle(throttleGate) == -1
+    add_block('simulink/Signal Routing/Switch',throttleGate, ...
+        'Criteria','u2 > Threshold','Threshold','0', ...
+        'Position',[610 155 645 195]);
+    outPorts = get_param([gate '/Out1'],'PortHandles');
+    outLine = get_param(outPorts.Inport(1),'Line');
+    if outLine ~= -1
+        delete_line(outLine);
+    end
+    set_param([gate '/Out1'],'Position',[690 167 720 183]);
+    add_line(gate,'Constant1/1','LongBrakeThrottleGate/1','autorouting','on');
+    add_line(gate,'DB_on/1','LongBrakeThrottleGate/2','autorouting','on');
+    add_line(gate,'Saturation/1','LongBrakeThrottleGate/3','autorouting','on');
+    add_line(gate,'LongBrakeThrottleGate/1','Out1/1','autorouting','on');
+end
+set_param(throttleGate,'Threshold','0');
 
 scope = [model '/PMPC_LongCoord_Diagnostics'];
 if getSimulinkBlockHandle(scope) == -1

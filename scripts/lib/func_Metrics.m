@@ -42,7 +42,11 @@ if ~isfield(opt,'tail'), opt.tail = 6.8;      end
 if ~isfield(opt,'wp'),   opt.wp   = MV.wp;    end
 G = 9.80665;
 
-W  = load(opt.wp); W = W.WayPoints_Collect;
+if MV.combined && strcmp(opt.wp,MV.wp)
+    W = func_WayPoints(MV.type,MV.R,false);
+else
+    W = load(opt.wp); W = W.WayPoints_Collect;
+end
 if all(diff(W(:,2)) > 0)                                             % 旧口径只对 X 单调的路径(DLC)有定义
     eyo = D.Yo - interp1(W(:,2), W(:,3), D.Xo, 'linear', 'extrap');  % 前轴中心 Y 向差
 else

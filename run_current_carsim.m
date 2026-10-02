@@ -78,29 +78,36 @@ evalin('base', 'clear PMPC_SIMFILE PMPC_MODE PMPC_ZENGRHO PMPC_P MPC_P ZENG_P');
 assignin('base', 'PMPC_SIMFILE', simfile);
 clearOverride = onCleanup(@() evalin('base', 'clear PMPC_SIMFILE')); %#ok<NASGU>
 switch model
-    case 'mpc_mil',  mil_init_MPC;
-    case 'zeng_mil', mil_init_ZENG;
-    case 'pmpc_mil', mil_init_PMPC;
+    case 'mpc_mil',  evalc('mil_init_MPC;');
+    case 'zeng_mil', evalc('mil_init_ZENG;');
+    case 'pmpc_mil', evalc('mil_init_PMPC;');
 end
 
 load_system(model);
 modelSimfile = strrep(simfile, [root filesep], '');
 set_param([model '/CarSim'], 'SIMFILE', modelSimfile);
+stopTime = func_CarSimStopTime(allText);
+if isfinite(stopTime) && stopTime > 0
+    set_param(model,'StopTime',num2str(stopTime,'%.12g'));
+end
 logfile = fullfile(resdir, 'LastRun_log.txt');
 oldLog = dir(logfile);
 if isempty(oldLog), logstamp = 0; else, logstamp = oldLog.datenum; end
-fprintf('当前 CarSim Run：%s，初速度 %.3f km/h (%.3f m/s)。\n', ...
-    sourceName, requested, requested/3.6);
-sim(model);
+evalc('sim(model);');
 func_WaitERD(resdir, logstamp);
 D = func_ReadERD(fullfile(resdir, 'LastRun'));
 assert(strcmp(D.Dataset, sourceName) && abs(D.Vx(1) - requested) < 0.05, ...
     'run_current_carsim:WrongResult', ...
     '结果标签或实际初速度不匹配：%s / %.3f km/h。', D.Dataset, D.Vx(1));
+ey = func_EyConsoleSummary(D);
 info = struct('name', sourceName, 'speed_kmh', requested, ...
               'resdir', resdir, 't_end', D.t(end), 'model', model);
-fprintf('CarSim 结果已生成：%s (实际初速度 %.3f km/h)。\n', ...
-    resdir, D.Vx(1));
+if isfield(ey,'segments')
+    info.segments = ey.segments;
+else
+    info.ey_peak_m = ey.ey_peak_m;
+    info.ey_rms_m = ey.ey_rms_m;
+end
 end
 
 function name = local_name_(text)
