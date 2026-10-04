@@ -9,7 +9,7 @@ startup_pmpc();
 
 verifyInitializer(testCase, @mil_init_MPC,  'MPC_P',  1, 6, 2, false);
 verifyInitializer(testCase, @mil_init_ZENG, 'ZENG_P', 2, 7, 2, true);
-verifyInitializer(testCase, @mil_init_PMPC, 'PMPC_P', 3, 7, 1, false);
+verifyInitializer(testCase, @mil_init_PMPC, 'PMPC_P', 3, 8, 1, false);
 
 evalin('base', 'clear PMPC_CONTROLLER_VARIANT PMPC_MODE PMPC_ZENGRHO PMPC_VERBOSE MPC_P ZENG_P PMPC_P NLCSNN');
 end

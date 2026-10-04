@@ -7,8 +7,11 @@ T.Nc = 5;
 
 T.Q1 = 0; T.Q2 = 0; T.Q3 = 1e2;
 T.Q4 = 0; T.Q5 = 2e4; T.Q6 = 2e2;
+T.Q8 = 1e3;                 % Vx tracking, normalized by 1 m/s
 T.R1 = 1; T.R2 = 10; T.R3 = 5;
+T.R4 = 2;                   % total brake-force increment
 T.S1 = 0; T.S2 = 0; T.S3 = 0;
+T.S4 = 0;
 T.Qf_scale = 1;
 T.V1 = 100; T.V2 = 8e4; T.V3 = 1;
 T.tau_gamma = 0;
@@ -20,13 +23,14 @@ T.prio_vartheta = 2;
 T.prio_wmin = 1;
 T.prio_wmax = [1e10; 1e8];
 
-% PMPC-only preview speed coordination; 0 disables, 2 is curvature-only.
-T.LongCoordMode = 1;
+% 3 = sustained-curvature speed cap plus main-QP controlled roll margin.
+% No separate far-field roll predictor or boundary brake is active.
+T.LongCoordMode = 3;
 T.Long_mu_reserve = 0.85;
 T.Long_brake_reserve = 0.70;
 T.Long_a_max = 3.0;             % m/s^2
 T.Long_preview_nodes = 80;      % fixed code-generation array bound
-T.Long_min_sustain_m = 30;      % m
+T.Long_min_sustain_m = 30;      % m; minimum coherent curvature length for a speed cap
 T.Long_delay = 0.15;            % s
 T.Long_tau = 0.35;              % s
 T.Long_F_slew = 2e5;            % N/s

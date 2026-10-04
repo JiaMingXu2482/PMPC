@@ -1,11 +1,11 @@
 function info = run_current_carsim(simfile, model)
 %RUN_CURRENT_CARSIM Run the current CarSim dataset with one fixed model.
 %   In CarSim: edit Procedure speed -> Send to Simulink.
-%   In MATLAB: run_current_carsim('mpc_mil'|'zeng_mil'|'pmpc_mil')
+%   In MATLAB: run_current_carsim('mpc_mil'|'zeng_mil'|'pmpc_mil'|'pmpc_nodelay_mil')
 %   A relative .sim path can be supplied for an isolated verification run.
 
 root = startup_pmpc();
-validModels = {'mpc_mil','zeng_mil','pmpc_mil'};
+validModels = {'mpc_mil','zeng_mil','pmpc_mil','pmpc_nodelay_mil'};
 if nargin < 1 || isempty(simfile)
     simfile = 'simfile.sim';
 end
@@ -24,7 +24,7 @@ if nargin < 2 || isempty(model)
 end
 if ~any(strcmp(model, validModels))
     error('run_current_carsim:InvalidModel', ...
-        'model must be mpc_mil, zeng_mil, or pmpc_mil.');
+        'model must be mpc_mil, zeng_mil, pmpc_mil, or pmpc_nodelay_mil.');
 end
 if ~ischar(simfile) && ~isstring(simfile)
     error('run_current_carsim:BadSimfile', 'simfile 必须是文件路径。');
@@ -74,13 +74,14 @@ func_SimModel(expanded, model);
 assert(func_CarSimRunning(), 'run_current_carsim:NoCarSim', ...
     '请保持 CarSim Browser 运行。');
 func_CarSimLib();
-evalin('base', 'clear PMPC_SIMFILE PMPC_MODE PMPC_ZENGRHO PMPC_P MPC_P ZENG_P');
+evalin('base', 'clear PMPC_SIMFILE PMPC_MODE PMPC_ZENGRHO PMPC_P MPC_P ZENG_P PMPC_NODELAY_P');
 assignin('base', 'PMPC_SIMFILE', simfile);
 clearOverride = onCleanup(@() evalin('base', 'clear PMPC_SIMFILE')); %#ok<NASGU>
 switch model
     case 'mpc_mil',  evalc('mil_init_MPC;');
     case 'zeng_mil', evalc('mil_init_ZENG;');
     case 'pmpc_mil', evalc('mil_init_PMPC;');
+    case 'pmpc_nodelay_mil', evalc('mil_init_PMPCnoDelay;');
 end
 
 load_system(model);

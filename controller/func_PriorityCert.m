@@ -30,13 +30,14 @@ gdb_idx = min(max(1, gdb_idx), max(1, Nr));
 N_sh  = min(max(1, round(MPCParameters.Ncons_sh )), Np);
 N_r   = min(max(1, round(MPCParameters.Ncons_r  )), Np);
 N_env = min(max(1, round(MPCParameters.Ncons_env)), Np);
-n_in  = 6*Nc;  n_sh = 4*N_sh;  n_r = 2*N_r;  n_env = 4*N_env;   % 行布局同 func_BuildQPConstraints
+n_in  = 2*Nu*Nc;  n_sh = 4*N_sh;  n_r = 2*N_r;  n_env = 4*N_env;
 idx2  = n_in + (1:n_sh);                                         % 第二层: 横摆 + 后轴侧偏
 idx1  = n_in + n_sh + (1:(n_r + n_env));                         % 第一层: LTR + 车道四角点
 n1    = Nu*Nc;
 
 du     = [Lim.dFyfmax; Lim.dMFxmax; Lim.dMdmax];
-u_prev = zeta(end-2:end);
+if Nu == 4, du = [du; Lim.dFxmax]; end
+u_prev = zeta(end-Nu+1:end);
 
 %% ---- 候选 z^ 与无 DB 候选 z^0 ----
 dUws = WarmStart(1:n1);
@@ -65,6 +66,7 @@ rho = eta_g*(Nc*Wts.V(2,2));
 Wb  = Nc*Wts.V(2,2) * double(MPCParameters.abl ~= 1);   % 消融 noWb 时 W_b = 0 (rho 不变), 与 func_BuildQPCost 一致
 H4  = H(1:n1, 1:n1);   f4 = f(1:n1);
 Yr  = [ref_Vy(:)'; ref_r(:)'; zeros(Ny-2, Np)];
+if Ny == 8, Yr(8,:) = Wts.Vx_ref(:)'; end
 e0  = Pred.PSI*zeta + Pred.PHI*Pred.GAMMA - Yr(:);
 c0  = e0'*(Wts.Q*e0) + Ut'*(Wts.S*Ut);        % J4 的常数项(QP 代价里省掉了)
 F   = max(0.5*(dUc'*(H4*dUc)) + f4'*dUc + c0, 0) + Wb*gc + rho*gc^2;

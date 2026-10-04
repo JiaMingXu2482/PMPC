@@ -89,14 +89,20 @@ if nd >= 3
     nc_ = size(dist,2);
     for q_ = 1:Np
         if nc_ == 1
-            dist_p(:,q_) = dist(:,1);
+            dist_p(:,q_) = dist(1:2,1);
         elseif q_ <= nc_
-            dist_p(:,q_) = dist(:,q_);
+            dist_p(:,q_) = dist(1:2,q_);
         else
-            dist_p(:,q_) = dist(:,nc_);
+            dist_p(:,q_) = dist(1:2,nc_);
         end
     end
-    GAMMA = reshape([kap.'; dist_p(1,:); dist_p(2,:)], [], 1);
+    if nd == 5
+        % 8x4 model: free longitudinal acceleration and affine correction.
+        GAMMA = reshape([kap.'; dist_p(1,:); dist_p(2,:); ...
+            repmat(dist(3,1),1,Np); ones(1,Np)], [], 1);
+    else
+        GAMMA = reshape([kap.'; dist_p(1,:); dist_p(2,:)], [], 1);
+    end
 else
     GAMMA = kap;
 end

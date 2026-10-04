@@ -1,12 +1,13 @@
 function P = mil_init_variant(variant, bundleName, blockName, modelName)
 %MIL_INIT_VARIANT  Shared preparation for one fixed controller/model pair.
 
-if ~isscalar(variant) || ~ismember(variant, [1 2 3])
-    error('mil_init_variant:InvalidVariant', 'variant must be 1 (MPC), 2 (ZENG), or 3 (PMPC).');
+if ~isscalar(variant) || ~ismember(variant, [1 2 3 4])
+    error('mil_init_variant:InvalidVariant', ...
+        'variant must be 1 (MPC), 2 (ZENG), 3 (PMPC), or 4 (PMPC-noDelay).');
 end
 
 startup_pmpc();
-evalin('base', 'clear PMPC_MODE PMPC_ZENGRHO PMPC_P MPC_P ZENG_P NLCSNN');
+evalin('base', 'clear PMPC_MODE PMPC_ZENGRHO PMPC_P MPC_P ZENG_P PMPC_NODELAY_P NLCSNN');
 assignin('base', 'PMPC_CONTROLLER_VARIANT', variant);
 if evalin('base', 'exist(''PMPC_VERBOSE'', ''var'') ~= 1')
     assignin('base', 'PMPC_VERBOSE', 1);

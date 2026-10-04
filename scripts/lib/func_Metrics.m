@@ -42,7 +42,7 @@ if ~isfield(opt,'tail'), opt.tail = 6.8;      end
 if ~isfield(opt,'wp'),   opt.wp   = MV.wp;    end
 G = 9.80665;
 
-if MV.combined && strcmp(opt.wp,MV.wp)
+if (MV.combined || MV.type==2) && strcmp(opt.wp,MV.wp)
     W = func_WayPoints(MV.type,MV.R,false);
 else
     W = load(opt.wp); W = W.WayPoints_Collect;

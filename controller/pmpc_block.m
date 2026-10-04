@@ -6,7 +6,7 @@ function [sys, i_cmd, long_diag] = pmpc_block(u, h_plant, x_plant, v_plant, a_pl
 %   PMPC_P : 参数, 块里声明为 Scope=Parameter 且 Tunable=false
 %            (不可调 = 块层面的 coder.Constant; 否则 nvars 这类维度
 %             推不出常量, 块会报"无法确定输出大小")
-%            pmpc_mil 固定使用 ControllerVariant=3 和七状态预测模型。
+%            pmpc_mil 固定使用 ControllerVariant=3 和八状态预测模型。
 %   sys    : 54x1 输出
 %   i_cmd  : 4x1 电流指令 [A], 控制器角序; 经 Rate Transition ZOH 送 plant
 %

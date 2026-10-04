@@ -1,7 +1,7 @@
 function P = setup_pmpc()
 %SETUP_PMPC  Assemble the common plant and selected controller tuning.
 % Editable control defaults: config/Atuning_mpc.m, Atuning_zeng.m,
-% Atuning_pmpc.m. Existing PMPC_* workspace overrides take precedence.
+% Atuning_pmpc.m, Atuning_pmpc_nodelay.m. PMPC_* overrides take precedence.
 % With no output, also export PMPC_P and NLCSNN to the base workspace.
 
 startup_pmpc();
@@ -84,6 +84,9 @@ end
 %% ---- 运行配置横幅 (命令窗口可见, 避免跑错模式) ----
 modeStr = {'PMPC 协调控制','Baseline 无控制'};
 manvStr = {'DLC 路径跟踪','鱼钩 纯防侧翻'};
+if MV.type == 2 && ~InitialParams.FishhookMode
+    manvStr{1} = 'Slalom 路径跟踪';
+end
 disp(' ');
 disp(['======== ' modeStr{InitialParams.BaselineMode+1} ...
       '  |  '    manvStr{InitialParams.FishhookMode+1} ' ========']);
@@ -236,14 +239,14 @@ MPCParameters.PrioMode = 0;
 Constraints.prio_vartheta = PmpcTuning.prio_vartheta;
 Constraints.prio_wmin  = PmpcTuning.prio_wmin;
 Constraints.prio_wmax  = PmpcTuning.prio_wmax;
-% 1 = MPC (6 states); 2 = ZENG, 3 = PMPC (7 states incl. damper lag).
+% 1 = MPC (6x3); 2 = ZENG (7x3); 3 = PMPC (8x4); 4 = legacy PMPC-noDelay (6x3).
 ControllerVariant = localWsget('PMPC_CONTROLLER_VARIANT', 0);
 [md_auto, zg_auto, ds_auto] = func_RunMode();
 if ControllerVariant == 1
     ContrlMode = 2; Constraints.ZengRho_on = 0;
 elseif ControllerVariant == 2
     ContrlMode = 2; Constraints.ZengRho_on = 1;
-elseif ControllerVariant == 3
+elseif ControllerVariant == 3 || ControllerVariant == 4
     ContrlMode = 1; Constraints.ZengRho_on = 0;
 elseif ControllerVariant == 0
     ContrlMode = localWsget('PMPC_MODE', md_auto);
@@ -257,12 +260,18 @@ elseif ControllerVariant == 0
     end
 else
     error('setup_pmpc:InvalidControllerVariant', ...
-        'PMPC_CONTROLLER_VARIANT must be 0 (auto), 1 (MPC), 2 (ZENG), or 3 (PMPC).');
+        'PMPC_CONTROLLER_VARIANT must be 0 (auto), 1 (MPC), 2 (ZENG), 3 (PMPC), or 4 (PMPC-noDelay).');
 end
 switch ControllerVariant
     case 1, Tuning = Atuning_mpc();
     case 2, Tuning = ZengTuning;
     case 3, Tuning = PmpcTuning;
+    case 4, Tuning = Atuning_pmpc_nodelay();
+end
+if ControllerVariant == 4
+    Constraints.prio_vartheta = Tuning.prio_vartheta;
+    Constraints.prio_wmin = Tuning.prio_wmin;
+    Constraints.prio_wmax = Tuning.prio_wmax;
 end
 %  被控对象侧的阻尼器执行器模型(一阶滞后作用在"力在上下界间的位置"上, 保耗散):
 %  1 = 开(与预测模型一致), 0 = 关(阻尼力当拍直达 CarSim, 即 2026-09-25 前的行为)
@@ -277,6 +286,7 @@ MPCParameters.Nc = localWsget('PMPC_NC', Tuning.Nc);
 MPCParameters.LTV_on = 0;
 MPCParameters.QPSolver = localWsget('PMPC_QPSOLVER', 1);   % 0 = quadprog, 1 = KWIK(mpcqpsolver)
 MPCParameters.Ts_exec = 0.01;   % 触发周期，速率限制按它缩放
+Constraints.QPA_release_step = Constraints.dTb_rate_max*MPCParameters.Ts_exec;
 %  第一预测步是否按 Ts_exec 离散(非均匀网格, 见 func_DynamicalModel / 规划器 Tk)。
 %  0 = 原行为(全部按 Ts); 1 = 第一步 Ts_exec、其余 Ts。2026-09-26 抖动对照用。
 MPCParameters.first_Tc = localWsget('PMPC_FIRSTTC', 0);
@@ -292,6 +302,18 @@ MPCParameters.first_Tc = localWsget('PMPC_FIRSTTC', 0);
 MPCParameters.Ncons_sh  = MPCParameters.Nc;
 MPCParameters.Ncons_r   = MPCParameters.Nc;
 MPCParameters.Ncons_env = localWsget('PMPC_NCONS_ENV', MPCParameters.Np);   % 工作区可覆盖(对照试验用)
+MPCParameters.ConNodes_sh = (1:MPCParameters.Ncons_sh)';
+MPCParameters.ConNodes_r = (1:MPCParameters.Ncons_r)';
+MPCParameters.ConNodes_env = (1:MPCParameters.Ncons_env)';
+if ControllerVariant == 3 && MPCParameters.Np >= 10
+    % Sparse near/transient/terminal sampling for the larger 8x4 QP.
+    MPCParameters.ConNodes_sh = [1;2;5];
+    MPCParameters.ConNodes_r = [1;2;5];
+    MPCParameters.ConNodes_env = [1;2;5;MPCParameters.Np];
+    MPCParameters.Ncons_sh = 3;
+    MPCParameters.Ncons_r = 3;
+    MPCParameters.Ncons_env = 4;
+end
 
 % 0 removes per-step diagnostics from generated code (Pm is coder.Constant).
 MPCParameters.Verbose = localWsget('PMPC_VERBOSE', 1);
@@ -304,10 +326,19 @@ DiscreteModle = 4;  % 1=Euler; 2=Taylor4; 3=FOH; 4=精确 ZOH(expm)
 %      这样对比才能分离出"优先级机制"本身的贡献; 旧版那套单独调过的
 %      baseline 权重会把"权重不同"和"机制不同"混在一起。
 %  先进对比方法(Zeng 2025)在 baseline MPC 基础上开 Constraints.ZengRho_on。
-if ControllerVariant == 1
+if ControllerVariant == 1 || ControllerVariant == 4
     MPCParameters.Nx = 6;
     MPCParameters.Ny = 6;
     MPCParameters.tau_d = 0;       % 明确不调用 local_delay
+elseif ControllerVariant == 3
+    % PMPC: [Vy,r,phi,dphi,e_y,e_psi,Md_a,Vx],
+    % [steer, differential yaw moment, damper moment, total brake force].
+    MPCParameters.Nx = 8;
+    MPCParameters.Ny = 8;
+    MPCParameters.Nu = 4;
+    MPCParameters.tau_d = func_DamperDelayTau(zeros(4,1), zeros(4,1), ...
+        zeros(4,1), Constraints.tau_MR);
+    InitialParams.U(4,1) = 0;
 else
     MPCParameters.Nx = 7;
     MPCParameters.Ny = 7;
@@ -322,27 +353,38 @@ MPCParameters.ControllerVariant = ControllerVariant;
 % PMPC-only road-feasibility speed coordination. MPC and ZENG never read it.
 % Mode 0 restores the original PMPC longitudinal branch; mode 2 retains a
 % curvature-only ablation for the comparison harness.
-if ControllerVariant == 3
-    Constraints.LongCoordMode = localWsget('PMPC_LONGCOORD',PmpcTuning.LongCoordMode);
+if ControllerVariant == 3 || ControllerVariant == 4
+    LongTuning = Tuning;
+    Constraints.LongCoordMode = localWsget('PMPC_LONGCOORD',LongTuning.LongCoordMode);
 else
+    LongTuning = PmpcTuning;
     Constraints.LongCoordMode = 0;
 end
-Constraints.Long_mu_reserve = PmpcTuning.Long_mu_reserve;
-Constraints.Long_brake_reserve = PmpcTuning.Long_brake_reserve;
-Constraints.Long_a_max = PmpcTuning.Long_a_max;
-Constraints.Long_preview_nodes = PmpcTuning.Long_preview_nodes;
-Constraints.Long_min_sustain_m = PmpcTuning.Long_min_sustain_m;
-Constraints.Long_delay = PmpcTuning.Long_delay;
-Constraints.Long_tau = PmpcTuning.Long_tau;
-Constraints.Long_F_slew = PmpcTuning.Long_F_slew;
-Constraints.Long_VdownRate = PmpcTuning.Long_VdownRate;
-Constraints.Long_VupRate = PmpcTuning.Long_VupRate;
-Constraints.Long_margin_trigger = PmpcTuning.Long_margin_trigger;
-Constraints.Long_margin_recover = PmpcTuning.Long_margin_recover;
-Constraints.Long_trigger_band = PmpcTuning.Long_trigger_band;
-Constraints.Long_release_band = PmpcTuning.Long_release_band;
-ctlStr = {'① 固定权重 MPC (无 sigma/gamma)','② Zeng rho 调权','③ 本文 PMPC'};
-if ContrlMode==1, ic=3; elseif Constraints.ZengRho_on, ic=2; else ic=1; end
+Constraints.Long_mu_reserve = LongTuning.Long_mu_reserve;
+Constraints.Long_brake_reserve = LongTuning.Long_brake_reserve;
+Constraints.Long_a_max = LongTuning.Long_a_max;
+Constraints.Long_preview_nodes = LongTuning.Long_preview_nodes;
+Constraints.Long_min_sustain_m = LongTuning.Long_min_sustain_m;
+Constraints.Long_delay = LongTuning.Long_delay;
+Constraints.Long_tau = LongTuning.Long_tau;
+Constraints.Long_F_slew = LongTuning.Long_F_slew;
+Constraints.Long_VdownRate = LongTuning.Long_VdownRate;
+Constraints.Long_VupRate = LongTuning.Long_VupRate;
+Constraints.Long_margin_trigger = LongTuning.Long_margin_trigger;
+Constraints.Long_margin_recover = LongTuning.Long_margin_recover;
+Constraints.Long_trigger_band = LongTuning.Long_trigger_band;
+Constraints.Long_release_band = LongTuning.Long_release_band;
+ctlStr = {'① 固定权重 MPC (无 sigma/gamma)','② Zeng rho 调权', ...
+    '③ 本文 PMPC','④ PMPC-noDelay (无阻尼器时延预测)'};
+if ControllerVariant==4
+    ic=4;
+elseif ContrlMode==1
+    ic=3;
+elseif Constraints.ZengRho_on
+    ic=2;
+else
+    ic=1;
+end
 disp(['  数据集 ' ds_auto '   ->   控制器 ' ctlStr{ic}]);
 %  ⚠️ 部署机(没有 CarSim / 没有 simfile.sim)上 func_RunMode 读不到数据集名,
 %  会退回默认 mode=2,zeng=0 —— 也就是**baseline MPC**, 而不是本文方法。
@@ -376,6 +418,14 @@ if ContrlMode == 1 || ContrlMode == 2
     CostWeights.Q1=Tuning.Q1; CostWeights.Q2=Tuning.Q2;
     CostWeights.Q3=Tuning.Q3; CostWeights.Q4=Tuning.Q4;
     CostWeights.Q5=localWsget('PMPC_Q5', Tuning.Q5); CostWeights.Q6=localWsget('PMPC_Q6', Tuning.Q6);
+    CostWeights.Q8 = 0;
+    CostWeights.R4 = 0;
+    CostWeights.S4 = 0;
+    if ControllerVariant == 3
+        CostWeights.Q8 = Tuning.Q8;
+        CostWeights.R4 = Tuning.R4;
+        CostWeights.S4 = Tuning.S4;
+    end
     if InitialParams.FishhookMode
         % 纯防侧翻: 无路径、无偏航角速度参考
         CostWeights.Q1=0;    CostWeights.Q2=0;
@@ -447,7 +497,10 @@ LongCoord = struct('prev',longPrev,'margin_prev',1000, ...
     'diag',zeros(8,1),'Vx_pred',zeros(MPCParameters.Np,1), ...
     'Fx_request',0,'Fx_achieved',0,'speed_actual',0, ...
     'speed_planned',0,'Vset_pid',0,'speed_mismatch',0, ...
-    'allocation_exitflag',1,'qp_exitflag',1,'brake_active',false);
+    'allocation_exitflag',1,'qp_exitflag',1,'brake_active',false, ...
+    'safety_margin_prev',NaN,'m_plan',NaN,'m_candidate',NaN, ...
+    'm_speed',NaN, ...
+    'm_witness',NaN,'witness_unknown',true);
 P.S0 = struct('InitialParams',InitialParams, 'WarmStart',WarmStart, 'rho',rho, ...
               'VehiclePara',VehiclePara, 'Constraints',Constraints, ...
               'cert', nan(36, 1),'LongCoord',LongCoord);

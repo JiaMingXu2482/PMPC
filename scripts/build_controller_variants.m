@@ -1,10 +1,11 @@
-function build_controller_variants()
-%BUILD_CONTROLLER_VARIANTS Build fixed MPC, ZENG, and PMPC top-level models.
+function build_controller_variants(onlyTarget)
+%BUILD_CONTROLLER_VARIANTS Build fixed controller top-level models.
 %   All models share the NLCSNN 1 kHz plant and CarSim packing from the
 %   current pmpc_mil topology. Only the 100 Hz MATLAB Function entry point
 %   and its fixed parameter bundle differ.
 
 startup_pmpc();
+if nargin < 1, onlyTarget = ''; end
 source = 'pmpc_mil';
 assert(exist([source '.slx'], 'file') == 4, ...
     'build_controller_variants:MissingSource', 'Cannot find %s.slx.', source);
@@ -12,16 +13,23 @@ assert(exist([source '.slx'], 'file') == 4, ...
 variants = { ...
     'mpc_mil',  'mpc_block',  'MPC_P',  false; ...
     'zeng_mil', 'zeng_block', 'ZENG_P', true;  ...
-    'pmpc_mil', 'pmpc_block', 'PMPC_P', false};
+    'pmpc_mil', 'pmpc_block', 'PMPC_P', false; ...
+    'pmpc_nodelay_mil', 'pmpc_nodelay_block', 'PMPC_NODELAY_P', false};
 
 for k = 1:size(variants,1)
     target = variants{k,1};
+    if ~isempty(onlyTarget) && ~strcmp(target,onlyTarget), continue; end
     entry = variants{k,2};
     parameterName = variants{k,3};
     hasRho = variants{k,4};
 
     if ~strcmp(target, source)
-        if bdIsLoaded(source), close_system(source, 0); end
+        if bdIsLoaded(source)
+            assert(strcmp(get_param(source,'Dirty'),'off'), ...
+                'build_controller_variants:DirtySource', ...
+                '%s has unsaved changes; save or close it before building.',source);
+            close_system(source, 0);
+        end
         load_system(source);
         save_system(source, target);
         close_system(source, 0);
@@ -40,7 +48,7 @@ for k = 1:size(variants,1)
     close_system(target, 0);
 end
 
-fprintf('Built fixed controller models: mpc_mil, zeng_mil, pmpc_mil.\n');
+fprintf('Built fixed controller model(s): %s.\n',onlyTarget);
 end
 
 function localAddCarSimSignalSpecification(mdl)
@@ -77,7 +85,7 @@ end
 
 function localConfigureController(mdl, entry, parameterName)
 chart = localFindChart([mdl '/PMPC_MF']);
-oldNames = {'PMPC_P','MPC_P','ZENG_P'};
+oldNames = {'PMPC_P','MPC_P','ZENG_P','PMPC_NODELAY_P'};
 old = Stateflow.Data.empty;
 for k = 1:numel(oldNames)
     data = chart.find('-isa', 'Stateflow.Data', 'Name', oldNames{k});

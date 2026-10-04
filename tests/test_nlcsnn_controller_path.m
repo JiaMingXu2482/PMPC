@@ -83,7 +83,7 @@ end
 
 function testQpDimensionsStayFixed(testCase)
 [P, ~] = configuredController(1, 0);
-verifyEqual(testCase, P.Pm.MPCParameters.Nx, 7);
+verifyEqual(testCase, P.Pm.MPCParameters.Nx, 8);
 verifyEqual(testCase, P.Pm.MPCParameters.Ne, 8);
 verifyEqual(testCase, P.Pm.MPCParameters.Nr, 3);
 verifySize(testCase, P.S0.cert, [36 1]);

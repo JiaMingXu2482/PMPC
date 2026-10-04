@@ -1,11 +1,12 @@
 function [plan,next] = func_PMPCSpeedCoordinator( ...
     MPCParameters,VehiclePara,Constraints,W,Proj,VehStateMeasured, ...
-    ParaHAT,margin_prev,prev,previewEndStation)
+    ParaHAT,margin_prev,prev,previewEndStation,safetyMarginPrev)
 %FUNC_PMPCSPEEDCOORDINATOR Road-feasibility speed plan for PMPC only.
 % All speed values are m/s internally; Fx_dem is a positive brake force.
 % diag = [speed_cap; available_decel; road_margin; preview_length;
 %         peak_curvature; reason; unreachable; fault].
 if nargin < 10, previewEndStation = inf; end
+if nargin < 11, safetyMarginPrev = NaN; end
 
 Np = MPCParameters.Np;
 vMeasured = VehStateMeasured.x_dot;
@@ -76,10 +77,11 @@ if isfield(Constraints,'Roadwidth') && isfield(Constraints,'env_Wv') ...
 end
 plan.diag(3) = roadMargin;
 
-% The spatial horizon covers at least the physical stopping distance; the
-% delayed actuation distance shifts its start before backward propagation.
+mode3 = mode == 3;
 v = max(vMeasured,0);
 vTarget = targetKmh/3.6;
+% The spatial horizon covers at least the physical stopping distance; the
+% delayed actuation distance shifts its start before backward propagation.
 previewLength = max(40,v*v/(2*max(aBrake,0.25)) ...
     + v*Constraints.Long_delay + 10);
 previewLength = min(previewLength,200);
@@ -128,7 +130,7 @@ for i = 1:nPreview+1
     elseif ~isActive && runStart > 0
         runLength = (i-runStart)*ds;
         sustainNeeded = Constraints.Long_min_sustain_m;
-        if marginRisk && measuredMargin < -0.25
+        if ~mode3 && marginRisk && measuredMargin < -0.25
             sustainNeeded = max(15,0.5*sustainNeeded);
         end
         if runLength >= sustainNeeded || mode == 2
@@ -147,6 +149,20 @@ for i = nPreview-1:-1:1
     cap(i) = min(cap(i),sqrt(max(0,cap(i+1)^2+2*aBrake*ds)));
 end
 speedCap = min(cap(1),vTarget);
+if mode3
+    % Sustained curvature gives an anticipatory friction limit; the
+    % controlled QP roll margin can only tighten it. No separate dynamic
+    % roll screen or boundary-braking path contributes to the command.
+    if isfinite(safetyMarginPrev)
+        controlledCap = vTarget/sqrt(1+max(-safetyMarginPrev,0));
+        speedCap = min(speedCap,controlledCap);
+        marginRisk = safetyMarginPrev < 0;
+    else
+        speedCap = min(speedCap,prev.Vset_prev/3.6);
+        plan.diag(8) = 1;
+        marginRisk = false;
+    end
+end
 plan.diag(1) = speedCap;
 needBrake = speedCap < v-Constraints.Long_trigger_band;
 reason = 0;

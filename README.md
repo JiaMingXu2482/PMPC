@@ -67,9 +67,11 @@ MPC、ZENG 和 PMPC 现在共用 `nlcsnn/` 中的 CDC 减振器模型。默认�
 | `simulation_results/output/` | 新仿真的默认输出 |
 | `tests/` | MATLAB 自动化测试 |
 
-根目录保留三个固定控制器模型和 CarSim 句柄文件：`mpc_mil.slx`（6 状态、无预测时延）、
-`zeng_mil.slx`（7 状态、15 ms 时延）和 `pmpc_mil.slx`（7 状态、15 ms 时延）。三者共用
-NLCSNN、车辆参数、状态估计和 54 路 CarSim 接口。
+根目录保留四个固定控制器模型和 CarSim 句柄文件：`mpc_mil.slx`（6 状态、3 控制量）、
+`zeng_mil.slx`（7 状态、3 控制量）、`pmpc_mil.slx`（8 状态、4 控制量，含 `Vx/Fx`）
+和 `pmpc_nodelay_mil.slx`（旧 6 状态、3 控制量）。它们共用 NLCSNN、车辆参数、
+状态估计和 54 路 CarSim 接口。当前 noDelay 与 8×4 PMPC 不再构成“仅去时延”的
+单因素消融；新 PMPC 的首次闭环结果及限制见[8×4 实验日志](docs/PMPC_8x4_实验日志.md)。
 
 当前基准：`simulation_results/current/erd_0927_base/`。
 

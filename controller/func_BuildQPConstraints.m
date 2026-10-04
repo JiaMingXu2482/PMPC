@@ -55,6 +55,10 @@ else
 end
 umax = [ afs_ub;  0.95*Lim.MFxmax;  Md_up_s  ];
 umin = [ afs_lb; -0.95*Lim.MFxmax;  Md_low_s ];
+if Nu == 4
+    umax = [umax; Lim.Fxmax];
+    umin = [umin; 0];
+end
 
 % ---- 保证箱体始终包含当前控制量 ----
 %  Fyfmax/MFxmax/Mdmax 都是随垂向载荷与摩擦圆实时变化的量，箱体可以
@@ -68,8 +72,9 @@ umin = [ afs_lb; -0.95*Lim.MFxmax;  Md_low_s ];
 %  越界样本中 100% 是上一拍也在界外 —— 自持陷阱）。
 %  正确做法：允许在界外，但每拍必须朝界内至少移动一个速率限幅 dumax，
 %  这样既保证可行域非空，又保证有限步内回到物理界内。
-u_prev  = zeta(end-2:end);      % zeta = [x(Nx); u(k-1)], Nx = 7 起不再是 7:9
+u_prev  = zeta(end-Nu+1:end);
 du_v    = [Lim.dFyfmax; Lim.dMFxmax; Lim.dMdmax];
+if Nu == 4, du_v = [du_v; Lim.dFxmax]; end
 umax = max(umax, u_prev - du_v);
 umin = min(umin, u_prev + du_v);
 
@@ -81,20 +86,19 @@ Hsh = Envelope.Hsh;  Gsh  = Envelope.Gsh;
 Henv= Envelope.Henv; Genv = Envelope.Genv;
 Hr  = Envelope.Hr;   Gr   = Envelope.Gr;   Or = Envelope.Or;
 
-% Sel(n): 从 Np 个输出块中取前 n 块
-sel   = @(n) [eye(n*Ny), zeros(n*Ny, (Np-n)*Ny)];
-A_sh  = kron(eye(N_sh ),Hsh)  * sel(N_sh );   b_sh  = kron(ones(N_sh ,1),Gsh);
-A_env = kron(eye(N_env),Henv) * sel(N_env);   b_env = kron(ones(N_env,1),Genv);
-b_env = b_env + kron(Lim.kap(1:N_env), Envelope.gkap);   % 四角点弯道修正 -kappa*a^2/2, 见 func_Envelope
-A_r   = kron(eye(N_r  ),Hr)   * sel(N_r  );   b_r   = kron(ones(N_r  ,1),Gr);
+S_sh = local_node_selector(MPCParameters.ConNodes_sh,Ny,Np);
+S_r = local_node_selector(MPCParameters.ConNodes_r,Ny,Np);
+S_env = local_node_selector(MPCParameters.ConNodes_env,Ny,Np);
+A_sh  = kron(eye(N_sh ),Hsh)  * S_sh;   b_sh  = kron(ones(N_sh ,1),Gsh);
+A_env = kron(eye(N_env),Henv) * S_env;  b_env = kron(ones(N_env,1),Genv);
+b_env = b_env + kron(Lim.kap(MPCParameters.ConNodes_env), Envelope.gkap);
+A_r   = kron(eye(N_r  ),Hr)   * S_r;    b_r   = kron(ones(N_r  ,1),Gr);
 
 % E_r: 把 Nc 段的控制量贡献映射到前 N_r 步
-if N_r <= Nc
-    E_r = [eye(2*N_r), zeros(2*N_r, 2*(Nc-N_r))];
-else
-    % 超出 Nc 的步保持最后一步的输入（而非置零）
-    E_r = [ eye(2*Nc);
-            repmat([zeros(2, 2*(Nc-1)), eye(2)], N_r-Nc, 1) ];
+E_r = zeros(2*N_r,2*Nc);
+for j = 1:N_r
+    k = min(MPCParameters.ConNodes_r(j),Nc);
+    E_r(2*j-1:2*j,2*k-1:2*k) = eye(2);
 end
 O_r = kron(eye(Nc),Or);
 
@@ -136,15 +140,15 @@ if prio_on
     %  执行器不排序: AFS/CDC 只受物理界; DB 的幅值由 gamma 缩放, gamma 在 L3 里按 W_b 定价
     %  (制动介入代价), DB 对 L1/L2 始终可用。
     %  行布局与原来相同: 前 3*Nc 行上界、后 3*Nc 行下界, 第 i 拍第 k 个输入在 3*(i-1)+k。
-    A_high = zeros(3*Nc, Nu*Nc + Ne + Nr);
-    A_low  = zeros(3*Nc, Nu*Nc + Ne + Nr);
-    b_high = zeros(3*Nc, 1);
-    b_low  = zeros(3*Nc, 1);
+    A_high = zeros(Nu*Nc, Nu*Nc + Ne + Nr);
+    A_low  = zeros(Nu*Nc, Nu*Nc + Ne + Nr);
+    b_high = zeros(Nu*Nc, 1);
+    b_low  = zeros(Nu*Nc, 1);
     for i = 1:Nc
         AI_i = AI((i-1)*Nu+1:i*Nu, :);
         Ut_i = Ut((i-1)*Nu+1:i*Nu);
-        for k = 1:3
-            row = 3*(i-1) + k;
+        for k = 1:Nu
+            row = Nu*(i-1) + k;
             A_high(row, 1:Nu*Nc) =  AI_i(k, :);
             A_low(row,  1:Nu*Nc) = -AI_i(k, :);
             if k == 2                                  % DB: gamma 缩放
@@ -290,6 +294,7 @@ A_cons(k_+1:k_+n_env_, :) = A_cons_env; b_cons(k_+1:k_+n_env_) = b_cons_env;
 
 %% ---- 5) 变量上下界 ----
 dumax = [Lim.dFyfmax; Lim.dMFxmax; Lim.dMdmax];
+if Nu == 4, dumax = [dumax; Lim.dFxmax]; end
 dUmin = kron(ones(Nc,1), -dumax);
 dUmax = kron(ones(Nc,1),  dumax);
 
@@ -334,4 +339,13 @@ else
     ub = [dUmax; eps_ub];
 end
 
+end
+
+function S = local_node_selector(nodes,Ny,Np)
+S = zeros(numel(nodes)*Ny,Np*Ny);
+for j = 1:numel(nodes)
+    row = (j-1)*Ny+(1:Ny);
+    col = (nodes(j)-1)*Ny+(1:Ny);
+    S(row,col) = eye(Ny);
+end
 end

@@ -8,7 +8,7 @@ addpath(root);
 startup_pmpc();
 
 variants = [1 2 3];
-expectedNx = [6 7 7];
+expectedNx = [6 7 8];
 expectedMode = [2 2 1];
 expectedTau = [0 0.015 0.015];
 for k = 1:numel(variants)

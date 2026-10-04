@@ -210,9 +210,10 @@ end
 %  要量单拍耗时用 time_step.m: 在**外部**循环调 pmpc_step, tic/toc 在函数外面。
 
 %% 路径规划
-longActive = MPCParameters.ControllerVariant == 3 ...
+longActive = (MPCParameters.ControllerVariant == 3 || MPCParameters.ControllerVariant == 4) ...
     && Constraints.LongCoordMode ~= 0 && ~MPCParameters.FishhookMode;
 Vx_pred = Vel*ones(MPCParameters.Np,1);
+Vx_ref = Vx_pred;
 longFx = 0;
 longVset = VehStateMeasured.VxTarget;
 projDefault = struct('ey',0,'epsi',0,'Velr',Vel, ...
@@ -236,7 +237,7 @@ if longActive
     [longPlan,longNext] = func_PMPCSpeedCoordinator( ...
         MPCParameters,VehiclePara,Constraints,Reftraj,Projection, ...
         VehStateMeasured,ParaHAT,St.LongCoord.margin_prev,St.LongCoord.prev, ...
-        previewEndStation);
+        previewEndStation,St.LongCoord.safety_margin_prev);
     St.LongCoord.prev = longNext;
     St.LongCoord.diag = longPlan.diag;
     St.LongCoord.Vx_pred = longPlan.Vx_pred;
@@ -245,6 +246,15 @@ if longActive
     St.LongCoord.speed_planned = longPlan.Vx_pred(1);
     St.LongCoord.Vset_pid = longPlan.Vset_pid;
     Vx_pred = longPlan.Vx_pred;
+    if Nx == 8
+        % The outer coordinator supplies a preview speed ceiling, not an
+        % independent brake command. The QP decides Fx against a reachable
+        % speed reference; lateral matrices are frozen at measured speed.
+        tRef = (1:MPCParameters.Np)'*MPCParameters.Ts;
+        vcap = min(VehStateMeasured.VxTarget/3.6,longPlan.diag(1));
+        Vx_ref = max(vcap,Vel-longPlan.diag(2)*tRef);
+        Vx_pred = Vel*ones(MPCParameters.Np,1);
+    end
     longFx = longPlan.Fx_dem;
     longVset = longPlan.Vset_pid;
 end
@@ -274,20 +284,23 @@ end
 % 方案三的输入无条件构造(开关关闭时也给预测精度诊断用)
 x0_ltv = zeros(Nx,1);
 x0_ltv(1:6) = [Vy; yawrate; Roll; Rollrate; PrjP.ey; PrjP.epsi];
-if Nx == 7
+if Nx >= 7
     x0_ltv(7) = ParaHAT.Md;
 end
+if Nx == 8, x0_ltv(8) = Vel; end
 LTVin = struct('TireF',TireF, 'TireR',TireR,...
 'delta_robot',dr_seq,... % Np x 1, 见上方外推
 'Fzf',ParaHAT.Fzf, 'Fzr',ParaHAT.Fzr,...
 'kap',Kap_dyn,...
 'x0',x0_ltv,...
-'u0',[VehStateMeasured.delta_f - delta_robot;...
-InitialParams.U(2); InitialParams.U(3)],...
+'u0',[VehStateMeasured.delta_f - delta_robot; InitialParams.U(2:end)],...
 'dU',reshape(WarmStart(1:MPCParameters.Nc*MPCParameters.Nu),...
 MPCParameters.Nu, MPCParameters.Nc),...
 'Ctan_floor_frac',Constraints.Ctan_floor_frac);
-if MPCParameters.LTV_on
+if Nx == 8
+    StateSpaceModel = func_DynamicalModel8x4(VehiclePara, MPCParameters, ...
+        VehStateMeasured, DiscreteModle, LTVin, Vx_pred);
+elseif MPCParameters.LTV_on
 % 方案三: 名义轨迹由上一拍解移位(热启动)给出, 逐节点重算 alpha -> c_bar/f_bar
 if longActive
     [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, ...
@@ -324,6 +337,11 @@ if Nx == 6
     Hr   = Envelope7.Hr(:,1:6);
     ltrGain = 2/(VehiclePara.m*VehiclePara.g*VehiclePara.tf);
     Or = Envelope7.Or + [0 0 ltrGain; 0 0 -ltrGain];
+elseif Nx == 8
+    Henv = [Envelope7.Henv, zeros(4,1)];
+    Hsh  = [Envelope7.Hsh, zeros(4,1)];
+    Hr   = [Envelope7.Hr, zeros(2,1)];
+    Or   = [Envelope7.Or, zeros(2,1)];
 else
     Henv = Envelope7.Henv;
     Hsh  = Envelope7.Hsh;
@@ -342,7 +360,18 @@ if Constraints.ZengRho_on
 CW.W1 = CostWeights.W1 * rho_zeng; % sigma_s: 横摆角速度松弛
 CW.W2 = CostWeights.W2 * rho_zeng; % sigma_s: 侧偏角松弛
 end
-[Q,R,S,W,V,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin,Tb_u,Fdu,Fdl,Mdnom] = func_CostWeightingRegulation_QuadSlacks(MPCParameters,CW,Constraints,r_ssmax,ParaHAT,VehiclePara,VehStateMeasured,DamperLimits);
+Fxmax = 0; dFxmax = 1;
+if Nx == 8
+    [Q,R,S,W,V,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin, ...
+        Tb_u,Fdu,Fdl,Mdnom,Fxmax,dFxmax] = func_CostWeighting8x4( ...
+        MPCParameters,CW,Constraints,r_ssmax,ParaHAT,VehiclePara, ...
+        VehStateMeasured,DamperLimits);
+else
+    [Q,R,S,W,V,dFyfmax,dMFxmax,dMdmax,Fyfmax,MFxmax,Mdmax,Mdmin, ...
+        Tb_u,Fdu,Fdl,Mdnom] = func_CostWeightingRegulation_QuadSlacks( ...
+        MPCParameters,CW,Constraints,r_ssmax,ParaHAT,VehiclePara, ...
+        VehStateMeasured,DamperLimits);
+end
 
 %% ==================================================================%
 %---------------- quadprog solver compute begin --------------------%
@@ -373,18 +402,34 @@ end
 % established aggregate damper moment Md_a for their 15 ms predictor.
 zeta = zeros(Nx + Nu,1);
 zeta(1:6) = [Vy; yawrate; Roll; Rollrate; PrjP.ey; PrjP.epsi];
-if Nx == 7
+if Nx >= 7
     Mda_0 = min(max(ParaHAT.Md, Md_lo), Md_hi);
     zeta(7) = Mda_0;
 end
-zeta(Nx+(1:Nu)) = [Fyf_0; MFx_0; Md_0];
+if Nx == 8
+    zeta(8) = Vel;
+end
+zeta(Nx+(1:Nu)) = InitialParams.U(1:Nu);
+zeta(Nx+(1:3)) = [Fyf_0; MFx_0; Md_0];
 
 % 预测矩阵
 % 方案三时偏置逐节点, 方案二时用当前工作点的常值
-if ~StateSpaceModel.off_valid % codegen: 原为 isempty(off)
-distIn = [F_off_f; F_off_r];
+if Nx == 8
+    distIn = zeros(3,MPCParameters.Np);
+    if StateSpaceModel.off_valid
+        distIn(1:2,:) = StateSpaceModel.off;
+    else
+        distIn(1,:) = F_off_f;
+        distIn(2,:) = F_off_r;
+    end
+    % Ax includes the preceding actual brake action; remove that action
+    % to estimate the free longitudinal acceleration for the predictor.
+    a_free = VehStateMeasured.Ax + St.LongCoord.Fx_achieved/VehiclePara.m;
+    distIn(3,:) = a_free;
+elseif ~StateSpaceModel.off_valid % codegen: 原为 isempty(off)
+    distIn = [F_off_f; F_off_r];
 else
-distIn = StateSpaceModel.off;
+    distIn = StateSpaceModel.off;
 end
 [PSI, THETA, GAMMA, PHI] = func_SystemFurture(MPCParameters, StateSpaceModel, Kap_dyn, distIn);
 
@@ -396,7 +441,8 @@ Ut  = kron(ones(Nc,1), zeta(Nx+(1:Nu)));
 
 %% ---- 打包传给下层函数的参数 ----
 Pred = struct('PSI',PSI, 'THETA',THETA, 'PHI',PHI, 'GAMMA',GAMMA);
-Wts = struct('Q',Q, 'R',R, 'S',S, 'W',W, 'V',V);
+Wts = struct('Q',Q, 'R',R, 'S',S, 'W',W, 'V',V, ...
+    'Vx_ref',Vx_ref);
 % ---- AFS 控制量的幅值界: 机械限 + 前轴摩擦圆 ----
 % 预测模型 (func_DynamicalModel 第 53 行):
 % Fyf = CbF*(vy+lf*r)/vx - CbF*u + F_off_f_eff
@@ -495,6 +541,7 @@ Lim = struct('kap',kap_env,...
 'kappa_fx',kappa_fx, 'u_op',u_op,...
 'fx_couple',MPCParameters.fx_couple,...
 'dFyfmax',dFyfmax, 'dMFxmax',dMFxmax, 'dMdmax',dMdmax,...
+'Fxmax',Fxmax,'dFxmax',dFxmax,...
 'dlt_ub',dlt_ub, 'dlt_lb',dlt_lb);
 
 %% ---- 代价 ----
@@ -563,6 +610,9 @@ end
 InitialParams.U(1) = zeta(Nx+1) + delta_U_first(1); % Fyf
 InitialParams.U(2) = zeta(Nx+2) + delta_U_first(2); % MFx
 InitialParams.U(3) = zeta(Nx+3) + delta_U_first(3); % Md
+if Nu == 4
+    InitialParams.U(4) = zeta(Nx+4) + delta_U_first(4); % Fx brake
+end
 
 Fyf_next = InitialParams.U(1);
 MFx_next = InitialParams.U(2);
@@ -576,6 +626,18 @@ else
 end
 if longActive
     St.LongCoord.qp_exitflag = exitflag;
+    if (MPCParameters.ControllerVariant == 3 || ...
+            MPCParameters.ControllerVariant == 4) ...
+            && Constraints.LongCoordMode == 3
+        witness = func_PMPCSafetyWitness(MPCParameters,A_cons,b_cons, ...
+            x_opt,exitflag,dUc,gc,pc);
+        St.LongCoord.m_plan = witness.m_plan;
+        St.LongCoord.m_candidate = witness.m_candidate;
+        St.LongCoord.m_witness = witness.m_witness;
+        St.LongCoord.m_speed = witness.m_speed;
+        St.LongCoord.witness_unknown = witness.unknown;
+        St.LongCoord.safety_margin_prev = witness.m_speed;
+    end
     if all(isfinite(Y))
         roadMargin = inf;
         for p = 1:MPCParameters.Np
@@ -596,6 +658,7 @@ end
 %  减速度受**摩擦菱形**限幅 (Wischnewski 2023 Eq.10a): 横向顶满时自动归零,
 %  避免抢走正需要的横向附着。执行走差动制动分配器(唯一有制动权限的通路)。
 Fx_dem = 0;   Vset_zg = VehStateMeasured.VxTarget;   Vset_pid = Vset_zg;
+if Nu == 4, Fx_dem = max(InitialParams.U(4),0); end
 if ~longActive && (Constraints.ZengRho_on || Constraints.LongLim_diag) ...
         && Constraints.ZengLong_on && exitflag == 1
     %  取**预测时域内最大** |r| —— 实测必需。
@@ -667,7 +730,7 @@ if ~longActive && (Constraints.ZengRho_on || Constraints.LongLim_diag) ...
     end
 end
 if longActive
-    Fx_dem = longFx;
+    if Nu ~= 4, Fx_dem = longFx; end
     Vset_pid = longVset;
 end
 if Pm.RoadMu.enabled
@@ -675,7 +738,14 @@ if Pm.RoadMu.enabled
         Pm.RoadMu,VehStateMeasured.X,Vel, ...
         VehStateMeasured.VxTarget,VehiclePara.m);
     Vset_pid = min(Vset_pid,sharedVset);
-    Fx_dem = max(Fx_dem,sharedFx);
+    if Nu ~= 4, Fx_dem = max(Fx_dem,sharedFx); end
+end
+if longActive
+    % Feed back the command actually sent to the allocator after the shared
+    % speed reference. No separate boundary-braking path is used.
+    St.LongCoord.Fx_request = Fx_dem;
+    St.LongCoord.prev.Fx_prev = Fx_dem;
+    St.LongCoord.Vset_pid = Vset_pid;
 end
 
 %% ==================================================================%
@@ -776,9 +846,12 @@ end
 
 %% ============ LTR 三路对照（记录用，不参与控制） ============
 Npdc = 6;               % 预测提前量（步）
+% 与 QP 的 Envelope.Gr 右端修正使用同一轮胎仿射偏置。
+ay_off_diag = (F_off_f*cos(VehStateMeasured.delta_f) + F_off_r) ...
+    / VehiclePara.m;
 [LTR_real, LTR_calc, LTR_Npdc] = func_LTRDiagnosis( ...
         VehiclePara, MPCParameters, VehStateMeasured, ParaHAT, ...
-        Y, x_opt, exitflag, AI, Ut, Md_next, Npdc);
+        Y, x_opt, exitflag, AI, Ut, Md_next, Npdc, ay_off_diag);
 
 % 诊断通道 14:16 共用固定接口：ZENG 输出其自适应稳定性指标，
 % MPC/PMPC 保持原来的执行器优先级因子。

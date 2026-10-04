@@ -9,7 +9,7 @@
 |---|---|---|
 | `_MPC` | `mpc_mil.slx` | 6 状态，无控制器侧减振器时延 |
 | `_ZENG` | `zeng_mil.slx` | 7 状态，固定 15 ms |
-| `_PMPC` | `pmpc_mil.slx` | 7 状态，固定 15 ms |
+| `_PMPC` | `pmpc_mil.slx` | 当前 8 状态、4 控制量，固定 15 ms 减振器时延 |
 
    Send 后，在项目根目录的 MATLAB 命令行执行对应的一条命令：
 

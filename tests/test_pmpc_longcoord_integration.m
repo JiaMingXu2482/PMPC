@@ -94,6 +94,17 @@ verifyNotEqual(testCase,getSimulinkBlockHandle( ...
     'pmpc_mil/PMPC_LongCoord_Log'),-1);
 end
 
+function testMode3KeepsFixedOutputsAndRecordsWitness(testCase)
+P = configured(3,3);
+S = activeState(P);
+[sys,S] = step(P,S,controllerInput(80,30));
+verifySize(testCase,sys,[54 1]);
+verifySize(testCase,S.LongCoord.diag,[8 1]);
+verifyTrue(testCase,isfield(S.LongCoord,'m_witness'));
+verifyTrue(testCase,isfield(S.LongCoord,'m_speed'));
+verifyEqual(testCase,S.LongCoord.safety_margin_prev,S.LongCoord.m_speed);
+end
+
 function P = configured(variant,mode)
 assignin('base','PMPC_CONTROLLER_VARIANT',variant);
 assignin('base','PMPC_LONGCOORD',mode);

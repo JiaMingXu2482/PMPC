@@ -12,13 +12,21 @@ for variant = [1 2 3]
     assignin('base', 'PMPC_VERBOSE', 0);
     P = setup_pmpc();
     M = P.Pm.MPCParameters;
-    measured = struct('x_dot', 20, 'delta_f', 0.02);
-    S = func_DynamicalModel(P.S0.VehiclePara, M, measured, P.Pm.DiscreteModle);
+    measured = struct('x_dot', 20, 'delta_f', 0.02, 'Yawrate', 0);
+    if variant == 3
+        S = func_DynamicalModel8x4(P.S0.VehiclePara, M, measured, ...
+            P.Pm.DiscreteModle, [], 20*ones(M.Np,1));
+        nd = 5;
+    else
+        S = func_DynamicalModel(P.S0.VehiclePara, M, measured, ...
+            P.Pm.DiscreteModle);
+        nd = 3;
+    end
 
     verifySize(testCase, S.C_aug, [M.Ny M.Nx + M.Nu]);
     verifySize(testCase, S.A_aug, [M.Nx + M.Nu, M.Nx + M.Nu, M.Np]);
     verifySize(testCase, S.B_aug, [M.Nx + M.Nu, M.Nu, M.Np]);
-    verifySize(testCase, S.D_aug, [M.Nx + M.Nu, 3, M.Np]);
+    verifySize(testCase, S.D_aug, [M.Nx + M.Nu, nd, M.Np]);
 end
 
 evalin('base', 'clear PMPC_CONTROLLER_VARIANT PMPC_VERBOSE');

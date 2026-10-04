@@ -38,6 +38,7 @@ for k = 1:3
     verifyEqual(testCase,[P.Pm.CostWeights.Q5,P.Pm.CostWeights.Q6, ...
         P.Pm.CostWeights.V2],[2e4,2e2,8e4]);
 end
-verifyEqual(testCase,P.S0.Constraints.LongCoordMode,1);
+verifyEqual(testCase,P.S0.Constraints.LongCoordMode,3);
 verifyEqual(testCase,P.S0.Constraints.Long_a_max,3.0);
+verifyTrue(testCase,isfield(P.S0.LongCoord,'safety_margin_prev'));
 end

@@ -16,6 +16,8 @@ switch upper(strtrim(tag))
         model = 'zeng_mil';
     case 'PMPC'
         model = 'pmpc_mil';
+    case {'PMPC_NODELAY','PMPC-NODELAY','PMPCNODELAY'}
+        model = 'pmpc_nodelay_mil';
     otherwise
         error('func_ControllerModelForTag:InvalidTag', ...
             'Unsupported controller tag "%s". Use MPC, ZENG, or PMPC.', tag);

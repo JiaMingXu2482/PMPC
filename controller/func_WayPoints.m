@@ -2,7 +2,7 @@ function [WayPoints_Collect] = func_WayPoints(maneuverType, Rjt, saveOutput)
 % func_WayPoints 生成参考路径点
 % 输入 maneuverType: 
 %   1 - Double Lane Change (DLC) [基于你的拟合参数]
-%   2 - Slalom (蛇形穿桩) [基于论文 Eq.73]
+%   2 - Slalom (蛇形穿桩), 与 CarSim X-Y-Station 表逐点一致
 %   3 - U-Turn (U型弯) [基于论文描述: 直线40m + R60m]
 %   5 - J-turn: 直线 60 m + 半径 Rjt 的 90 度左转圆弧 + 出弯直线 100 m (改进.md 7.1)
 %       Rjt 按 R = V^2/(mu_eff*g) 取: 80 km/h 时 mu=0.85 -> 69 m (需求 = 能力),
@@ -18,6 +18,7 @@ end
 if nargin < 3
     saveOutput = true;
 end
+stationInput = [];
 
 %% 1. 路径点生成 (X, Y)
 switch maneuverType
@@ -50,31 +51,13 @@ switch maneuverType
         
         % 拟合公式
         % Y = dy1 * (1 + tanh(z1)) - dy2 * (1 + tanh(z2));
-    case 2  % ===== Slalom (蛇形) : 直线40m + 正弦段 + 末尾直线40m(Y=0) =====
-        ds = 0.5;      
-        L1 = 20;       
-        a  = 1.2;      
-        b  = 0.15;     
-        L3 = 40;       % 第三段直线长度
-    
-        % ---------- 第一段：直线 ----------
-        X_str1 = (0:ds:L1).';
-        Y_str1 = zeros(size(X_str1));
-    
-        % ---------- 第二段：正弦段 ----------
-        % 注意：2周期应为 4*pi/b；你原来写 6*pi/b 是 3周期
-        L2 = 6*pi / b;                           % 2周期
-        X_sin = (L1:ds:(L1 + L2)).';
-        Y_sin = a * sin( b * (X_sin - L1) );
-    
-        % ---------- 第三段：直线40m，Y=0 ----------
-        X_end = X_sin(end);
-        X_str3 = (X_end:ds:(X_end + L3)).';
-        Y_str3 = zeros(size(X_str3));            % 强制回到中心线
-    
-        % ---------- 拼接（去重） ----------
-        X = [X_str1; X_sin(2:end); X_str3(2:end)];
-        Y = [Y_str1; Y_sin(2:end); Y_str3(2:end)];
+    case 2  % Slalom: exact CarSim X-Y-Station table, including preview tail.
+        xys = dlmread(fullfile(func_ProjectRoot(),'data','Slalom_CarSim_XYS.txt'),',');
+        assert(size(xys,2)==3 && size(xys,1)>2 && all(diff(xys(:,3))>0), ...
+            'func_WayPoints:InvalidSlalomPath','Slalom X-Y-Station table is invalid.');
+        X = xys(:,1);
+        Y = xys(:,2);
+        stationInput = xys(:,3);
 
     case 3  % ===== U-Turn (三段：直线40m + R60半圆 + 出弯直线) =====
         ds    = 0.25;   % 采样间距
@@ -246,6 +229,11 @@ s = zeros(numPoints, 1);
 for i = 2:numPoints
     dist = sqrt((X(i)-X(i-1))^2 + (Y(i)-Y(i-1))^2);
     s(i) = s(i-1) + dist;
+end
+if ~isempty(stationInput)
+    assert(max(abs(s-stationInput))<0.05,'func_WayPoints:SlalomStationMismatch', ...
+        'Slalom X-Y and Station columns disagree.');
+    s = stationInput;
 end
 WayPoints_Collect(:,7) = s;              % Station (m)
 

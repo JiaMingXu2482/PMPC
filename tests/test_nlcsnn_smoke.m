@@ -11,7 +11,7 @@ end
 function testMpcZengAndPmpcAdvanceCommonPlant(testCase)
 mode = [2 2 1];
 zeng = [0 1 0];
-nxExpected = [6 7 7];
+nxExpected = [6 7 8];
 for controller = 1:3
     [P, cleanup] = configuredController(mode(controller), zeng(controller)); %#ok<ASGLU>
     S = P.S0;

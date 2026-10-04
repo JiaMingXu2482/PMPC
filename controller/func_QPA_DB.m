@@ -1,6 +1,6 @@
 function [Tb_L1,Tb_L2,Tb_R1,Tb_R2,exitflag_DB] = func_QPA_DB(VehiclePara,InitialParams,Constraints,ParaHAT,MFx,delta_wheel,Tb_u,Fx_dem,verbose)
 %   verbose=0 时不打印失败警告(失败计数不受影响)。见 setup_pmpc 的 MPCParameters.Verbose
-%  Fx_dem (可选): 纵向制动力需求 (N, 正=减速)。为 0 时与原版**逐位等价**。
+%  Fx_dem (可选): 纵向制动力需求 (N, 正=减速)。与偏航请求均为零时按速率释放残余制动。
 if nargin < 8 || isempty(Fx_dem), Fx_dem = 0; end
 if nargin < 9 || isempty(verbose), verbose = false; end
 
@@ -60,7 +60,7 @@ if nargin < 9 || isempty(verbose), verbose = false; end
     %  把“减速”放进同一个分配 QP，而不是另开一路制动：
     %    - 横摆力矩 MFx 仍是主目标，纵向项权重由 lam_x<1 压低；
     %    - 上界 ub 本身就是摩擦圆给的，故不会抢走横向能力；
-    %    - Fx_dem=0 时本段不执行，保证对原行为零回归。
+    %    - Fx_dem=0 时本段纵向代价项不执行。
     if Fx_dem > 0
         Bx = (1/rt) * [cos(delta_wheel), cos(delta_wheel), 1, 1];   % 总制动力
         F_ref  = max(mu*Fz_tot, 1);            % N,   纯纵向能力 (Fz_tot/M_ref 上面已算)
@@ -87,14 +87,24 @@ if nargin < 9 || isempty(verbose), verbose = false; end
     %  R2018a 的 quadprog 不支持 codegen, 分配 QP 也必须改 KWIK。
     %  本 QP 只有边界约束(A/b 为空), H 正定(含正则项), 满足 KWIK 前提。
     %  实测只要 1~3 次迭代, 故冷启动(usews=false), 避开 persistent 共用问题。
-    [Tb, st_, ~] = func_QPKwik(H, f, zeros(0,4), zeros(0,1), lb, ub, 200, false);
-    if st_ > 0, exitflag_DB = 1; else, exitflag_DB = st_ - 10; end
+    % No yaw or longitudinal demand: the increment penalty otherwise keeps
+    % a common-mode brake torque in the null space indefinitely. Release it
+    % at the configured per-tick actuator slew limit instead of solving for
+    % a zero target biased toward the previous four-wheel command.
+    if abs(MFx) <= 1 && Fx_dem <= 1 && ...
+            isfield(Constraints,'QPA_release_step') && Constraints.QPA_release_step > 0
+        Tb = max(x0 - Constraints.QPA_release_step,0);
+        exitflag_DB = 1;
+    else
+        [Tb, st_, ~] = func_QPKwik(H, f, zeros(0,4), zeros(0,1), lb, ub, 200, false);
+        if st_ > 0, exitflag_DB = 1; else, exitflag_DB = st_ - 10; end
 
-    if exitflag_DB <= 0
-        if verbose
-            fprintf(2, 'func_QPA_DB: brake torque allocation QP failed, exitflag_DB=%.0f\n', exitflag_DB);
+        if exitflag_DB <= 0
+            if verbose
+                fprintf(2, 'func_QPA_DB: brake torque allocation QP failed, exitflag_DB=%.0f\n', exitflag_DB);
+            end
+            Tb = zeros(4, 1);
         end
-        Tb = zeros(4, 1);
     end
 
     Tb_L1 = Tb(1);  

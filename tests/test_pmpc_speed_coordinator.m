@@ -164,6 +164,87 @@ verifyEqual(testCase,noCredit.Vx_pred, ...
 verifyLessThan(testCase,fullCredit.Vx_pred(end),state.x_dot);
 end
 
+function testMode3SustainedBendGetsPhysicalSpeedCap(testCase)
+[mpc,vehicle,limits,state,loads,prev] = mode3Fixture();
+W = road('jturn');
+W(61:161,5) = 1/50;
+projection = struct('WPIndex',48,'PrjP',struct('ey',0,'epsi',0, ...
+    'Velr',20,'xr',47,'yr',0,'psir',0), 's0',47,'valid',true);
+[plan,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,0.1);
+verifyTrue(testCase,plan.valid);
+verifyGreaterThan(testCase,plan.Fx_dem,0);
+verifyLessThan(testCase,plan.diag(1),20);
+verifyGreaterThan(testCase,plan.diag(5),0);
+end
+
+function testMode3ShortSafeBendDoesNotBrake(testCase)
+[mpc,vehicle,limits,state,loads,prev] = mode3Fixture();
+W = road('short_bend');
+W(:,5) = 0;
+W(61:63,5) = 1/90;
+projection = struct('WPIndex',1,'PrjP',struct('ey',0,'epsi',0, ...
+    'Velr',20,'xr',0,'yr',0,'psir',0), 's0',0,'valid',true);
+[plan,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,0.1);
+verifyTrue(testCase,plan.valid);
+verifyEqual(testCase,plan.Fx_dem,0,'AbsTol',1e-12);
+end
+
+function testMode3ControlledMarginCanTightenGeometricCap(testCase)
+[mpc,vehicle,limits,state,loads,prev] = mode3Fixture();
+limits.LTR_lim = 2; % isolate sustained tire-feasibility from roll warning
+vehicle.mu = 0.85;
+vehicle.mu_eff = 0.855*0.85;
+state.x_dot = 80/3.6;
+state.VxTarget = 80;
+prev.Vset_prev = 80;
+W = road('jturn');
+W(51:161,5) = 1/70;
+projection = struct('WPIndex',48,'PrjP',struct('ey',0,'epsi',0, ...
+    'Velr',state.x_dot,'xr',47,'yr',0,'psir',0), 's0',47,'valid',true);
+[safe,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,0.1);
+[unsafe,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,-0.3);
+verifyTrue(testCase,safe.valid);
+verifyGreaterThan(testCase,safe.Fx_dem,0);
+verifyLessThan(testCase,unsafe.diag(1),safe.diag(1));
+verifyGreaterThan(testCase,unsafe.Fx_dem,0);
+W(:,5) = 0;
+[sameMarginStraight,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,-0.3);
+verifyEqual(testCase,unsafe.diag(1),sameMarginStraight.diag(1),'AbsTol',1e-9);
+end
+
+function testMode3UnknownWitnessDoesNotRaisePreviousCap(testCase)
+[mpc,vehicle,limits,state,loads,prev] = mode3Fixture();
+W = road('straight');
+projection = struct('WPIndex',1,'PrjP',struct('ey',0,'epsi',0, ...
+    'Velr',20,'xr',0,'yr',0,'psir',0), 's0',0,'valid',true);
+prev.Vset_prev = 50;
+[plan,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,NaN);
+verifyTrue(testCase,plan.valid);
+verifyLessThanOrEqual(testCase,plan.Vset_pid,50);
+end
+
+function testMode3NegativeWitnessCommandsBoundedBrakingWithoutRatchet(testCase)
+[mpc,vehicle,limits,state,loads,prev] = mode3Fixture();
+W = road('straight');
+projection = struct('WPIndex',1,'PrjP',struct('ey',0,'epsi',0, ...
+    'Velr',20,'xr',0,'yr',0,'psir',0), 's0',0,'valid',true);
+[plan,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,-0.5);
+verifyTrue(testCase,plan.valid);
+verifyGreaterThan(testCase,plan.Fx_dem,0);
+verifyLessThan(testCase,plan.diag(1),20);
+[again,~] = func_PMPCSpeedCoordinator(mpc,vehicle,limits,W, ...
+    projection,state,loads,0.5,prev,inf,-0.5);
+verifyEqual(testCase,again.diag(1),plan.diag(1),'AbsTol',1e-12);
+verifyLessThanOrEqual(testCase,plan.Fx_dem,vehicle.m*limits.Long_a_max+1e-9);
+end
+
 function [plan,next] = runPlanner(mpc,vehicle,limits,W,state,loads,prev,margin,s0)
 projection = struct('WPIndex',max(1,round(s0)+1), ...
     'PrjP',struct('ey',0,'epsi',0,'Velr',state.x_dot, ...
@@ -185,6 +266,20 @@ state = struct('x_dot',80/3.6,'VxTarget',80);
 loads = struct('Fz_l1',4800,'Fz_r1',4800,'Fz_l2',4300,'Fz_r2',4300);
 prev = struct('Fx_prev',0,'Vset_prev',80,'trigger',false, ...
     'release_ticks',0,'allocationFailed',false,'achievedRatio',1);
+end
+
+function [mpc,vehicle,limits,state,loads,prev] = mode3Fixture()
+[mpc,vehicle,limits,state,loads,prev] = fixture();
+limits.LongCoordMode = 3;
+limits.LTR_lim = 0.8;
+limits.Roadwidth = 3.75; limits.env_Wv = 1.6;
+limits.env_es = 0.43; limits.env_af = 1.3; limits.env_ar = 1.3;
+vehicle.ms = 1500; vehicle.h_TL = 0.75; vehicle.h_S2R = 0.57;
+vehicle.Kt = 1e5; vehicle.Ix = 900; vehicle.tf = 1.6;
+vehicle.ldf = 1.2; vehicle.ldr = 1.2;
+state.x_dot = 20; state.VxTarget = 72;
+loads.Roll = 0; loads.Rollrate = 0; loads.Md = 0;
+prev.Vset_prev = 72;
 end
 
 function W = road(kind)

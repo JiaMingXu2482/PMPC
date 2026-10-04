@@ -31,3 +31,33 @@ verifyFalse(testCase, didThrow);
 verifyTrue(testCase, all(isfinite([tbFl, tbRl, tbFr, tbRr])));
 verifyEqual(testCase, [tbRl, tbRr], [0, 0], 'AbsTol', 1e-12);
 end
+
+function testResidualFourWheelBrakeReleasesWhenBothRequestsStop(testCase)
+vehicle = struct('lf',1.417,'mu',0.85,'tf',1.575,'tr',1.575,'rt',0.347);
+initial = struct('prevstate',struct('Tb',[60;55;54;49]));
+constraints = struct('Tb_max',3000,'QPA_lamd',0.003, ...
+    'Gov_lamx',0.1,'QPA_release_step',200);
+para = struct('Fz_l1',4740,'Fz_r1',4740,'Fz_l2',4000,'Fz_r2',4000);
+tbUpper = struct('Tb_L1',1000,'Tb_R1',1000,'Tb_L2',1000,'Tb_R2',1000);
+
+[fl,rl,fr,rr,status] = func_QPA_DB( ...
+    vehicle,initial,constraints,para,0,0,tbUpper,0,false);
+
+verifyEqual(testCase,status,1);
+verifyEqual(testCase,[fl;fr;rl;rr],zeros(4,1),'AbsTol',1e-6);
+end
+
+function testHighResidualBrakeReleasesAtConfiguredRate(testCase)
+vehicle = struct('lf',1.417,'mu',0.85,'tf',1.575,'tr',1.575,'rt',0.347);
+initial = struct('prevstate',struct('Tb',[500;400;300;200]));
+constraints = struct('Tb_max',3000,'QPA_lamd',0.003, ...
+    'Gov_lamx',0.1,'QPA_release_step',200);
+para = struct('Fz_l1',4740,'Fz_r1',4740,'Fz_l2',4000,'Fz_r2',4000);
+tbUpper = struct('Tb_L1',1000,'Tb_R1',1000,'Tb_L2',1000,'Tb_R2',1000);
+
+[fl,rl,fr,rr,status] = func_QPA_DB( ...
+    vehicle,initial,constraints,para,0,0,tbUpper,0,false);
+
+verifyEqual(testCase,status,1);
+verifyEqual(testCase,[fl;fr;rl;rr],[300;200;100;0],'AbsTol',1e-6);
+end

@@ -5,10 +5,10 @@ function mdl = func_SimModel(allPar, expectedModel)
 if nargin < 2 || isempty(expectedModel)
     expectedModel = 'pmpc_mil';
 end
-validModels = {'mpc_mil','zeng_mil','pmpc_mil'};
+validModels = {'mpc_mil','zeng_mil','pmpc_mil','pmpc_nodelay_mil'};
 if ~any(strcmp(expectedModel, validModels))
     error('func_SimModel:InvalidExpectedModel', ...
-        'expectedModel must be mpc_mil, zeng_mil, or pmpc_mil.');
+        'expectedModel must be mpc_mil, zeng_mil, pmpc_mil, or pmpc_nodelay_mil.');
 end
 mdl = expectedModel;
 if exist(allPar,'file') ~= 2

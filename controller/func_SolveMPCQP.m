@@ -213,8 +213,8 @@ if qsel == 1 && exitflag == 1
         if f(v) > 0
             s = 0;
             for i = 1:Nc
-                rh = 3*(i-1) + 2;
-                rl = 3*Nc + rh;
+                rh = Nu*(i-1) + 2;
+                rl = Nu*Nc + rh;
                 d  = lamA(rh) - lamA(rl);
                 s  = s + max(d,0)*(-A_cons(rh,v)) + max(-d,0)*(-A_cons(rl,v));
             end
