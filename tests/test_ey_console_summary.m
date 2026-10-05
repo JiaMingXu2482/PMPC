@@ -25,7 +25,7 @@ verifySubstring(testCase, text, 'm');
 end
 
 function testCombinedRunPrintsSeparateDlcAndJTurnWithVelocityRms(testCase)
-tag = fullfile(testCase.TestData.root, 'results_combined', 'Results', ...
+tag = fullfile(testCase.TestData.root, 'simulation_results', 'combined', 'Results', ...
     'Run_Combined90_R70_PMPC', 'LastRun');
 D = func_ReadERD(tag);
 
@@ -55,7 +55,7 @@ verifyGreaterThan(testCase, S.segments(2).ey_peak_m, 0);
 end
 
 function testCombinedRunDoesNotReportJTurnWhenSimulationStopsAtDlc(testCase)
-tag = fullfile(testCase.TestData.root, 'results_combined', 'Results', ...
+tag = fullfile(testCase.TestData.root, 'simulation_results', 'combined', 'Results', ...
     'Run_Combined90_R70_PMPC', 'LastRun');
 D = func_ReadERD(tag);
 ix = D.Station < 200;
@@ -78,7 +78,7 @@ verifySubstring(testCase, output, 'not reached');
 end
 
 function testConeBasedStraightRoadUsesRoadStationForSegmentBoundaries(testCase)
-tag = fullfile(testCase.TestData.root, 'results_combined', 'Results', ...
+tag = fullfile(testCase.TestData.root, 'simulation_results', 'combined', 'Results', ...
     'Run_Combined90_R70_PMPC', 'LastRun');
 D = func_ReadERD(tag);
 % Same vehicle response, but CarSim's straight-road centerline has no

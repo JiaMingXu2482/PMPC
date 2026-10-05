@@ -33,13 +33,20 @@ NLCSNN.passivity = struct('c_min', 0.8, 'v_eps', 5, 'power_eps', 50);
 InitialParams.BaselineMode    = localWsget('PMPC_BASELINE',   0);   % 1=无控制baseline
 InitialParams.BaselineCurrent = localWsget('PMPC_BASELINE_I', 2.0); % A, baseline 时 MR 电流
 InitialParams.FishhookMode    = localWsget('PMPC_FISHHOOK',   0);   % 1=鱼钩纯防侧翻
-%  工况(路径类型 / J-turn 半径 / 路面 mu)从 CarSim 数据集名解析, 见 func_ManeuverFromName。
+%  工况类型和 mu 由数据集名解析；J-turn 半径以 CarSim 展开的道路为准。
 %  DLC80_mu0.5_* 解析结果与 2026-09-26 前写死的 (DLC, mu = 0.5) 完全相同。
 [~, ~, ds_mv] = func_RunMode();
 MV = func_ManeuverFromName(ds_mv);
+if MV.type == 5 || MV.type == 6
+    MV = func_ManeuverFromRun(ds_mv,fullfile(func_CarSimResDir(),'Run_all.par'));
+end
 CombinedCourse = func_CombinedCourse();
-if MV.combined, CombinedCourse = func_CombinedCourse(MV.R); end
-[Reftraj] = func_WayPoints(MV.type, MV.R, false); % Runtime path is in memory; preserve MAT files.
+if MV.combined, CombinedCourse = func_CombinedCourse(MV.R,MV.turn_x); end
+if MV.combined
+    Reftraj = func_WayPoints(MV.type,MV.R,false,MV.turn_x);
+else
+    Reftraj = func_WayPoints(MV.type,MV.R,false);
+end % Runtime path is in memory; preserve MAT files.
 PMPC_cargo = localWsget('PMPC_CARGO', 0);   % 与横幅同源
 [VehiclePara] = func_VehicleParams(PMPC_cargo);
 %  模型基准试验开关 (改进.md 18z, 默认全关 = erd_0926_pi 版本, 用户 2026-09-27 定):
@@ -239,7 +246,7 @@ MPCParameters.PrioMode = 0;
 Constraints.prio_vartheta = PmpcTuning.prio_vartheta;
 Constraints.prio_wmin  = PmpcTuning.prio_wmin;
 Constraints.prio_wmax  = PmpcTuning.prio_wmax;
-% 1 = MPC (6x3); 2 = ZENG (7x3); 3 = PMPC (8x4); 4 = legacy PMPC-noDelay (6x3).
+% 1 = MPC (6x3); 2 = ZENG (7x3); 3 = PMPC (7x3); 4 = PMPC-noDelay (6x3).
 ControllerVariant = localWsget('PMPC_CONTROLLER_VARIANT', 0);
 [md_auto, zg_auto, ds_auto] = func_RunMode();
 if ControllerVariant == 1
@@ -305,15 +312,6 @@ MPCParameters.Ncons_env = localWsget('PMPC_NCONS_ENV', MPCParameters.Np);   % �
 MPCParameters.ConNodes_sh = (1:MPCParameters.Ncons_sh)';
 MPCParameters.ConNodes_r = (1:MPCParameters.Ncons_r)';
 MPCParameters.ConNodes_env = (1:MPCParameters.Ncons_env)';
-if ControllerVariant == 3 && MPCParameters.Np >= 10
-    % Sparse near/transient/terminal sampling for the larger 8x4 QP.
-    MPCParameters.ConNodes_sh = [1;2;5];
-    MPCParameters.ConNodes_r = [1;2;5];
-    MPCParameters.ConNodes_env = [1;2;5;MPCParameters.Np];
-    MPCParameters.Ncons_sh = 3;
-    MPCParameters.Ncons_r = 3;
-    MPCParameters.Ncons_env = 4;
-end
 
 % 0 removes per-step diagnostics from generated code (Pm is coder.Constant).
 MPCParameters.Verbose = localWsget('PMPC_VERBOSE', 1);
@@ -331,14 +329,12 @@ if ControllerVariant == 1 || ControllerVariant == 4
     MPCParameters.Ny = 6;
     MPCParameters.tau_d = 0;       % 明确不调用 local_delay
 elseif ControllerVariant == 3
-    % PMPC: [Vy,r,phi,dphi,e_y,e_psi,Md_a,Vx],
-    % [steer, differential yaw moment, damper moment, total brake force].
-    MPCParameters.Nx = 8;
-    MPCParameters.Ny = 8;
-    MPCParameters.Nu = 4;
+    % Mainline PMPC: [Vy,r,phi,dphi,e_y,e_psi,Md_a] and three inputs.
+    % The tagged 8x4 Vx/Fx experiment remains available separately.
+    MPCParameters.Nx = 7;
+    MPCParameters.Ny = 7;
     MPCParameters.tau_d = func_DamperDelayTau(zeros(4,1), zeros(4,1), ...
         zeros(4,1), Constraints.tau_MR);
-    InitialParams.U(4,1) = 0;
 else
     MPCParameters.Nx = 7;
     MPCParameters.Ny = 7;
@@ -421,11 +417,6 @@ if ContrlMode == 1 || ContrlMode == 2
     CostWeights.Q8 = 0;
     CostWeights.R4 = 0;
     CostWeights.S4 = 0;
-    if ControllerVariant == 3
-        CostWeights.Q8 = Tuning.Q8;
-        CostWeights.R4 = Tuning.R4;
-        CostWeights.S4 = Tuning.S4;
-    end
     if InitialParams.FishhookMode
         % 纯防侧翻: 无路径、无偏航角速度参考
         CostWeights.Q1=0;    CostWeights.Q2=0;

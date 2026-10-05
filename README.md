@@ -12,7 +12,12 @@ run_current_carsim('pmpc_mil')
 `JT72_R69_mu0.85_{MPC,ZENG,PMPC}` 共用一个 Procedure；车速只需改一次，但三个
 Run 要逐个 Send、逐个执行上述命令。详细步骤见[运行配置](docs/README_运行配置.md)。
 
-联合 DLC + J-turn 的三个控制器各用一条命令（各自独立保存结果）：
+目标手工 COM 配置（CarSim 道路需手动同步）：DLC 至 `X=200 m`，恢复直线延长到 `X=330 m` 开始
+R80、90° 左转；`X=230 m` 切换到 `mu=0.85`，三控制器共用 90→80 km/h
+目标速度。分别在 CarSim 修改并 Send 三个 Run 后，用 `run_current_carsim`
+运行对应模型。控制器从 CarSim 展开的道路参数读取实际入弯位置和半径。
+
+下列命令是历史 R70、80 m 恢复直线的隔离试验，不代表当前手工 COM 道路：
 
 ```matlab
 run_combined_carsim('mpc_mil')
@@ -20,11 +25,11 @@ run_combined_carsim('zeng_mil')
 run_combined_carsim('pmpc_mil')
 ```
 
-该工况以 90 km/h 起步：DLC 路段 `mu=0.5`，DLC 后有 80 m 直线；
+该历史工况以 90 km/h 起步：DLC 路段 `mu=0.5`，DLC 后有 80 m 直线；
 三个控制器在直线起点共用平滑的 90→80 km/h 车速目标，在
 `X=230 m`（路径里程约 230.65 m）统一把 CarSim 路面和控制器轮胎模型切到
 `mu=0.85`，从 `X=280 m` 开始 R70 左转。原 CarSim Run 与 `simfile.sim`
-不会被修改；输入、ERD 输出和分段误差保存在 `results_combined/`。命令行会打印
+不会被修改；输入、ERD 输出和分段误差保存在 `simulation_results/combined/`。命令行会打印
 DLC 和 J-turn 两段的 `e_y` 峰值/RMS 及 `Vx` RMS。R70 弯道和 80 km/h 目标均不保证
 三个控制器具有相同实测速度或稳定跟踪，必须核对进弯速度、车身角点是否
 越界及 J-turn 段误差后，才能把它用于公平比较。手动建立三个 CarSim Run 的
@@ -65,13 +70,17 @@ MPC、ZENG 和 PMPC 现在共用 `nlcsnn/` 中的 CDC 减振器模型。默认�
 | `docs/` | 改进记录、运行说明和图片 |
 | `simulation_results/current/` | 当前有效仿真结果 |
 | `simulation_results/output/` | 新仿真的默认输出 |
+| `simulation_results/archive/` | 历史试验和诊断结果（不纳入 Git） |
+| `simulation_results/combined/` | 联合工况历史样例和测试夹具 |
 | `tests/` | MATLAB 自动化测试 |
 
+`simulation_results/` 是本机仿真输出，已被 Git 忽略；需要上传的历史道路坐标表保存在 `data/`。
+
 根目录保留四个固定控制器模型和 CarSim 句柄文件：`mpc_mil.slx`（6 状态、3 控制量）、
-`zeng_mil.slx`（7 状态、3 控制量）、`pmpc_mil.slx`（8 状态、4 控制量，含 `Vx/Fx`）
-和 `pmpc_nodelay_mil.slx`（旧 6 状态、3 控制量）。它们共用 NLCSNN、车辆参数、
-状态估计和 54 路 CarSim 接口。当前 noDelay 与 8×4 PMPC 不再构成“仅去时延”的
-单因素消融；新 PMPC 的首次闭环结果及限制见[8×4 实验日志](docs/PMPC_8x4_实验日志.md)。
+`zeng_mil.slx`（7 状态、3 控制量）、`pmpc_mil.slx`（7 状态、3 控制量，含减振器时延）
+和 `pmpc_nodelay_mil.slx`（6 状态、3 控制量）。它们共用 NLCSNN、车辆参数、
+状态估计和 54 路 CarSim 接口。8×4 `Vx/Fx` 版本保留在历史 Git 标签
+`pmpc-vxfx-8x4-experiment`，不属于当前主线。
 
 当前基准：`simulation_results/current/erd_0927_base/`。
 

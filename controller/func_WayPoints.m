@@ -1,4 +1,4 @@
-function [WayPoints_Collect] = func_WayPoints(maneuverType, Rjt, saveOutput)
+function [WayPoints_Collect] = func_WayPoints(maneuverType, Rjt, saveOutput, turnX)
 % func_WayPoints 生成参考路径点
 % 输入 maneuverType: 
 %   1 - Double Lane Change (DLC) [基于你的拟合参数]
@@ -17,6 +17,9 @@ if nargin < 2 || isempty(Rjt)
 end
 if nargin < 3
     saveOutput = true;
+end
+if nargin < 4
+    turnX = [];
 end
 stationInput = [];
 
@@ -180,7 +183,7 @@ case 4  % ===== Combined Maneuver: DLC -> U-Turn =====
         X = [X_str1; X_arc(2:end); X_str3(2:end)];
         Y = [Y_str1; Y_arc(2:end); Y_str3(2:end)];
     case 6  % DLC -> recovery straight -> parameterized-radius J-turn, one continuous path
-        C = func_CombinedCourse(Rjt);
+        C = func_CombinedCourse(Rjt,turnX);
         dlc = func_WayPoints(1,C.turn_radius,false);
         X_dlc = dlc(:,2); Y_dlc = dlc(:,3);
         ds = 0.5;

@@ -41,25 +41,24 @@ end
 add_line(model,'PMPC_LongBrakeRequest/1', ...
     'PID velocity control/3','autorouting','on');
 % Port 3 is now the PMPC longitudinal brake request (N), not yaw DB torque.
-% Keep the existing integrator freeze and also block throttle immediately.
+% Keep the existing integrator handling, but do not override PID throttle.
 set_param([gate '/DB_on'],'const','1');
-throttleGate = [gate '/LongBrakeThrottleGate'];
-if getSimulinkBlockHandle(throttleGate) == -1
-    add_block('simulink/Signal Routing/Switch',throttleGate, ...
-        'Criteria','u2 > Threshold','Threshold','0', ...
-        'Position',[610 155 645 195]);
-    outPorts = get_param([gate '/Out1'],'PortHandles');
-    outLine = get_param(outPorts.Inport(1),'Line');
-    if outLine ~= -1
-        delete_line(outLine);
+throttleGates = {'LongBrakeThrottleGate','DB_ThrottleCut_50Nm'};
+for k = 1:numel(throttleGates)
+    throttleGate = [gate '/' throttleGates{k}];
+    if getSimulinkBlockHandle(throttleGate) ~= -1
+        delete_block(throttleGate);
     end
-    set_param([gate '/Out1'],'Position',[690 167 720 183]);
-    add_line(gate,'Constant1/1','LongBrakeThrottleGate/1','autorouting','on');
-    add_line(gate,'DB_on/1','LongBrakeThrottleGate/2','autorouting','on');
-    add_line(gate,'Saturation/1','LongBrakeThrottleGate/3','autorouting','on');
-    add_line(gate,'LongBrakeThrottleGate/1','Out1/1','autorouting','on');
 end
-set_param(throttleGate,'Threshold','0');
+outPorts = get_param([gate '/Out1'],'PortHandles');
+outLine = get_param(outPorts.Inport(1),'Line');
+if outLine ~= -1 && get_param(outLine,'SrcBlockHandle') == -1
+    delete_line(outLine);
+    outLine = -1;
+end
+if outLine == -1
+    add_line(gate,'Saturation/1','Out1/1','autorouting','on');
+end
 
 scope = [model '/PMPC_LongCoord_Diagnostics'];
 if getSimulinkBlockHandle(scope) == -1

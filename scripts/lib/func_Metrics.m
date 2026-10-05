@@ -14,7 +14,7 @@ function M = func_Metrics(tag, opt)
 %     .Wv      车身宽 (默认 1.96 m)
 %     .lf      质心到前轴 (默认 1.2466 m; 仅 ERD 缺 Xcg_TM/Ycg_TM 时用)
 %     .tail    尾段起点 (默认 6.8 s)
-%     .wp      参考路径 .mat (默认 'WayPoints_Type1.mat')
+%     .wp      参考路径 .mat (J-turn 有展开参数时直接按实际半径生成)
 %
 %   车道口径 (2026-09-26 起为车身角点, 与控制器的四角点约束一致):
 %     corner_pk  四个角点到参考路径的最大法向距离 (m)
@@ -31,6 +31,10 @@ if ischar(tag) || isstring(tag), D = func_ReadERD(char(tag)); else, D = tag; end
 %  路径与 mu 默认按 ERD 记录的数据集名解析(DLC80_mu0.5_* -> DLC 路径, mu = 0.5, 与旧默认相同)
 dsn = '';  if isfield(D,'Dataset'), dsn = D.Dataset; end
 MV  = func_ManeuverFromName(dsn);
+if (MV.type == 5 || MV.type == 6) && isfield(D,'RunAllPar') && ...
+        exist(D.RunAllPar,'file') == 2
+    MV = func_ManeuverFromRun(dsn,D.RunAllPar);
+end
 if ~isfield(opt,'mu'),   opt.mu   = MV.mu;    end
 if ~isfield(opt,'Yl'),   opt.Yl   = 1.75;     end
 if ~isfield(opt,'es'),   opt.es   = 0.2;      end
@@ -42,8 +46,12 @@ if ~isfield(opt,'tail'), opt.tail = 6.8;      end
 if ~isfield(opt,'wp'),   opt.wp   = MV.wp;    end
 G = 9.80665;
 
-if (MV.combined || MV.type==2) && strcmp(opt.wp,MV.wp)
-    W = func_WayPoints(MV.type,MV.R,false);
+if (MV.combined || MV.type==2 || MV.type==5) && strcmp(opt.wp,MV.wp)
+    if MV.combined
+        W = func_WayPoints(MV.type,MV.R,false,MV.turn_x);
+    else
+        W = func_WayPoints(MV.type,MV.R,false);
+    end
 else
     W = load(opt.wp); W = W.WayPoints_Collect;
 end

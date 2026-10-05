@@ -56,6 +56,14 @@ InitialParams.InitialGapflag = InitialParams.InitialGapflag + 1;
 
 % --- 1. 状态估计与预处理 ---
 [VehStateMeasured, ParaHAT] = func_StateEstimation(u,VehiclePara);  
+sharedFxDem = 0;
+if Pm.RoadMu.enabled
+    % The same COM speed request applies to MPC, ZENG and PMPC. Keep the
+    % service-brake request separate from each variant's lateral decision.
+    [VehStateMeasured.VxTarget,sharedFxDem] = func_CombinedSpeedReference( ...
+        Pm.RoadMu,VehStateMeasured.X,VehStateMeasured.x_dot, ...
+        VehStateMeasured.VxTarget,VehiclePara.m);
+end
 % The combined road changes friction on a straight section. Both Fiala
 % models were prepared by setup_pmpc; selecting one costs no online fit.
 if Pm.RoadMu.enabled
@@ -733,13 +741,7 @@ if longActive
     if Nu ~= 4, Fx_dem = longFx; end
     Vset_pid = longVset;
 end
-if Pm.RoadMu.enabled
-    [sharedVset,sharedFx] = func_CombinedSpeedReference( ...
-        Pm.RoadMu,VehStateMeasured.X,Vel, ...
-        VehStateMeasured.VxTarget,VehiclePara.m);
-    Vset_pid = min(Vset_pid,sharedVset);
-    if Nu ~= 4, Fx_dem = max(Fx_dem,sharedFx); end
-end
+Fx_dem = max(Fx_dem,sharedFxDem);
 if longActive
     % Feed back the command actually sent to the allocator after the shared
     % speed reference. No separate boundary-braking path is used.

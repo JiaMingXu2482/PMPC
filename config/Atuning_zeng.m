@@ -16,7 +16,7 @@ T.Wdg = [0 0 0];
 T.W1 = 5e4; T.W2 = 5e4; T.W3 = 5e6; T.W4 = 5e6;
 
 % ZENG stability indicator and its longitudinal speed governor.
-T.ZengLong_on = 1;
+T.ZengLong_on = 0;
 T.Zg_rfloor = 0.05;     % rad/s
 T.Zg_Vmin = 30/3.6;    % m/s
 T.Zg_tau = 2.5;        % s, speed-error to deceleration

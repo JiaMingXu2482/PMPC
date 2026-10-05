@@ -1,5 +1,6 @@
 function mv = func_ManeuverFromName(dsname)
-%FUNC_MANEUVERFROMNAME  从 CarSim 数据集名解析工况: 路径类型、J-turn 半径、路面 mu
+%FUNC_MANEUVERFROMNAME  从数据集名解析工况类型、名义 J-turn 半径和路面 mu。
+% 实际仿真半径由 func_ManeuverFromRun 从 CarSim Run_all.par 覆盖。
 %   mv = func_ManeuverFromName('JT80_R69_mu0.85_PMPC')
 %     mv.type : 1 = DLC, 2 = Slalom, 5 = J-turn, 6 = DLC+J-turn
 %     mv.R    : J-turn 圆弧半径 [m] (DLC 时为 NaN)
@@ -29,6 +30,7 @@ if strncmp(U,'COMB',4)
     C = func_CombinedCourse(str2double(r{1}));
     mv.type = 6;
     mv.R = C.turn_radius;
+    mv.turn_x = C.turn_x;
     mv.mu = C.mu_dlc;
     mv.mu_high = C.mu_jturn;
     mv.mu_switch_x = C.mu_switch_x;

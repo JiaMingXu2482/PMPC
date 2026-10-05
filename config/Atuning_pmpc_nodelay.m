@@ -20,7 +20,7 @@ T.prio_vartheta = 2;
 T.prio_wmin = 1;
 T.prio_wmax = [1e10; 1e8];
 
-T.LongCoordMode = 3;
+T.LongCoordMode = 0;
 T.Long_mu_reserve = 0.85;
 T.Long_brake_reserve = 0.70;
 T.Long_a_max = 3.0;

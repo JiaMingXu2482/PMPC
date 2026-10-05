@@ -25,4 +25,5 @@ end
 D.t       = g.XStart + (0:m-1).' * g.XStep;
 D.N       = m;
 D.Dataset = g.Dataset;
+D.RunAllPar = fullfile(fileparts(tag),'Run_all.par');
 end

@@ -5,13 +5,10 @@ T.Ts = 0.1;
 T.Np = 10;
 T.Nc = 5;
 
-T.Q1 = 0; T.Q2 = 0; T.Q3 = 1e2;
-T.Q4 = 0; T.Q5 = 2e4; T.Q6 = 2e2;
-T.Q8 = 1e3;                 % Vx tracking, normalized by 1 m/s
+T.Q1 = 0; T.Q2 =    0; T.Q3 = 1e2;
+T.Q4 = 0; T.Q5 =  2e4; T.Q6 = 2e2;
 T.R1 = 1; T.R2 = 10; T.R3 = 5;
-T.R4 = 2;                   % total brake-force increment
 T.S1 = 0; T.S2 = 0; T.S3 = 0;
-T.S4 = 0;
 T.Qf_scale = 1;
 T.V1 = 100; T.V2 = 8e4; T.V3 = 1;
 T.tau_gamma = 0;
@@ -25,7 +22,7 @@ T.prio_wmax = [1e10; 1e8];
 
 % 3 = sustained-curvature speed cap plus main-QP controlled roll margin.
 % No separate far-field roll predictor or boundary brake is active.
-T.LongCoordMode = 3;
+T.LongCoordMode = 0;
 T.Long_mu_reserve = 0.85;
 T.Long_brake_reserve = 0.70;
 T.Long_a_max = 3.0;             % m/s^2

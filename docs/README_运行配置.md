@@ -50,7 +50,7 @@ run_current_carsim('pmpc_mil')
 
 参数集中在 `setup_pmpc.m` 的 `Long_*` 字段。顶层 `PMPC_LongCoord_Diagnostics` Scope 和 `PMPC_LongCoord_Log` 记录 12 路内部量：速度上界、可用减速度、道路余量、预瞄距离、最大曲率、触发原因、不可达标志、故障标志、制动力请求、实际分配制动力、下一拍道路余量、速度预测误差。CarSim 的 54 路输出编号不变。PID 油门门控按实际四轮制动力矩触发，包含左右对称制动。
 
-要核对 80 km/h 的 DLC/J-turn 数据集及模型配对，可运行 `compare_pmpc_longcoord('preflight')`。`compare_pmpc_longcoord()` 会跑完整的 PMPC 开/关、曲率消融和 ZENG 对照，结果保存在项目根目录的 `results_pmpc_longcoord`，不覆盖 CarSim 原有 `LastRun`。
+要核对历史 80 km/h DLC/J-turn 数据集及模型配对，可运行 `compare_pmpc_longcoord('preflight')`。该历史比较脚本的输出保存在 `simulation_results/archive/results_pmpc_longcoord`，不覆盖 CarSim 原有 `LastRun`。
 
 ---
 

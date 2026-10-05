@@ -37,7 +37,7 @@ J-turn 中，当前 PMPC 的纵向制动需求约从 0.88 s 开始，请求峰�
 - MATLAB 相关回归测试：29 项通过，0 项失败。
 - Simulink/CarSim 实际运行验证完成。
 - 比较脚本：`compare_pmpc_longcoord`。
-- 完整数据摘要：`results_pmpc_longcoord_v2/summary.md`。
+- 完整数据摘要：`simulation_results/archive/results_pmpc_longcoord_v2/summary.md`。
 
 ### 已知限制
 
@@ -71,3 +71,11 @@ J-turn 中，当前 PMPC 的纵向制动需求约从 0.88 s 开始，请求峰�
 - 新增的弯道限速、油门闭锁和 CarSim 停止时间回归测试均通过；PMPC 联合工况实际仿真完成。
 - 完整 `tests/` 运行结果：105 项中 96 项通过、9 项失败，另有 1 项标记为 incomplete。失败涉及旧的固定调参/维数断言、纵向协调关闭时的固定转向数值、预检及 ZENG 诊断等；因此不能称完整测试集通过。
 - 尚未在本次修复后重新运行 MPC、ZENG，也未重新核算三控制器的车身角点越界率与实时计算耗时；不能据本节宣称 R70 联合工况已满足论文比较的全部验收条件。
+
+## 2026-10-05：三工况手动调参前的代码快照
+
+本次快照保留 MPC（6×3）、ZENG（7×3）、PMPC（7×3）和 PMPC-noDelay（6×3）四个独立模型。PMPC 的 8×4 `Vx/Fx` 探索版仅留在历史 Git 标签 `pmpc-vxfx-8x4-experiment`。当前 PMPC 默认关闭旧纵向协调实验逻辑；三个比较组的 COM 目标速度共用 90→80 km/h 调度。控制器从 CarSim 展开的 `Run_all.par` 读取实际首段直线长度及 J-turn 半径，不依赖数据集名里的旧 R70 字样。
+
+历史仿真输出统一收在本机 `simulation_results/`，其中旧结果归档于 `archive/`；该目录不纳入 Git。调试用的孤立比较/验证脚本已清理，小型道路坐标表移至受版本控制的 `data/`。本节是后续手动细调的版本边界，不新增或重述仿真性能数值。CarSim 路面需由用户同步为首段直线 330 m、R80，随后逐个 Send 模型和复测。
+
+已知验证边界：本次整理未重跑 CarSim；完整 MATLAB 测试集仍包含对旧 8×4 实验版的过时断言，不应将其失败误写成当前 7×3 基线通过全部测试。

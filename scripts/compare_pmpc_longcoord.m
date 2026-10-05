@@ -2,7 +2,8 @@ function report = compare_pmpc_longcoord(mode)
 %COMPARE_PMPC_LONGCOORD Compare 80 km/h DLC and R69 without touching LastRun.
 %   compare_pmpc_longcoord('preflight') validates all eight input cases.
 %   compare_pmpc_longcoord() executes them and saves isolated ERD/metrics in
-%   results_pmpc_longcoord (ignored by Git). CarSim Browser must be open.
+%   simulation_results/archive/results_pmpc_longcoord (ignored by Git).
+%   CarSim Browser must be open.
 if nargin < 1, mode = 'run'; end
 root = startup_pmpc();
 template = fileread(fullfile(root,'simfile.sim'));
@@ -10,9 +11,9 @@ work = regexp(template,'WORK_DIR\)\$\s+([^\r\n]+)','tokens','once');
 assert(~isempty(work),'compare_pmpc_longcoord:BadSimfile', ...
     'simfile.sim has no WORK_DIR.');
 dataDir = strtrim(work{1});
-outRoot = fullfile(root,'results_pmpc_longcoord');
+outRoot = fullfile(root,'simulation_results','archive','results_pmpc_longcoord');
 if strcmpi(mode,'focused') || strcmpi(mode,'references')
-    outRoot = fullfile(root,'results_pmpc_longcoord_v2');
+    outRoot = fullfile(root,'simulation_results','archive','results_pmpc_longcoord_v2');
 end
 labels = {'DLC80_mu0.5_PMPC','JT80_R69_mu0.85_PMPC'};
 zengLabels = {'DLC80_mu0.5_ZENG','JT80_R69_mu0.85_ZENG'};

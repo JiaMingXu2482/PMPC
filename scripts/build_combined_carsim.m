@@ -1,7 +1,7 @@
 function S = build_combined_carsim(model,R)
 %BUILD_COMBINED_CARSIM Create an isolated 90 km/h DLC + J-turn CarSim run.
 % The source CarSim datasets are read only. Generated input and outputs live
-% under results_combined, so the user's selected CarSim Run is untouched.
+% under simulation_results/combined, so the selected CarSim Run is untouched.
 if nargin < 1 || isempty(model), model = 'pmpc_mil'; end
 if nargin < 2 || isempty(R), R = 70; end
 assert(any(strcmp(model,{'mpc_mil','zeng_mil','pmpc_mil'})), ...
@@ -14,7 +14,7 @@ stopS = floor(W(end,7)-20);
 roadEndS = ceil(W(end,7)+20);
 name = sprintf('COMB90_DLC05_JT_R%g_mu0.5to0.85_%s',C.turn_radius,tag);
 runId = sprintf('Run_Combined90_R%g_%s',R,tag);
-outRoot = fullfile(root,'results_combined');
+outRoot = fullfile(root,'simulation_results','combined');
 runDir = fullfile(outRoot,'Results',runId);
 if ~exist(runDir,'dir'), mkdir(runDir); end
 

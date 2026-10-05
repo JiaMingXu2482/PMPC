@@ -10,7 +10,10 @@ else
 end
 mv = func_ManeuverFromName(D.Dataset);
 if mv.combined
-    C = func_CombinedCourse(mv.R);
+    if isfield(D,'RunAllPar') && exist(D.RunAllPar,'file') == 2
+        mv = func_ManeuverFromRun(D.Dataset,D.RunAllPar);
+    end
+    C = func_CombinedCourse(mv.R,mv.turn_x);
     % CarSim may use a straight road with DLC cones or an X-Y DLC road.
     % On the recovery straight, station - global X is the road-specific offset.
     recovery = D.Xo>=C.dlc_end_x+10 & D.Xo<=C.turn_x-20;
