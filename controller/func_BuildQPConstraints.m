@@ -55,10 +55,6 @@ else
 end
 umax = [ afs_ub;  0.95*Lim.MFxmax;  Md_up_s  ];
 umin = [ afs_lb; -0.95*Lim.MFxmax;  Md_low_s ];
-if Nu == 4
-    umax = [umax; Lim.Fxmax];
-    umin = [umin; 0];
-end
 
 % ---- 保证箱体始终包含当前控制量 ----
 %  Fyfmax/MFxmax/Mdmax 都是随垂向载荷与摩擦圆实时变化的量，箱体可以
@@ -74,7 +70,6 @@ end
 %  这样既保证可行域非空，又保证有限步内回到物理界内。
 u_prev  = zeta(end-Nu+1:end);
 du_v    = [Lim.dFyfmax; Lim.dMFxmax; Lim.dMdmax];
-if Nu == 4, du_v = [du_v; Lim.dFxmax]; end
 umax = max(umax, u_prev - du_v);
 umin = min(umin, u_prev + du_v);
 
@@ -294,7 +289,6 @@ A_cons(k_+1:k_+n_env_, :) = A_cons_env; b_cons(k_+1:k_+n_env_) = b_cons_env;
 
 %% ---- 5) 变量上下界 ----
 dumax = [Lim.dFyfmax; Lim.dMFxmax; Lim.dMdmax];
-if Nu == 4, dumax = [dumax; Lim.dFxmax]; end
 dUmin = kron(ones(Nc,1), -dumax);
 dUmax = kron(ones(Nc,1),  dumax);
 

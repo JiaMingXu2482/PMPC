@@ -9,7 +9,7 @@ startup_pmpc();
 end
 
 function testAllVariantsRequest80BeforeCombinedTurn(testCase)
-for variant = [1 2 3]
+for variant = 1:4
     assignin('base','PMPC_CONTROLLER_VARIANT',variant);
     assignin('base','PMPC_VERBOSE',0);
     P = setup_pmpc();
@@ -23,7 +23,23 @@ for variant = [1 2 3]
         zeros(4,1),zeros(4,1));
 
     verifyEqual(testCase,sys(32),80,'AbsTol',1e-8);
+    verifyGreaterThan(testCase,sum(sys(1:4)),0);
 end
+end
+
+function testNoCombinedRoadKeepsRequestedSpeed(testCase)
+assignin('base','PMPC_CONTROLLER_VARIANT',3);
+assignin('base','PMPC_VERBOSE',0);
+P = setup_pmpc();
+P.Pm.RoadMu.enabled = false;
+S = P.S0;
+S.InitialParams.InitialGapflag = 1;
+u = controllerInput(90,220);
+
+[sys,~,~] = pmpc_step(u,P.Pm,S,zeros(8,4),zeros(4,1), ...
+    zeros(4,1),zeros(4,1));
+
+verifyEqual(testCase,sys(32),90,'AbsTol',1e-8);
 end
 
 function u = controllerInput(kmh,x)

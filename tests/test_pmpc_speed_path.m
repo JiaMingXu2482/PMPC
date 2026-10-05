@@ -18,35 +18,7 @@ for kind = 1:2
     verifyEqual(testCase,[prj.ey,prj.epsi,prj.xr,prj.yr],want.projection,'AbsTol',1e-9);
     verifyEqual(testCase,[kap(1),kap(5),node(1),ref(1),ref(3)],want.preview,'AbsTol',1e-9);
 
-    projection = func_PathProjection(vehicle,index,W,state);
-    verifyTrue(testCase,projection.valid);
-    [ix2,ref2,kap2,prj2,node2] = func_RefTraj_LocalPlanning( ...
-        mpc,vehicle,index,W,state,struct(),projection,20*ones(mpc.Np,1));
-    verifyEqual(testCase,ix2,ix);
-    verifyEqual(testCase,ref2,ref,'AbsTol',1e-10);
-    verifyEqual(testCase,kap2,kap,'AbsTol',1e-10);
-    verifyEqual(testCase,node2,node,'AbsTol',1e-10);
-    verifyEqual(testCase,[prj2.ey,prj2.epsi,prj2.xr,prj2.yr], ...
-        [prj.ey,prj.epsi,prj.xr,prj.yr],'AbsTol',1e-10);
 end
-end
-
-function testPlannedSpeedChangesArcSamples(testCase)
-[mpc,vehicle] = parameters();
-W = zeros(101,9);
-s = (0:100)';
-W(:,1) = (1:101)'; W(:,2) = s; W(:,3) = 1e-6*s.^3;
-W(:,4) = 1.5e-4*s.^2; W(:,5) = s/10000; W(:,7) = s;
-state = struct('x_dot',20,'Yaw',0,'X',21.2466,'Y',0);
-projection = func_PathProjection(vehicle,15,W,state);
-verifyTrue(testCase,projection.valid);
-[~,~,~,~,fastNode] = func_RefTraj_LocalPlanning( ...
-    mpc,vehicle,15,W,state,struct(),projection,20*ones(5,1));
-[~,~,~,~,slowNode] = func_RefTraj_LocalPlanning( ...
-    mpc,vehicle,15,W,state,struct(),projection,[20;15;10;5;5]);
-verifyEqual(testCase,slowNode(1),fastNode(1),'AbsTol',1e-10);
-verifyLessThan(testCase,slowNode(5),fastNode(5));
-verifyEqual(testCase,fastNode(5)-slowNode(5),0.000225,'AbsTol',1e-6);
 end
 
 function testEndOfRoadIsFinite(testCase)
@@ -58,7 +30,7 @@ state.Yaw = W(end-1,4);
 projection = func_PathProjection(vehicle,size(W,1)-3,W,state);
 verifyTrue(testCase,projection.valid);
 [~,ref,kap,~,node] = func_RefTraj_LocalPlanning( ...
-    mpc,vehicle,size(W,1)-3,W,state,struct(),projection,20*ones(5,1));
+    mpc,vehicle,size(W,1)-3,W,state,struct());
 verifyTrue(testCase,all(isfinite([ref;kap;node])));
 verifyEqual(testCase,node(end),1/69,'AbsTol',1e-12);
 end

@@ -1,37 +1,37 @@
-function [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, Mode, LTV, Vx_pred)
+function [StateSpaceModel] = func_DynamicalModel(VehiclePara, MPCParameters, VehStateMeasured, Mode, LTV)
 % func_DynamicalModel
 % -------------------------------------------------------------------------
-% ������ɢ����״̬�ռ�ģ�͡�֧���������Ի�����:
+% 生成离散增广状态空间模型。支持两种线性化方案:
 %
-%   ������ (���� LTV): ��ǰ���������Ի�һ��, ����Ԥ��ʱ�򶳽ᡣ
-%   ������ (�� LTV):   ������Ԥ��켣��ڵ����Ի� (LTV-MPC)��
-%                      ÿ���ڵ����Լ��� alpha ����̥��, �õ��ýڵ��
-%                      c_bar / f_bar, ���ÿ���ڵ��в�ͬ�� A_i,B_i,D_i��
+%   方案二 (不给 LTV): 当前工作点线性化一次, 整个预测时域冻结。
+%   方案三 (给 LTV):   沿名义预测轨迹逐节点线性化 (LTV-MPC)。
+%                      每个节点用自己的 alpha 查轮胎表, 得到该节点的
+%                      c_bar / f_bar, 因而每个节点有不同的 A_i,B_i,D_i。
 %
-% ��� StateSpaceModel:
-%   .A_aug : {Np x 1} cell, ÿ��������״̬����
-%   .B_aug : {Np x 1} cell, ÿ��������������� (�� DeltaU)
-%   .D_aug : {Np x 1} cell, ÿ���������Ŷ�����
-%   .C_aug : �������
-%   .off   : (2 x Np) ÿ�ڵ����ƫ�� [F_off_f_eff; F_off_r]; ������ʱΪ��
+% 输出 StateSpaceModel:
+%   .A_aug : {Np x 1} cell, 每步的增广状态矩阵
+%   .B_aug : {Np x 1} cell, 每步的增广输入矩阵 (对 DeltaU)
+%   .D_aug : {Np x 1} cell, 每步的增广扰动矩阵
+%   .C_aug : 输出矩阵
+%   .off   : (2 x Np) 每节点仿射偏置 [F_off_f_eff; F_off_r]; 方案二时为空
 %
-% LTV �ṹ���ֶ�:
-%   .TireF .TireR        ��ά��̥�� (func_TireTable �� build ���)
-%   .delta_robot         ������/��ʻԱǰ��ת�� (rad)������ = ʱ���ڱ��ֳ�ֵ;
-%                        Np x 1 = ��ڵ����(��ʵ����������, �� cq32019mpc)��
-%                        �㹳�¼�ʻԱ�� 42.35 deg/s(ǰ��)�˶�, ʱ�� 0.6 s ��
-%                        ©�� 25 deg, ��ֵ������ø��ڵ�� alpha ȫ����
-%   .Fzf .Fzr            ǰ/�����غ� (Ԥ��ʱ������Ϊ��ֵ, ��"��֪��")
-%   .kap                 (Np x 1) ��·����, �����ƽ�����켣
-%   .x0                  (6 x 1) ��ǰ״̬ [Vy r phi phidot ey epsi]
-%   .u0                  (3 x 1) �����ʼ���� [Ddelta MFx Md]
-%   .dU                  (Nu x Nc) ��������������� (��������λ)
-%   .Ctan_floor_frac     ���߸ն����ޱ���
+% LTV 结构体字段:
+%   .TireF .TireR        二维轮胎表 (func_TireTable 的 build 结果)
+%   .delta_robot         机器人/驾驶员前轮转角 (rad)。标量 = 时域内保持常值;
+%                        Np x 1 = 逐节点给定(用实测速率外推, 见 cq32019mpc)。
+%                        鱼钩下驾驶员以 42.35 deg/s(前轮)运动, 时域 0.6 s 内
+%                        漏掉 25 deg, 常值假设会让各节点的 alpha 全错。
+%   .Fzf .Fzr            前/后轴载荷 (预测时域内视为常值, 见"已知简化")
+%   .kap                 (Np x 1) 道路曲率, 用于推进名义轨迹
+%   .x0                  (6 x 1) 当前状态 [Vy r phi phidot ey epsi]
+%   .u0                  (3 x 1) 名义初始控制 [Ddelta MFx Md]
+%   .dU                  (Nu x Nc) 名义控制增量序列 (热启动移位)
+%   .Ctan_floor_frac     切线刚度下限比例
 %
-% ��֪�� (������ v1):
-%   1) ���� Vel ��ʱ������Ϊ��ֵ ���� δԤ���ƶ�����ļ���;
-%   2) ���� Fzf/Fzr ��Ϊ��ֵ ���� δԤ���غ�ת��;
-%   ���߶��ɺ�������, �� alpha ����ĸնȱ仯������������, ������һ�
+% 已知简化 (方案三 v1):
+%   1) 车速 Vel 在时域内视为常值 —— 未预测制动引起的减速;
+%   2) 轴载 Fzf/Fzr 视为常值 —— 未预测载荷转移;
+%   两者都可后续加上, 但 alpha 引起的刚度变化是主导非线性, 先做这一项。
 % -------------------------------------------------------------------------
 
 %% -------------------- Vehicle / MPC Parameters -------------------- %%
@@ -45,8 +45,8 @@ P.Iz  = VehiclePara.Iz;
 P.h_S2R = VehiclePara.h_S2R;
 P.Kt  = VehiclePara.Kt;
 
-CbF = VehiclePara.CbarF;    % dFy/dalpha ǰ�� (<0), �� f_bar ͬԴ
-CbR = VehiclePara.CbarR;    % dFy/dalpha ���� (<0)
+CbF = VehiclePara.CbarF;    % dFy/dalpha 前轴 (<0), 与 f_bar 同源
+CbR = VehiclePara.CbarR;    % dFy/dalpha 后轴 (<0)
 
 Vel     = VehStateMeasured.x_dot;
 delta_f = VehStateMeasured.delta_f;
@@ -56,43 +56,22 @@ Nx = coder.const(MPCParameters.Nx);
 Nu = MPCParameters.Nu;
 Ts = MPCParameters.Ts;
 
-Vel_eff = max(abs(Vel), 0.5) * sign(Vel + 1e-6);   % ��ֹ���ٳ���
-useScheduledSpeed = nargin >= 6 && ~isempty(Vx_pred);
+Vel_eff = max(abs(Vel), 0.5) * sign(Vel + 1e-6);   % 防止低速除零
 
 C_aug = [eye(Nx) zeros(Nx,Nu)];
 StateSpaceModel.C_aug = C_aug;
-%  codegen: ͬ�� cell ��Ϊ��ά���� (ÿ��Ԫ�سߴ�̶�, ��������ͬ����)
+%  codegen: 同构 cell 改为三维数组 (每个元素尺寸固定, 本来就是同构的)
 na_ = Nx + Nu;
 StateSpaceModel.A_aug = zeros(na_, na_, Np);
 StateSpaceModel.B_aug = zeros(na_, Nu,  Np);
 StateSpaceModel.D_aug = zeros(na_, 3,   Np);
-%  codegen: off ���붨�ߴ�(ԭ�� [] �� 2xNp ���ֳߴ��ͻ)��
-%  ԭ�����÷��� isempty(off) ���ַ�����/��, �ĳ���ʽ��־ off_valid��
+%  codegen: off 必须定尺寸(原来 [] 与 2xNp 两种尺寸冲突)。
+%  原来调用方用 isempty(off) 区分方案二/三, 改成显式标志 off_valid。
 StateSpaceModel.off   = zeros(2, Np);
 StateSpaceModel.off_valid = false;
 
 if nargin < 5 || isempty(LTV)
-    %% ============ ������: ��������, ʱ���ڶ��� ============
-    if useScheduledSpeed
-        for i = 1:Np
-            Vel_node = max(abs(Vx_pred(i)),0.5)*sign(Vx_pred(i)+1e-6);
-            [A6,B6,D6] = local_ABD(P,CbF,CbR,Vel_node,cos(delta_f));
-            if Nx == 7
-                [A,B,D] = local_delay(A6,B6,D6,MPCParameters.tau_d);
-            else
-                A = A6; B = B6; D = D6;
-            end
-            dt = Ts;
-            if i == 1 && MPCParameters.first_Tc
-                dt = MPCParameters.Ts_exec;
-            end
-            [~,~,~,Aa,Ba,Da] = local_disc(A,B,D,dt,Mode,Nx,Nu);
-            StateSpaceModel.A_aug(:,:,i) = Aa;
-            StateSpaceModel.B_aug(:,:,i) = Ba;
-            StateSpaceModel.D_aug(:,:,i) = Da;
-        end
-        return;
-    end
+    %% ============ 方案二: 单工作点, 时域内冻结 ============
     [A6,B6,D6] = local_ABD(P, CbF, CbR, Vel_eff, cos(delta_f));
     if Nx == 7
         [A,B,D] = local_delay(A6, B6, D6, MPCParameters.tau_d);
@@ -105,9 +84,9 @@ if nargin < 5 || isempty(LTV)
         StateSpaceModel.B_aug(:,:,i) = Ba;
         StateSpaceModel.D_aug(:,:,i) = Da;
     end
-    %  2026-09-26 ��������: first_Tc = 1 ʱ��һ����ִ������ Ts_exec ��ɢ��
-    %  ����: ֻ�е�һ��������ִ��, ��ִֻ�� Ts_exec ���ؽ�; ���԰� Ts ��ɢ,
-    %  ģ�Ͱ��������ø߹� Ts/Ts_exec = 5 ��, ��Ϊ 100 Hz ת���ݵ���Դ��
+    %  2026-09-26 对照试验: first_Tc = 1 时第一步按执行周期 Ts_exec 离散。
+    %  动机: 只有第一步增量被执行, 且只执行 Ts_exec 就重解; 若仍按 Ts 离散,
+    %  模型把它的作用高估 Ts/Ts_exec = 5 倍, 疑为 100 Hz 转向锯齿的来源。
     if MPCParameters.first_Tc
         [~,~,~, Aa1,Ba1,Da1] = local_disc(A,B,D,MPCParameters.Ts_exec,Mode,Nx,Nu);
         StateSpaceModel.A_aug(:,:,1) = Aa1;
@@ -117,7 +96,7 @@ if nargin < 5 || isempty(LTV)
     return
 end
 
-%% ============ ������: ������켣��ڵ����Ի� ============
+%% ============ 方案三: 沿名义轨迹逐节点线性化 ============
 lf = P.lf;  lr = P.lr;
 x   = LTV.x0(:);
 u   = LTV.u0(:);
@@ -134,31 +113,28 @@ elseif numel(dr) < Np
 end
 
 for i = 1:Np
-    % --- �ýڵ�ʩ�ӵ�������� (���� Nc �󱣳�) ---
+    % --- 该节点施加的名义控制 (超出 Nc 后保持) ---
     if i <= nDU
         u = u + LTV.dU(:,i);
     end
-    dtot = dr(i) + u(1);                    % �ýڵ����ǰ��ת��(��ʻԱ������)
+    dtot = dr(i) + u(1);                    % 该节点的总前轮转角(驾驶员已外推)
     Vel_node = Vel_eff;
-    if useScheduledSpeed
-        Vel_node = max(abs(Vx_pred(i)),0.5)*sign(Vx_pred(i)+1e-6);
-    end
 
-    % --- �ýڵ�Ĳ�ƫ�� (������״̬����) ---
+    % --- 该节点的侧偏角 (由名义状态给出) ---
     af = (x(1) + lf*x(2))/Vel_node - dtot;   % alpha_f
     ar = (x(1) - lr*x(2))/Vel_node;          % alpha_r
 
-    % --- ����øýڵ�� f_bar / c_bar (ͬԴ), ��ʩ�����߸ն����� ---
+    % --- 查表得该节点的 f_bar / c_bar (同源), 并施加切线刚度下限 ---
     [fbf, cbf] = func_TireTable('eval', LTV.TireF, af, LTV.Fzf);
     [fbr, cbr] = func_TireTable('eval', LTV.TireR, ar, LTV.Fzr);
     cbf = -max(abs(cbf), kf*LTV.TireF.C0);
     cbr = -max(abs(cbr), kf*LTV.TireR.C0);
 
-    % --- �ýڵ�ķ���ƫ�� (delta_robot �۽�ǰ��ƫ��, �뷽����ͬԼ��) ---
+    % --- 该节点的仿射偏置 (delta_robot 折进前轴偏置, 与方案二同约定) ---
     off(1,i) = fbf - cbf*af - cbf*dr(i);
     off(2,i) = fbr - cbr*ar;
 
-    % --- �ýڵ��״̬�ռ���� ---
+    % --- 该节点的状态空间矩阵 ---
     [A6,B6,D6] = local_ABD(P, cbf, cbr, Vel_node, cos(dtot));
     if Nx == 7
         [A,B,D] = local_delay(A6, B6, D6, MPCParameters.tau_d);
@@ -166,15 +142,12 @@ for i = 1:Np
         A = A6; B = B6; D = D6;
     end
     dt = Ts;
-    if useScheduledSpeed && i == 1 && MPCParameters.first_Tc
-        dt = MPCParameters.Ts_exec;
-    end
     [Ad,Bd,Dd, Aa,Ba,Da] = local_disc(A,B,D,dt,Mode,Nx,Nu);
     StateSpaceModel.A_aug(:,:,i) = Aa;
     StateSpaceModel.B_aug(:,:,i) = Ba;
     StateSpaceModel.D_aug(:,:,i) = Da;
 
-    % --- �ƽ�����״̬����һ�ڵ� ---
+    % --- 推进名义状态到下一节点 ---
     x = Ad*x + Bd*u + Dd*[kap(i); off(1,i); off(2,i)];
 end
 StateSpaceModel.off = off;
@@ -184,7 +157,7 @@ end
 
 % =========================================================================
 function [A,B,D] = local_ABD(P, CbF, CbR, Ve, cd)
-%LOCAL_ABD  ����ʱ�� A/B/D��״̬ [Vy r phi phidot ey epsi], ���� [Ddelta MFx Md]
+%LOCAL_ABD  连续时间 A/B/D。状态 [Vy r phi phidot ey epsi], 输入 [Ddelta MFx Md]
 M=P.M; Ms=P.Ms; g=P.g; lf=P.lf; lr=P.lr; Ix=P.Ix; Iz=P.Iz;
 h=P.h_S2R; Kt=P.Kt;
 
@@ -220,7 +193,7 @@ end
 
 % =========================================================================
 function [Ad,Bd,Dd, Aa,Ba,Da] = local_disc(A,B,D,T,Mode,Nx,Nu)
-%LOCAL_DISC  ��ɢ�������㡣Ad/Bd/Dd Ϊ������(�����ƽ�����켣)��
+%LOCAL_DISC  离散化并增广。Ad/Bd/Dd 为非增广(用于推进名义轨迹)。
 switch Mode
     case 1   % Euler
         Ad = eye(Nx) + T*A;   Bd = T*B;   Dd = T*D;
@@ -228,10 +201,10 @@ switch Mode
         Ba = [Bd; eye(Nu)];
         Da = [Dd; zeros(Nu,size(D,2))];
     case 2   % Taylor4
-        %  ����������: ԭд�� A^2/A^3/A^4 ����һ��, ���� A*B,A^2*B,A^3*B ��
-        %  A*D,A^2*D,A^3*D �ְ����������顣������ÿ�Ľ� Np=12 �����,
-        %  �ⲿ����Ψһ�ĺ�ʱ����(ʵ����λ 0.62->3.05 ms), ��ֵ��ʡ��
-        %  ��ѧ��ȫ�ȼۡ�
+        %  幂增量复用: 原写法 A^2/A^3/A^4 各算一次, 后面 A*B,A^2*B,A^3*B 与
+        %  A*D,A^2*D,A^3*D 又把幂重算两遍。方案三每拍建 Np=12 组矩阵,
+        %  这部分是唯一的耗时增量(实测中位 0.62->3.05 ms), 故值得省。
+        %  数学完全等价。
         A2 = A*A;  A3 = A2*A;  A4 = A3*A;
         c2 = T^2/2;  c3 = T^3/6;  c4 = T^4/24;
         Ad = eye(Nx) + T*A + c2*A2 + c3*A3 + c4*A4;
@@ -250,10 +223,10 @@ switch Mode
         Aa = [Af (Bf + Bf2); zeros(Nu,Nx) eye(Nu)];
         Ba = [(Bf + 2*Bf2); eye(Nu)];
         Da = [Df; zeros(Nu,size(D,2))];
-    case 4   % ��ȷ ZOH (2026-09-25): expm([A B D; 0 0 0]*T)
-        %  ʱ���� -1/tau_d �� T/tau_d = 3.3, Taylor4 �� e^{-3.3}=0.036 ��� 2.19,
-        %  ʱ��״̬�ᷢɢ; ֻ�о�ȷ��ɢ�ܱ�֤ 0 < e^{-T/tau} < 1(����ͶӰ��֤Ҫ��)��
-        %  ������ÿ��ֻ��һ��, 13x13 �� expm �����ɺ��ԡ�
+    case 4   % 精确 ZOH (2026-09-25): expm([A B D; 0 0 0]*T)
+        %  时延行 -1/tau_d 下 T/tau_d = 3.3, Taylor4 把 e^{-3.3}=0.036 算成 2.19,
+        %  时延状态会发散; 只有精确离散能保证 0 < e^{-T/tau} < 1(论文投影论证要用)。
+        %  方案二每拍只算一次, 13x13 的 expm 开销可忽略。
         nd_ = size(D,2);
         Mz  = zeros(Nx+Nu+nd_);
         Mz(1:Nx, :) = [A, B, D];
@@ -271,10 +244,10 @@ end
 
 % =========================================================================
 function [A7,B7,D7] = local_delay(A, B, D, tau)
-%LOCAL_DELAY  ׷��������ʱ��״̬ Md_a (���� III-A ʽ damper_delay / System_delay)
+%LOCAL_DELAY  追加阻尼器时延状态 Md_a (论文 III-A 式 damper_delay / System_delay)
 %   tau*dMd_a/dt = -Md_a + Md_c
-%   ԭ B �� 3 ��(Md �Բ��������, ֻ�е� 4 �� -1/Ix)Ų�� A �ĵ� 7 ��: ����ֻ��
-%   �ѽ����� Md_a ������������; ���� Md_c ֻ����ʱ��״̬��
+%   原 B 第 3 列(Md 对侧倾的作用, 只有第 4 行 -1/Ix)挪到 A 的第 7 列: 侧倾只经
+%   已建立的 Md_a 受阻尼器作用; 输入 Md_c 只驱动时延状态。
 nx = size(A,1);  nd = size(D,2);
 tau = max(tau, 1e-6);  % finite fixed-size placeholder when NLCSNN is active
 aM = B(:,3);

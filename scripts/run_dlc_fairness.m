@@ -1,7 +1,6 @@
 function R = run_dlc_fairness()
 %RUN_DLC_FAIRNESS Compare MPC, ZENG and PMPC on DLC80 at mu=0.5.
-% All controllers use the same 80 km/h maneuver and disable the
-% ZENG-only longitudinal speed limit.
+% All controllers use the same 80 km/h maneuver and shared speed controller.
 
 startup_pmpc();
 root = func_ProjectRoot();
@@ -34,11 +33,8 @@ for k = 1:numel(cases)
             bundleName = 'PMPC_P';
     end
     P = evalin('base', bundleName);
-    P.Constraints.ZengLong_on = 0;
-    P.S0.Constraints.ZengLong_on = 0;
-    assignin('base', bundleName, P);
-    assert(P.S0.Constraints.ZengLong_on == 0, ...
-           'run_dlc_fairness:WrongMode', '控制器模式设置不正确：%s', tag);
+    assert(~isfield(P.S0.Constraints,'ZengLong_on'), ...
+           'run_dlc_fairness:WrongMode', '检测到已废弃的专属纵向限速：%s', tag);
 
     load_system(info.model);
     set_param([info.model '/CarSim'], 'SIMFILE', 'simfile.sim');

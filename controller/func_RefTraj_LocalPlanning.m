@@ -1,35 +1,35 @@
 function [WPIndex,RefU,Kap_dyn,PrjP,Kap_node] = func_RefTraj_LocalPlanning( ...
     MPCParameters, VehiclePara, WayPoints_Index, WayPoints_Collect, ...
-    VehStateMeasured, ParaHAT, Projection, Vx_pred)
+    VehStateMeasured, ParaHAT)
 % func_RefTraj_LocalPlanning
-% Êä³ö£º
-%   WPIndex   : ×î½üÂ·µãË÷Òı£¨>0ÓĞĞ§£»0/¸ºÖµ±íÊ¾Òì³£/Ä©¶Ë£©
-%   RefU      : ²Î¿¼ÊäÈë [delta_des; Vyr; Psidotr] °´ Np ¶Ñµş (3*Np x 1)
-%   Kap_dyn   : µÚ p ¸öÔ¤²â²½(½Úµã p-1 -> p)µÄÂ·¾¶Æ½¾ùÇúÂÊ, ½øÔ¤²âÄ£ĞÍ (Np x 1)
-%   Kap_node  : ½Úµã p ´¦µÄÂ·¾¶ÇúÂÊ, ½ø³µµÀËÄ½ÇµãÔ¼ÊøµÄ -kappa*a^2/2 (Np x 1)
-%   PrjP      : Í¶Ó°µãÓëÎó²î½á¹¹Ìå
+% è¾“å‡ºï¼š
+%   WPIndex   : æœ€è¿‘è·¯ç‚¹ç´¢å¼•ï¼ˆ>0æœ‰æ•ˆï¼›0/è´Ÿå€¼è¡¨ç¤ºå¼‚å¸¸/æœ«ç«¯ï¼‰
+%   RefU      : å‚è€ƒè¾“å…¥ [delta_des; Vyr; Psidotr] æŒ‰ Np å †å  (3*Np x 1)
+%   Kap_dyn   : ç¬¬ p ä¸ªé¢„æµ‹æ­¥(èŠ‚ç‚¹ p-1 -> p)çš„è·¯å¾„å¹³å‡æ›²ç‡, è¿›é¢„æµ‹æ¨¡å‹ (Np x 1)
+%   Kap_node  : èŠ‚ç‚¹ p å¤„çš„è·¯å¾„æ›²ç‡, è¿›è½¦é“å››è§’ç‚¹çº¦æŸçš„ -kappa*a^2/2 (Np x 1)
+%   PrjP      : æŠ•å½±ç‚¹ä¸è¯¯å·®ç»“æ„ä½“
 % -------------------------------------------------------------------------
 
 %% ===================== Parameters Initialization ===================== %%
-L   = VehiclePara.L;     % Öá¾à
+L   = VehiclePara.L;     % è½´è·
 m   = VehiclePara.m;
 Lf  = VehiclePara.lf;
 Lr  = VehiclePara.lr;
-mu  = VehiclePara.mu;    % Â·Ãæ¸½×ÅÏµÊı£¨¿ÉÊµÊ±¹À¼Æ£©
-g   = VehiclePara.g;     % ÖØÁ¦¼ÓËÙ¶È
+mu  = VehiclePara.mu;    % è·¯é¢é™„ç€ç³»æ•°ï¼ˆå¯å®æ—¶ä¼°è®¡ï¼‰
+g   = VehiclePara.g;     % é‡åŠ›åŠ é€Ÿåº¦
 
 CafHat = VehiclePara.CafHat;
 CarHat = VehiclePara.CarHat;
 
 K = -1*(m/(2*L^2)) * (Lf/CarHat - Lr/CafHat);
 
-Np = MPCParameters.Np;   % Ô¤²â²½Êı
-Ts = MPCParameters.Ts;   % µ¥Ò»²ÉÑùÊ±¼ä
+Np = MPCParameters.Np;   % é¢„æµ‹æ­¥æ•°
+Ts = MPCParameters.Ts;   % å•ä¸€é‡‡æ ·æ—¶é—´
 
-% ---- µ¥Ò»²ÉÑùÊ±¼ä£ºÔ¤²âÊ±¼äÕ¤¸ñ Tk(k)=Ts ----
+% ---- å•ä¸€é‡‡æ ·æ—¶é—´ï¼šé¢„æµ‹æ—¶é—´æ …æ ¼ Tk(k)=Ts ----
 Tk = Ts * ones(Np,1);
-%  2026-09-26 ¶ÔÕÕÊÔÑé: first_Tc = 1 Ê±µÚÒ»²½ÓÃÖ´ĞĞÖÜÆÚ Ts_exec (·Ç¾ùÔÈÔ¤²âÍø¸ñ),
-%  Óë func_DynamicalModel µÚÒ»²½µÄÀëÉ¢²½³¤Ò»ÖÂ¡£
+%  2026-09-26 å¯¹ç…§è¯•éªŒ: first_Tc = 1 æ—¶ç¬¬ä¸€æ­¥ç”¨æ‰§è¡Œå‘¨æœŸ Ts_exec (éå‡åŒ€é¢„æµ‹ç½‘æ ¼),
+%  ä¸ func_DynamicalModel ç¬¬ä¸€æ­¥çš„ç¦»æ•£æ­¥é•¿ä¸€è‡´ã€‚
 if MPCParameters.first_Tc
     Tk(1) = MPCParameters.Ts_exec;
 end
@@ -39,10 +39,10 @@ Cr = CarHat;
 
 % -------- measured/estimated vehicle state --------
 Vel    = VehStateMeasured.x_dot;
-%  2026-09-26: ²Î¿¼µã¸ÄÎªÖÊĞÄ¡£CarSim µÄ Xo/Yo ÊÇ³µÁ¾Ô­µã = Ç°ÖáÖĞĞÄ(ÓÃ Xcg_TM Êµ²â,
-%  ÖÊĞÄÔÚÆäºó lf), ¶øÔ¤²âÄ£ĞÍ de_y/dt = V_y + V*e_psi Óë³µµÀËÄ½Çµã³ß´ç¶¼°´ÖÊĞÄ ¡ª¡ª
-%  ÔÚÇ°Öá´¦Á¿ e_y Â©µô lf*r, Êµ¼ÊÊäÈëÏÂ 0.6 s ´¦µÄÔ¤²âÎó²î RMS 0.42 m (ÖÊĞÄ´¦ 0.12 m)¡£
-%  ÂÛÎÄ II-B µÄ e_y ±¾À´¾Í¶¨ÒåÔÚÖÊĞÄ¡£¼û ¸Ä½ø.md 18q¡£
+%  2026-09-26: å‚è€ƒç‚¹æ”¹ä¸ºè´¨å¿ƒã€‚CarSim çš„ Xo/Yo æ˜¯è½¦è¾†åŸç‚¹ = å‰è½´ä¸­å¿ƒ(ç”¨ Xcg_TM å®æµ‹,
+%  è´¨å¿ƒåœ¨å…¶å lf), è€Œé¢„æµ‹æ¨¡å‹ de_y/dt = V_y + V*e_psi ä¸è½¦é“å››è§’ç‚¹å°ºå¯¸éƒ½æŒ‰è´¨å¿ƒ â€”â€”
+%  åœ¨å‰è½´å¤„é‡ e_y æ¼æ‰ lf*r, å®é™…è¾“å…¥ä¸‹ 0.6 s å¤„çš„é¢„æµ‹è¯¯å·® RMS 0.42 m (è´¨å¿ƒå¤„ 0.12 m)ã€‚
+%  è®ºæ–‡ II-B çš„ e_y æœ¬æ¥å°±å®šä¹‰åœ¨è´¨å¿ƒã€‚è§ æ”¹è¿›.md 18qã€‚
 PosPsi = VehStateMeasured.Yaw;
 PosX   = VehStateMeasured.X - Lf*cos(PosPsi);
 PosY   = VehStateMeasured.Y - Lf*sin(PosPsi);
@@ -57,40 +57,35 @@ PrjP = struct('ey',0,'epsi',0,'Velr',Vel,'xr',PosX,'yr',PosY,'psir',PosPsi);
 
 %% ================= WaypointData2VehicleCoords ======================== %%
 WPNum = size(WayPoints_Collect,1);
-if nargin < 7
-    Projection = func_PathProjection(VehiclePara, WayPoints_Index, ...
-        WayPoints_Collect, VehStateMeasured);
-end
+Projection = func_PathProjection(VehiclePara, WayPoints_Index, ...
+    WayPoints_Collect, VehStateMeasured);
 WPIndex = Projection.WPIndex;
 if ~Projection.valid
     return;
 end
 PrjP = Projection.PrjP;
 s0 = Projection.s0;
-useScheduledSpeed = nargin >= 8 && ~isempty(Vx_pred);
 
 %% ====================== If found nearest point ======================= %%
 if (WPIndex > 0)
 
-    % --- Ô¤²â½ÚµãµÄ»¡³¤ÓëÂ·¾¶ÇúÂÊ (2026-09-26, È¡´úµ¥¶ÎÈı´Î Bezier ÄâºÏ) ---
-    %  Ô­×ö·¨: ÔÚÇ°·½Â·¾¶µãÉÏÄâºÏÒ»¶ÎÈı´Î Bezier, °´ Bezier ²ÎÊı(²»ÊÇ»¡³¤)¾ùÔÈ²ÉÑùÇóÇúÂÊ;
-    %  Èı´ÎÇúÏßµÄÇúÂÊÖ»ÄÜ½üËÆÏßĞÔ±ä»¯, Êµ²â±È³µÁ¾Î»ÖÃ³¬Ç°Ô¼ 2.5 ¸öÔ¤²â²½ (¸Ä½ø.md 18q)¡£
-    %  Â·¾¶ÎÄ¼ş±¾Éí´ø¾«È·º½Ïò(µÚ 4 ÁĞ)ÓëÇúÂÊ(µÚ 5 ÁĞ = dpsi/ds), Ö±½Ó°´»¡³¤È¡:
-    %    ½Úµã p µÄ»¡³¤ s_p = s_0 + Vel*sum(Tk(1:p)),  s_0 = ÖÊĞÄÍ¶Ó°µãµÄ»¡³¤;
-    %    Kap_dyn(p)  = (psi(s_p) - psi(s_{p-1}))/(s_p - s_{p-1}): ¸Ã²½µÄÆ½¾ùÇúÂÊ,
-    %                  ZOH ÏÂ e_psi µÄ»ı·ÖÏî -int(kappa ds) Òò´ËÊÇ¾«È·µÄ;
-    %    Kap_node(p) = kappa(s_p): ³µµÀÔ¼ÊøÔÚ½Úµã p ´¦µÄÍäµÀĞŞÕı -kappa*a^2/2¡£
-    %  Â·¾¶Á½¶ËÖ®Íâº½Ïò¡¢ÇúÂÊÈ¡¶ËÖµ, ¼´°´Ö±ÏßÑÓÉì¡£
+    % --- é¢„æµ‹èŠ‚ç‚¹çš„å¼§é•¿ä¸è·¯å¾„æ›²ç‡ (2026-09-26, å–ä»£å•æ®µä¸‰æ¬¡ Bezier æ‹Ÿåˆ) ---
+    %  åŸåšæ³•: åœ¨å‰æ–¹è·¯å¾„ç‚¹ä¸Šæ‹Ÿåˆä¸€æ®µä¸‰æ¬¡ Bezier, æŒ‰ Bezier å‚æ•°(ä¸æ˜¯å¼§é•¿)å‡åŒ€é‡‡æ ·æ±‚æ›²ç‡;
+    %  ä¸‰æ¬¡æ›²çº¿çš„æ›²ç‡åªèƒ½è¿‘ä¼¼çº¿æ€§å˜åŒ–, å®æµ‹æ¯”è½¦è¾†ä½ç½®è¶…å‰çº¦ 2.5 ä¸ªé¢„æµ‹æ­¥ (æ”¹è¿›.md 18q)ã€‚
+    %  è·¯å¾„æ–‡ä»¶æœ¬èº«å¸¦ç²¾ç¡®èˆªå‘(ç¬¬ 4 åˆ—)ä¸æ›²ç‡(ç¬¬ 5 åˆ— = dpsi/ds), ç›´æ¥æŒ‰å¼§é•¿å–:
+    %    èŠ‚ç‚¹ p çš„å¼§é•¿ s_p = s_0 + Vel*sum(Tk(1:p)),  s_0 = è´¨å¿ƒæŠ•å½±ç‚¹çš„å¼§é•¿;
+    %    Kap_dyn(p)  = (psi(s_p) - psi(s_{p-1}))/(s_p - s_{p-1}): è¯¥æ­¥çš„å¹³å‡æ›²ç‡,
+    %                  ZOH ä¸‹ e_psi çš„ç§¯åˆ†é¡¹ -int(kappa ds) å› æ­¤æ˜¯ç²¾ç¡®çš„;
+    %    Kap_node(p) = kappa(s_p): è½¦é“çº¦æŸåœ¨èŠ‚ç‚¹ p å¤„çš„å¼¯é“ä¿®æ­£ -kappa*a^2/2ã€‚
+    %  è·¯å¾„ä¸¤ç«¯ä¹‹å¤–èˆªå‘ã€æ›²ç‡å–ç«¯å€¼, å³æŒ‰ç›´çº¿å»¶ä¼¸ã€‚
     StepLength_S = 0;
     for i = 1:Np
         Vel_i = Vel;
-        if useScheduledSpeed, Vel_i = Vx_pred(i); end
         StepLength_S = StepLength_S + Vel_i * Tk(i);
     end
     s_prev = s0;
     for i = 1:Np
         Vel_i = Vel;
-        if useScheduledSpeed, Vel_i = Vx_pred(i); end
         s_i = s_prev + Vel_i * Tk(i);
         dpsi = local_interp(WayPoints_Collect(:,7), WayPoints_Collect(:,4), s_i) ...
              - local_interp(WayPoints_Collect(:,7), WayPoints_Collect(:,4), s_prev);
@@ -98,22 +93,21 @@ if (WPIndex > 0)
         Kap_node(i) = local_interp(WayPoints_Collect(:,7), WayPoints_Collect(:,5), s_i);
         s_prev = s_i;
     end
-    % Ê£ÓàÂ·¾¶²»×ãÒ»¸öÔ¤²âÊ±Óò: ÖÃ WPIndex = 0 (Ô­ÓïÒå, ÉÏ²ã¾İ´Ë²»¸üĞÂÂ·µãË÷Òı)
+    % å‰©ä½™è·¯å¾„ä¸è¶³ä¸€ä¸ªé¢„æµ‹æ—¶åŸŸ: ç½® WPIndex = 0 (åŸè¯­ä¹‰, ä¸Šå±‚æ®æ­¤ä¸æ›´æ–°è·¯ç‚¹ç´¢å¼•)
     if WayPoints_Collect(WPNum,7) - s0 < StepLength_S
         WPIndex = 0;
     end
 
-    %% ---- Éú³É RefU£ºdelta_des, Vyr, Psidotr ----
-    %  codegen(R2018a): Ô­À´ÊÇ RefU_cell = cell(Np,1) + Öğ¸ö¸³Öµ + cell2mat¡£
-    %  Ñ­»·È·Êµ¸²¸ÇÁË 1:Np, µ« R2018a Ö¤Ã÷²»ÁË, ±¨
+    %% ---- ç”Ÿæˆ RefUï¼šdelta_des, Vyr, Psidotr ----
+    %  codegen(R2018a): åŸæ¥æ˜¯ RefU_cell = cell(Np,1) + é€ä¸ªèµ‹å€¼ + cell2matã€‚
+    %  å¾ªç¯ç¡®å®è¦†ç›–äº† 1:Np, ä½† R2018a è¯æ˜ä¸äº†, æŠ¥
     %    "Codegen requires that every cell-array element contained in 'RefU_cell'
     %     be assigned a value before being passed into 'cell2mat'."
-    %  ¸Ä³ÉÔ¤·ÖÅäÊıÖµÊı×éÖ±½ÓĞ´ ¡ª¡ª Óë cell2mat µÄÊúÏòÆ´½ÓÖğÎ»µÈ¼Û¡£
-    %  (½×¶Î C ´¦Àí func_SystemFurture / func_DynamicalModel ÓÃµÄÊÇÍ¬Ò»ÊÖ·¨¡£)
+    %  æ”¹æˆé¢„åˆ†é…æ•°å€¼æ•°ç»„ç›´æ¥å†™ â€”â€” ä¸ cell2mat çš„ç«–å‘æ‹¼æ¥é€ä½ç­‰ä»·ã€‚
+    %  (é˜¶æ®µ C å¤„ç† func_SystemFurture / func_DynamicalModel ç”¨çš„æ˜¯åŒä¸€æ‰‹æ³•ã€‚)
     RefU = zeros(3*Np, 1);
     for i = 1:Np
         Vel_i = Vel;
-        if useScheduledSpeed, Vel_i = Vx_pred(i); end
         delta_des = L * Kap_node(i) * (1 + K * Vel_i^2);
 
         numerator_vy   = (1 - (m*Lf*Vel_i^2)/(2*L*Cf*Lr)) * Lr * Vel_i * delta_des;
@@ -150,7 +144,7 @@ K = atan2(AngleY, AngleX);
 end
 
 function [PPx,PPy,de] = func_GetProjectPoint(Xb,Yb,Xn,Yn,Xc,Yc)
-% de Óëµãµ½Ö±Ïß¾àÀë·ûºÅÏà·´£º×óÕıÓÒ¸º£¨´Ë´¦±£³ÖÔ­Âß¼­£©
+% de ä¸ç‚¹åˆ°ç›´çº¿è·ç¦»ç¬¦å·ç›¸åï¼šå·¦æ­£å³è´Ÿï¼ˆæ­¤å¤„ä¿æŒåŸé€»è¾‘ï¼‰
 if Xn==Xb
     x=Xn; y=Yc; de=Xc-Xn;
 else
@@ -171,7 +165,7 @@ PPx=x; PPy=y;
 end
 
 function K = func_CalPathCurve(XA,YA,XB,YB,XC,YC)
-% ÈıµãÇóÔ²°ë¾¶ÔÙÇóÇúÂÊ£¨±£ÁôÔ­ÊµÏÖ£©
+% ä¸‰ç‚¹æ±‚åœ†åŠå¾„å†æ±‚æ›²ç‡ï¼ˆä¿ç•™åŸå®ç°ï¼‰
 if XB==XA
     mr=inf;
 else
@@ -258,7 +252,7 @@ end
 end
 
 function v = local_interp(S, V, s)
-%LOCAL_INTERP  S µ¥µ÷µİÔöÊ±µÄ·Ö¶ÎÏßĞÔ²åÖµ; Á½¶ËÖ®ÍâÈ¡¶ËÖµ
+%LOCAL_INTERP  S å•è°ƒé€’å¢æ—¶çš„åˆ†æ®µçº¿æ€§æ’å€¼; ä¸¤ç«¯ä¹‹å¤–å–ç«¯å€¼
 n = numel(S);
 if s <= S(1)
     v = V(1);

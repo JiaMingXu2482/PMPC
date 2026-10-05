@@ -18,13 +18,13 @@ labels = {'MPC','ZENG','PMPC'};
 for k = 1:3
     T = feval(names{k});
     verifyEqual(testCase,T.controller,labels{k});
-    verifyEqual(testCase,[T.Ts,T.Np,T.Nc],[0.05,12,6]);
+verifyEqual(testCase,[T.Ts,T.Np,T.Nc],[0.1,10,5]);
     verifyEqual(testCase,[T.Q5,T.Q6,T.R1,T.R2,T.R3,T.V2], ...
         [2e4,2e2,1,10,5,8e4]);
     verifyEqual(testCase,[T.W3,T.W4],[5e6,5e6]);
 end
-verifyEqual(testCase,Atuning_zeng().Zg_tau,2.5);
-verifyEqual(testCase,Atuning_pmpc().Long_a_max,3.0);
+verifyFalse(testCase,isfield(Atuning_zeng(),'ZengLong_on'));
+verifyFalse(testCase,isfield(Atuning_pmpc(),'LongCoordMode'));
 verifyEqual(testCase,Atuning_pmpc().prio_vartheta,2);
 end
 
@@ -34,11 +34,10 @@ for k = 1:3
     P = init{k}();
     verifyEqual(testCase,P.Pm.MPCParameters.ControllerVariant,k);
     verifyEqual(testCase,[P.Pm.MPCParameters.Ts, ...
-        P.Pm.MPCParameters.Np,P.Pm.MPCParameters.Nc],[0.05,12,6]);
+        P.Pm.MPCParameters.Np,P.Pm.MPCParameters.Nc],[0.1,10,5]);
     verifyEqual(testCase,[P.Pm.CostWeights.Q5,P.Pm.CostWeights.Q6, ...
         P.Pm.CostWeights.V2],[2e4,2e2,8e4]);
 end
-verifyEqual(testCase,P.S0.Constraints.LongCoordMode,3);
-verifyEqual(testCase,P.S0.Constraints.Long_a_max,3.0);
-verifyTrue(testCase,isfield(P.S0.LongCoord,'safety_margin_prev'));
+verifyFalse(testCase,isfield(P.S0.Constraints,'LongCoordMode'));
+verifyFalse(testCase,isfield(P.S0,'LongCoord'));
 end

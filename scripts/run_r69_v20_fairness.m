@@ -1,7 +1,7 @@
 function R = run_r69_v20_fairness()
 %RUN_R69_V20_FAIRNESS Compare MPC, ZENG and PMPC on R69 at 20 m/s.
 % Each controller has a registered JT72 CarSim Run. All three share the
-% R69/72 km/h procedure and disable the ZENG-only longitudinal speed limit.
+% R69/72 km/h procedure and shared speed controller.
 
 startup_pmpc();
 root = func_ProjectRoot();
@@ -34,8 +34,7 @@ for k = 1:size(cases, 1)
     assert(exist(runpar, 'file') == 2, 'run_r69_v20_fairness:NoRun', ...
         '找不到 %s 的 CarSim 输入文件：%s', tag, runpar);
     par = fileread(runpar);
-    assert(numel(regexp(par, '(?m)^SV_VXS\s+72\s*$', 'match')) == 1 && ...
-           contains(par, 'DEFINE_PARAMETER PMPC_ZENGLONG = 0'), ...
+    assert(numel(regexp(par, '(?m)^SV_VXS\s+72\s*$', 'match')) == 1, ...
            'run_r69_v20_fairness:WrongSpeed', '%s 的车速或纵向设置不正确。', tag);
     simfile = fullfile(outdir, ['r69_v20_' tag '.sim']);
     local_write_simfile(template, simfile, runName);
@@ -46,12 +45,9 @@ for k = 1:size(cases, 1)
     evalin('base', 'clear PMPC_P');
     evalin('base', 'setup_pmpc;');
     P = evalin('base', 'PMPC_P');
-    P.Constraints.ZengLong_on = 0;
-    P.S0.Constraints.ZengLong_on = 0;
-    assignin('base', 'PMPC_P', P);
     assert(P.S0.Constraints.ControllerMode == cases{k,2} && ...
            P.S0.Constraints.ZengRho_on == cases{k,3} && ...
-           P.S0.Constraints.ZengLong_on == 0, ...
+           ~isfield(P.S0.Constraints,'ZengLong_on'), ...
            'run_r69_v20_fairness:WrongMode', '控制器模式设置不正确：%s', tag);
 
     sim('pmpc_mil');

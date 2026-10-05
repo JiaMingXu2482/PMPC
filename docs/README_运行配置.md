@@ -9,7 +9,7 @@
 |---|---|---|
 | `_MPC` | `mpc_mil.slx` | 6 状态，无控制器侧减振器时延 |
 | `_ZENG` | `zeng_mil.slx` | 7 状态，固定 15 ms |
-| `_PMPC` | `pmpc_mil.slx` | 当前 8 状态、4 控制量，固定 15 ms 减振器时延 |
+| `_PMPC` | `pmpc_mil.slx` | 7 状态、3 控制量，固定 15 ms 减振器时延 |
 
    Send 后，在项目根目录的 MATLAB 命令行执行对应的一条命令：
 
@@ -23,7 +23,7 @@
 
    结果写入该 Run 在 CarSim 中的 `LastRun`，可直接用 CarSim Plot 查看；画图时也要选新的 `JT72` Run，不要继续叠加旧 `JT80` 结果。执行前脚本会核对当前有效初速度与 Send 后的展开值；若未重新 Send，会直接报错而不会用旧车速运行。
 
-三个 Run 的纵向设置相同，ZENG 独有纵向限速设为 0。运行中实际车速可能因各控制器的制动力不同而分开。`JT72` 是当前数据集名称；以后改车速后可在 CarSim 中按新速度重命名，避免图例误导。
+三个 Run 共用同一套车速参考与纵向 PID；控制器差动制动仍可能使实际车速不同。`JT72` 是历史数据集名称；以后改车速后可在 CarSim 中按新速度重命名，避免图例误导。
 
 ### 直接在 Simulink 调参/运行
 
@@ -39,18 +39,9 @@ ZENG 的顶层有标量线 `rho_ZENG`，它来自控制器诊断向量第 14 项
 
 MATLAB Function 块只保留各自可见的入口（`mpc_block`、`zeng_block`、`pmpc_block`）。QP、NLCSNN、状态估计、车辆模型等公共算法仍放在外部 M 文件，便于三个模型共用、Git 对比、单元测试和检索。
 
-### PMPC 道路预瞄纵向协调
+### 纵向控制
 
-仅 `pmpc_mil` 使用 `PMPC_LONGCOORD`：`1` 为默认的道路可行性预瞄与提前制动，`0` 关闭并回到原 PMPC，`2` 是只按曲率限速的消融。先在 MATLAB 命令行设置，再执行 `mil_init_PMPC` 或 `run_current_carsim('pmpc_mil')`；初始车速仍由 CarSim Procedure 决定，不要在这里把 80 km/h 改成 72 km/h。
-
-```matlab
-PMPC_LONGCOORD = 1;
-run_current_carsim('pmpc_mil')
-```
-
-参数集中在 `setup_pmpc.m` 的 `Long_*` 字段。顶层 `PMPC_LongCoord_Diagnostics` Scope 和 `PMPC_LongCoord_Log` 记录 12 路内部量：速度上界、可用减速度、道路余量、预瞄距离、最大曲率、触发原因、不可达标志、故障标志、制动力请求、实际分配制动力、下一拍道路余量、速度预测误差。CarSim 的 54 路输出编号不变。PID 油门门控按实际四轮制动力矩触发，包含左右对称制动。
-
-要核对历史 80 km/h DLC/J-turn 数据集及模型配对，可运行 `compare_pmpc_longcoord('preflight')`。该历史比较脚本的输出保存在 `simulation_results/archive/results_pmpc_longcoord`，不覆盖 CarSim 原有 `LastRun`。
+四个控制器共用 `func_CombinedSpeedReference` 的车速参考、PID 油门与服务制动。PMPC 与 PMPC-noDelay 保留 12 路 `long_diag` 接口但固定输出零值，不再有专属纵向速度协调或预瞄限速；CarSim 54 路接口不变。
 
 ---
 

@@ -7,21 +7,15 @@ root = fileparts(fileparts(mfilename('fullpath')));
 addpath(root);
 startup_pmpc();
 
-for variant = [1 2 3]
+for variant = 1:4
     assignin('base', 'PMPC_CONTROLLER_VARIANT', variant);
     assignin('base', 'PMPC_VERBOSE', 0);
     P = setup_pmpc();
     M = P.Pm.MPCParameters;
     measured = struct('x_dot', 20, 'delta_f', 0.02, 'Yawrate', 0);
-    if variant == 3
-        S = func_DynamicalModel8x4(P.S0.VehiclePara, M, measured, ...
-            P.Pm.DiscreteModle, [], 20*ones(M.Np,1));
-        nd = 5;
-    else
-        S = func_DynamicalModel(P.S0.VehiclePara, M, measured, ...
-            P.Pm.DiscreteModle);
-        nd = 3;
-    end
+    S = func_DynamicalModel(P.S0.VehiclePara, M, measured, ...
+        P.Pm.DiscreteModle);
+    nd = 3;
 
     verifySize(testCase, S.C_aug, [M.Ny M.Nx + M.Nu]);
     verifySize(testCase, S.A_aug, [M.Nx + M.Nu, M.Nx + M.Nu, M.Np]);

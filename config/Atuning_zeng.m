@@ -15,16 +15,4 @@ T.tau_gamma = 0;
 T.Wdg = [0 0 0];
 T.W1 = 5e4; T.W2 = 5e4; T.W3 = 5e6; T.W4 = 5e6;
 
-% ZENG stability indicator and its longitudinal speed governor.
-T.ZengLong_on = 0;
-T.Zg_rfloor = 0.05;     % rad/s
-T.Zg_Vmin = 30/3.6;    % m/s
-T.Zg_tau = 2.5;        % s, speed-error to deceleration
-T.Zg_tpid = 0.3;       % s, CarSim speed-setpoint filter
-T.Zg_cmax = 3;
-T.Zg_ayfull = 0;       % 0: paper's steady-state ay ~= Vx*r
-T.Zg_kovs = 1.3;
-T.Zg_Npv = 12;         % preview nodes (capped by Np)
-T.Zg_apv = 0;
-T.Zg_dVdb = 0.3;       % m/s
 end

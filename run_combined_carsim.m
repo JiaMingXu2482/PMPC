@@ -9,11 +9,9 @@ assert(func_CarSimRunning(),'run_combined_carsim:NoCarSim', ...
     'Open CarSim Browser for the solver license before running this case.');
 func_CarSimLib();
 priorSimfile = local_base_value('PMPC_SIMFILE');
-priorMode = local_base_value('PMPC_LONGCOORD');
 priorVerbose = local_base_value('PMPC_VERBOSE');
-cleanup = onCleanup(@() local_cleanup(model,priorSimfile,priorMode,priorVerbose)); %#ok<NASGU>
+cleanup = onCleanup(@() local_cleanup(model,priorSimfile,priorVerbose)); %#ok<NASGU>
 assignin('base','PMPC_SIMFILE',S.simfile);
-assignin('base','PMPC_LONGCOORD',double(strcmp(model,'pmpc_mil')));
 assignin('base','PMPC_VERBOSE',0);
 switch model
     case 'mpc_mil', mil_init_MPC();
@@ -24,7 +22,7 @@ load_system(model);
 set_param([model '/CarSim'],'SIMFILE',erase(S.simfile,[root filesep]));
 set_param(model,'StopTime','50');
 fprintf('Running %s: DLC 90 km/h, turn target 80 km/h, station-switched mu.\n',S.name);
-simOut = sim(model);
+sim(model);
 runDir = fileparts(S.outputPrefix);
 func_WaitERD(runDir,0,180);
 local_repair_erd_header(S.outputPrefix);
@@ -71,11 +69,6 @@ for j=1:3
     end
 end
 report.segments = segments;
-if any(strcmp(simOut.who,'PMPC_LONG_DIAG'))
-    trace = simOut.get('PMPC_LONG_DIAG');
-    report.long_diag_time = trace.time;
-    report.long_diag = trace.signals.values;
-end
 save(S.reportFile,'report');
 end
 
@@ -99,10 +92,9 @@ if evalin('base',['exist(''' name ''',''var'')'])
 end
 end
 
-function local_cleanup(model,priorSimfile,priorMode,priorVerbose)
+function local_cleanup(model,priorSimfile,priorVerbose)
 if bdIsLoaded(model), close_system(model,0); end
 local_restore('PMPC_SIMFILE',priorSimfile);
-local_restore('PMPC_LONGCOORD',priorMode);
 local_restore('PMPC_VERBOSE',priorVerbose);
 end
 

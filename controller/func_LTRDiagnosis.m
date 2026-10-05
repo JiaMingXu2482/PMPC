@@ -38,7 +38,6 @@ cd_f = cos(delta_f);
 c_ay = [ (CbF*cd_f + CbR)/(m*Vel), ...
          (CbF*lf_v*cd_f - CbR*lr_v)/(m*Vel), zeros(1,Nx-2) ];
 d_ay = [ -CbF*cd_f/m, 0, 0 ];
-if Nu == 4, d_ay = [d_ay, 0]; end
 
 %% ---- CarSim 真值 ----
 Fz_sum   = ParaHAT.Fz_l1 + ParaHAT.Fz_l2 + ParaHAT.Fz_r1 + ParaHAT.Fz_r2;

@@ -100,9 +100,6 @@ H = (H+H')/2 + 1e-8*eye(size(H));      % 正定化
 %% --- f 向量 ---
 % 参考轨迹向量 Yr：每步 6 个输出，只有前两项 (Vy, r) 有参考
 Yr_blk = [ref_Vy(:)'; ref_r(:)'; zeros(MPCParameters.Ny-2, Np)];
-if MPCParameters.Ny == 8
-    Yr_blk(8,:) = Wts.Vx_ref(:)';
-end
 Yr     = Yr_blk(:);                                               % (Np*Ny) x 1
 
 a    = PSI*zeta + PHI*GAMMA;

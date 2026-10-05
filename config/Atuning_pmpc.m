@@ -20,21 +20,4 @@ T.prio_vartheta = 2;
 T.prio_wmin = 1;
 T.prio_wmax = [1e10; 1e8];
 
-% 3 = sustained-curvature speed cap plus main-QP controlled roll margin.
-% No separate far-field roll predictor or boundary brake is active.
-T.LongCoordMode = 0;
-T.Long_mu_reserve = 0.85;
-T.Long_brake_reserve = 0.70;
-T.Long_a_max = 3.0;             % m/s^2
-T.Long_preview_nodes = 80;      % fixed code-generation array bound
-T.Long_min_sustain_m = 30;      % m; minimum coherent curvature length for a speed cap
-T.Long_delay = 0.15;            % s
-T.Long_tau = 0.35;              % s
-T.Long_F_slew = 2e5;            % N/s
-T.Long_VdownRate = 4.0;         % m/s^2
-T.Long_VupRate = 1.5;           % m/s^2
-T.Long_margin_trigger = 0.20;   % m
-T.Long_margin_recover = 0.35;   % m
-T.Long_trigger_band = 0.10;     % m/s
-T.Long_release_band = 0.40;     % m/s
 end

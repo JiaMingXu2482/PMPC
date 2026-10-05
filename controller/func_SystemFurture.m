@@ -96,13 +96,7 @@ if nd >= 3
             dist_p(:,q_) = dist(1:2,nc_);
         end
     end
-    if nd == 5
-        % 8x4 model: free longitudinal acceleration and affine correction.
-        GAMMA = reshape([kap.'; dist_p(1,:); dist_p(2,:); ...
-            repmat(dist(3,1),1,Np); ones(1,Np)], [], 1);
-    else
-        GAMMA = reshape([kap.'; dist_p(1,:); dist_p(2,:)], [], 1);
-    end
+    GAMMA = reshape([kap.'; dist_p(1,:); dist_p(2,:)], [], 1);
 else
     GAMMA = kap;
 end

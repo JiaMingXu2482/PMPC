@@ -36,7 +36,6 @@ idx1  = n_in + n_sh + (1:(n_r + n_env));                         % 第一层: LT
 n1    = Nu*Nc;
 
 du     = [Lim.dFyfmax; Lim.dMFxmax; Lim.dMdmax];
-if Nu == 4, du = [du; Lim.dFxmax]; end
 u_prev = zeta(end-Nu+1:end);
 
 %% ---- 候选 z^ 与无 DB 候选 z^0 ----
@@ -66,7 +65,6 @@ rho = eta_g*(Nc*Wts.V(2,2));
 Wb  = Nc*Wts.V(2,2) * double(MPCParameters.abl ~= 1);   % 消融 noWb 时 W_b = 0 (rho 不变), 与 func_BuildQPCost 一致
 H4  = H(1:n1, 1:n1);   f4 = f(1:n1);
 Yr  = [ref_Vy(:)'; ref_r(:)'; zeros(Ny-2, Np)];
-if Ny == 8, Yr(8,:) = Wts.Vx_ref(:)'; end
 e0  = Pred.PSI*zeta + Pred.PHI*Pred.GAMMA - Yr(:);
 c0  = e0'*(Wts.Q*e0) + Ut'*(Wts.S*Ut);        % J4 的常数项(QP 代价里省掉了)
 F   = max(0.5*(dUc'*(H4*dUc)) + f4'*dUc + c0, 0) + Wb*gc + rho*gc^2;
