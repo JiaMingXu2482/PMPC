@@ -1,5 +1,24 @@
 # NLCSNN 减振器模型 MATLAB 移植
 
+## v14 迁移来源（2026-10-07）
+
+本目录正在从下面描述的 legacy 8 状态模型迁移至 v14。现已保留原文件以供回退，
+新增 `v14_py/`（供应包源码及离线导出脚本）、`v14_weights.mat` 和
+`v14_golden_vectors.mat`。这两份 MAT 文件目前是移植基准数据，不代表下文旧
+`nlcsnn_damper_step` 已切换为 v14；后续任务会更新运行路径及本文档。
+
+- checkpoint：`v14_global_best_12.55pct_E1_session162406.pth`，MD5
+  `8a3bd0d508429ab2c00083321561561a`。
+- Python 源码包：`nlcsnn_v14_py_model.zip`，MD5
+  `b036bcd9920cd23bf83fb3a69468d113`。包内旧 `__init__.py` 引用了不存在的
+  `.model`，因此只修正包入口为 `NLCSNN_v14`，其余模型源码保持供应包原样。
+- 导出环境：Python CPU PyTorch `2.12.1+cpu`、SciPy `1.17.1`。导出脚本
+  `v14_py/export_v14_matlab.py` 使用 `torch.load(weights_only=True)` 和 `eval()`。
+- checkpoint 的实际 `norm_cfg`、`model_cfg` 与 54 个 `state_dict` 张量随
+  `v14_weights.mat` 保存；本次电流滞后截断长度为 100 拍，流式状态长度为 227。
+- `v14_golden_vectors.mat` 包含四段独立序列（零速、速度换向、电流阶跃、混合）
+  的归一化输入、力、两层 GRU 状态及滤波后的有效电流。
+
 把 MR-NLCSNN 仓库的 `legacy_cpu_repro` 模型（180 epoch 最优权重）
 移植为纯 MATLAB 函数，用于 PMPC / Simulink / CarSim 仿真。
 
