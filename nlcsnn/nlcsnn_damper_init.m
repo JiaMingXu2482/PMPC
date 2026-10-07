@@ -1,11 +1,11 @@
 function net = nlcsnn_damper_init(matFile)
-%NLCSNN_DAMPER_INIT Load v14 weights and normalization once, outside the step.
-% The default MAT contains the two-layer GRU and fixed 100-tap current lag.
-% Pass an explicit legacy nlcsnn_weights.mat path only for comparison.
+%NLCSNN_DAMPER_INIT Load weights once, outside the per-step function.
+% Keep the existing 8-state plant as default until four-model v14 wiring.
+% Pass v14_weights.mat explicitly to use the 2-layer GRU model.
 
 if nargin < 1 || isempty(matFile)
     thisDir = fileparts(mfilename('fullpath'));
-    matFile = fullfile(thisDir, 'v14_weights.mat');
+    matFile = fullfile(thisDir, 'nlcsnn_weights.mat');
 end
 
 S = load(matFile);

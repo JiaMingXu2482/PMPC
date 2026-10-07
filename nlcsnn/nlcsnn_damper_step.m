@@ -1,6 +1,7 @@
 function [F, h_new] = nlcsnn_damper_step(net, x, v, a, curr, dcurr, temp, dt, h)
 %NLCSNN_DAMPER_STEP  One 1 kHz sample of the v14 CDC damper model.
-%   The default net is v14; explicit legacy nets retain the old path below.
+%   Explicit v14 nets use the streaming path; the default legacy net keeps
+%   the existing 8-state path until Simulink has been rewired for v14.
 %   No per-step file I/O or persistent state. State is independent per corner.
 %
 %   [F, h_new] = nlcsnn_damper_step(net, x, v, a, curr, dcurr, temp, dt, h)

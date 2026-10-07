@@ -4,9 +4,10 @@
 
 本目录正在从下面描述的 legacy 8 状态模型迁移至 v14。现已保留原文件以供回退，
 新增 `v14_py/`（供应包源码及离线导出脚本）、`v14_weights.mat` 和
-`v14_golden_vectors.mat`。`nlcsnn_damper_init()` 默认加载 v14，
-`nlcsnn_damper_step()` 在 1 kHz 下使用流式 v14 前向；下文为保留的
-legacy 模型说明，旧权重需显式传入 `nlcsnn_damper_init` 才会启用。
+`v14_golden_vectors.mat`。`nlcsnn_damper_step()` 已支持显式加载的 v14
+网络在 1 kHz 下流式前向；下文为保留的 legacy 模型说明。为避免在四个
+Simulink 模型改线前破坏现有联仿，默认仍加载 legacy 权重；v14 需显式调用
+`nlcsnn_damper_init('.../v14_weights.mat')`。
 
 - checkpoint：`v14_global_best_12.55pct_E1_session162406.pth`，MD5
   `8a3bd0d508429ab2c00083321561561a`。

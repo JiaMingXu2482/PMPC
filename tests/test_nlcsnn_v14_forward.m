@@ -7,7 +7,7 @@ function testFourIndependentGoldenHistories(testCase)
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'nlcsnn'));
 G = load(fullfile(root, 'nlcsnn', 'v14_golden_vectors.mat'));
-net = nlcsnn_damper_init();
+net = nlcsnn_damper_init(fullfile(root,'nlcsnn','v14_weights.mat'));
 verifyTrue(testCase, isfield(net, 'state_length'));
 if ~isfield(net, 'state_length'), return; end
 force = zeros(size(G.force_norm), 'single');
@@ -32,7 +32,7 @@ function testPublicPhysicalInterfaceUsesSameStepForce(testCase)
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(root, 'nlcsnn'));
 G = load(fullfile(root, 'nlcsnn', 'v14_golden_vectors.mat'));
-net = nlcsnn_damper_init();
+net = nlcsnn_damper_init(fullfile(root,'nlcsnn','v14_weights.mat'));
 verifyTrue(testCase, isfield(net, 'norm_cfg'));
 if ~isfield(net, 'norm_cfg'), return; end
 n = net.norm_cfg;
@@ -46,4 +46,12 @@ for k = 1:6
     verifyEqual(testCase, F, double(G.force_norm(k, 2))*n.f_scale, ...
         'AbsTol', 1);
 end
+end
+
+function testLegacyDefaultStaysActiveUntilModelWiring(testCase)
+root = fileparts(fileparts(mfilename('fullpath')));
+addpath(fullfile(root,'nlcsnn'));
+net = nlcsnn_damper_init();
+verifyTrue(testCase, isfield(net,'Wx1'));
+verifyFalse(testCase, isfield(net,'weights'));
 end
