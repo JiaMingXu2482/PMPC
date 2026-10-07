@@ -25,7 +25,7 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
-def make_inputs(length: int = 40) -> np.ndarray:
+def make_inputs(length: int = 160) -> np.ndarray:
     """Four normalized histories: zero speed, reversal, current step, mixed."""
     t = np.arange(length, dtype=np.float32)
     u = np.zeros((4, length, 6), dtype=np.float32)
@@ -65,6 +65,9 @@ def export(checkpoint: Path, source_zip: Path, out_dir: Path) -> None:
     a = torch.sigmoid(model.i_lag.log_a).item()
     tau = -1.0 / np.log(1.0 - a + 1e-12)
     lag_length = int(6.0 * tau) + 1
+    # CurrentLag uses conv1d cross-correlation with padding K-1. In
+    # chronological streaming order its kernel is therefore reversed.
+    lag_kernel = (a * (1.0 - a) ** np.arange(lag_length - 1, -1, -1))
     md5 = digest(checkpoint)
     weights = {
         key.replace(".", "_"): value.detach().cpu().numpy().astype(np.float32)
@@ -77,12 +80,13 @@ def export(checkpoint: Path, source_zip: Path, out_dir: Path) -> None:
         "model_cfg": matlab_cfg,
         "norm_cfg": ckpt["norm_cfg"],
         "current_lag_a": np.float32(a),
+        "current_lag_kernel": lag_kernel.astype(np.float32),
         "current_lag_length": np.int32(lag_length),
         "state_length": np.int32(2 * cfg["gru_hidden"] + lag_length - 1),
         "checkpoint_md5": md5,
         "source_zip_md5": digest(source_zip),
         "torch_version": torch.__version__,
-    }, do_compression=True)
+    }, do_compression=True, oned_as="column")
 
     raw = make_inputs()
     u = torch.from_numpy(raw)
@@ -102,7 +106,7 @@ def export(checkpoint: Path, source_zip: Path, out_dir: Path) -> None:
         "gru_state": states.transpose(2, 1, 0),
         "i_effective": effective.T,
         "checkpoint_md5": md5,
-    }, do_compression=True)
+    }, do_compression=True, oned_as="column")
     print(f"Exported v14: checkpoint={md5}, torch={torch.__version__}, "
           f"lag_length={lag_length}, sequences={raw.shape[0]}")
 

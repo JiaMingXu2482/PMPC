@@ -1,6 +1,7 @@
 function [F, h_new] = nlcsnn_damper_step(net, x, v, a, curr, dcurr, temp, dt, h)
-%NLCSNN_DAMPER_STEP  One macro time step of the NLCSNN CDC damper model.
-%   %#codegen compatible (no file I/O, no persistent state).
+%NLCSNN_DAMPER_STEP  One 1 kHz sample of the v14 CDC damper model.
+%   The default net is v14; explicit legacy nets retain the old path below.
+%   No per-step file I/O or persistent state. State is independent per corner.
 %
 %   [F, h_new] = nlcsnn_damper_step(net, x, v, a, curr, dcurr, temp, dt, h)
 %
@@ -31,6 +32,19 @@ function [F, h_new] = nlcsnn_damper_step(net, x, v, a, curr, dcurr, temp, dt, h)
 %   i.e. the reported force uses the state at the START of the step.
 
 %#codegen
+
+if isfield(net, 'weights')
+    n = net.norm_cfg;
+    u = single([(x - n.x_ref) / n.x_scale; ...
+        v / n.v_scale; a / n.a_scale; curr / n.i_scale; ...
+        dcurr / n.di_scale; (temp - n.t_ref) / n.t_scale]);
+    if abs(dt - 0.001) > 1e-7
+        error('NLCSNN v14 requires a 1 kHz plant step.');
+    end
+    [f_norm, h_new] = nlcsnn_v14_step(net, u, h);
+    F = double(f_norm) * n.f_scale;
+    return
+end
 
 n = net.norm;
 
@@ -101,4 +115,3 @@ z = gelu(net.Wx1 * nfl + net.bx1);
 z = gelu(net.Wx2 * z + net.bx2);
 dh = net.Wx3 * z;   % no bias on last layer
 end
-

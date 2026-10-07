@@ -1,25 +1,27 @@
 function net = nlcsnn_damper_init(matFile)
-%NLCSNN_DAMPER_INIT  Load trained NLCSNN damper weights into a struct.
-%
-%   net = nlcsnn_damper_init() loads 'nlcsnn_weights.mat' sitting next to
-%   this file. Pass an explicit path to override:
-%       net = nlcsnn_damper_init('C:\path\to\nlcsnn_weights.mat')
-%
-%   Call once (e.g. in the model InitFcn / pmpc_block.m), then pass `net`
-%   as a parameter into nlcsnn_damper_step. Keeps file I/O out of the
-%   per-step function so the step itself stays %#codegen compatible.
-%
-%   Model: legacy_cpu_repro checkpoint (180 epochs)
-%     - 6-dim normalized input u = [x, v, a, i, di/dt, temp]
-%     - 63-dim physics NFL, hidden 256 (GELU), 8-dim hidden state
-%     - RK4 with dt = 1 ms; force output denormalized by f_scale
+%NLCSNN_DAMPER_INIT Load v14 weights and normalization once, outside the step.
+% The default MAT contains the two-layer GRU and fixed 100-tap current lag.
+% Pass an explicit legacy nlcsnn_weights.mat path only for comparison.
 
 if nargin < 1 || isempty(matFile)
     thisDir = fileparts(mfilename('fullpath'));
-    matFile = fullfile(thisDir, 'nlcsnn_weights.mat');
+    matFile = fullfile(thisDir, 'v14_weights.mat');
 end
 
 S = load(matFile);
+if isfield(S, 'weights')
+    net = struct('weights', S.weights, 'norm_cfg', S.norm_cfg, ...
+        'model_cfg', S.model_cfg, ...
+        'current_lag_a', single(S.current_lag_a), ...
+        'current_lag_kernel', single(S.current_lag_kernel), ...
+        'current_lag_length', int32(S.current_lag_length), ...
+        'state_length', int32(S.state_length), ...
+        'nfl_sigma_v', single(0.1), 'v_out_scale', single(30), ...
+        'c_eps', single(1e-6), 'c_min', single(2e-3), ...
+        's_min', single(5e-3), 'g_skip', single(0.1));
+    return
+end
+% Explicitly loading the legacy MAT remains available for comparison.
 net = struct( ...
     'Wx1', S.Wx1, 'bx1', S.bx1, ...
     'Wx2', S.Wx2, 'bx2', S.bx2, ...

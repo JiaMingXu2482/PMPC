@@ -4,8 +4,9 @@
 
 本目录正在从下面描述的 legacy 8 状态模型迁移至 v14。现已保留原文件以供回退，
 新增 `v14_py/`（供应包源码及离线导出脚本）、`v14_weights.mat` 和
-`v14_golden_vectors.mat`。这两份 MAT 文件目前是移植基准数据，不代表下文旧
-`nlcsnn_damper_step` 已切换为 v14；后续任务会更新运行路径及本文档。
+`v14_golden_vectors.mat`。`nlcsnn_damper_init()` 默认加载 v14，
+`nlcsnn_damper_step()` 在 1 kHz 下使用流式 v14 前向；下文为保留的
+legacy 模型说明，旧权重需显式传入 `nlcsnn_damper_init` 才会启用。
 
 - checkpoint：`v14_global_best_12.55pct_E1_session162406.pth`，MD5
   `8a3bd0d508429ab2c00083321561561a`。
@@ -18,6 +19,12 @@
   `v14_weights.mat` 保存；本次电流滞后截断长度为 100 拍，流式状态长度为 227。
 - `v14_golden_vectors.mat` 包含四段独立序列（零速、速度换向、电流阶跃、混合）
   的归一化输入、力、两层 GRU 状态及滤波后的有效电流。
+- `CurrentLag.forward` 实际使用 PyTorch `conv1d` 互相关；由于源码卷积核
+  未倒序，其流式核与注释中的 EMA 不同。本移植按源码实际的 100 抽头 FIR
+  顺序复现，不擅自改写 checkpoint 的动态。
+- `tests/test_nlcsnn_v14_forward.m` 对四段各 160 拍的力、GRU 状态和电流
+  滞后逐拍核对；容差分别为归一化力 `2e-4`（约 1.15 N）、状态 `3e-5`、
+  有效电流 `3e-6`，包含 MATLAB/PyTorch float32 运算次序差异。
 
 把 MR-NLCSNN 仓库的 `legacy_cpu_repro` 模型（180 epoch 最优权重）
 移植为纯 MATLAB 函数，用于 PMPC / Simulink / CarSim 仿真。
