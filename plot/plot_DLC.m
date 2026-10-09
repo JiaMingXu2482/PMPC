@@ -76,10 +76,10 @@ for i = 1:nC
     plot(dat{i}.t.beta_deg, dat{i}.t.yaw_rate_deg_s, ...
         'Color', colors{i}, 'LineWidth', 1.4, 'DisplayName', disp_names{i});
 end
-% 稳定域矩形（黑虚线，对标论文 Fig.3）
-rectangle('Position',[BETA_SADDLE_L,-r_lim,BETA_SADDLE_R-BETA_SADDLE_L,2*r_lim],...
-    'EdgeColor','k','LineStyle','--','LineWidth',1.2,...
-    'DisplayName','Stability boundary');
+% 稳定域矩形（黑虚线，对标论文 Fig.3；用 plot 画以支持图例）
+bx = [BETA_SADDLE_L, BETA_SADDLE_R, BETA_SADDLE_R, BETA_SADDLE_L, BETA_SADDLE_L];
+by = [-r_lim, -r_lim, r_lim, r_lim, -r_lim];
+plot(bx, by, 'k--', 'LineWidth', 1.2, 'DisplayName', 'Stability boundary');
 hold off;
 xlabel('\beta (deg)'); ylabel('r (deg/s)');
 legend('Location','best'); grid on;
