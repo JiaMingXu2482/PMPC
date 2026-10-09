@@ -46,11 +46,12 @@ for i = 1:nC
 end
 
 %% ---------- 图1：车辆轨迹 X-Y ----------
+X_OFF = 30;   % 横坐标平移：X-30，DLC 起点从 ~0 开始
 fh = figure('Color','w','Position',[100 100 720 520]);
 hold on;
-plot(refX, refY, 'k--', 'LineWidth', 1.2, 'DisplayName', 'Reference');
+plot(refX - X_OFF, refY, 'k--', 'LineWidth', 1.2, 'DisplayName', 'Reference');
 for i = 1:nC
-    plot(dat{i}.Xo, dat{i}.Yo, 'Color', colors{i}, 'LineWidth', 1.6, ...
+    plot(dat{i}.Xo - X_OFF, dat{i}.Yo, 'Color', colors{i}, 'LineWidth', 1.6, ...
         'DisplayName', ctrls{i});
 end
 hold off;
