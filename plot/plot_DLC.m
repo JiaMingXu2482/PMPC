@@ -2,12 +2,17 @@
 % 数据包：COM_plot_package_4fb1637_R70_20261009
 % 用法：把 root 改成数据包解压路径后直接运行
 %
-% 输出：fig_dlc_trajectory.png, fig_dlc_betar.png, fig_dlc_vx.png (300dpi)
+% 输出：三幅 figure 窗口（不自动存图，需要时手动另存）
 
 clear; close all; clc;
 
 %% ---------- 路径与分段 ----------
-root = 'COM_plot_package_4fb1637_R70_20261009';   % <-- 改成你的路径
+% 数据路径：优先读 plot_local.m（本地配置，不进 git）；否则用脚本同目录下的相对路径
+if exist('plot_local.m','file') == 2
+    root = plot_local();
+else
+    root = fullfile(fileparts(mfilename('fullpath')), 'COM_plot_package_4fb1637_R70_20261009');
+end
 ctrls = {'MPC','ZENG','PMPC'};
 colors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980], [0.4660 0.6740 0.1880]}; % 蓝/红/绿
 DLC_S0 = 28.756; DLC_S1 = 200.645;   % DLC 参考里程区间 (m)
@@ -53,7 +58,6 @@ xlabel('X (m)'); ylabel('Y (m)');
 legend('Location','best'); grid on;
 set(gca,'DataAspectRatioMode','auto','PlotBoxAspectRatioMode','auto');  % 拖动可自由改变比例
 set(gca,'FontName','Times New Roman','FontSize',11);
-print(fh, 'fig_dlc_trajectory.png','-dpng','-r300');
 
 %% ---------- 图2：beta-r 相平面 ----------
 fh = figure('Color','w','Position',[100 100 560 480]);
@@ -66,7 +70,6 @@ hold off;
 xlabel('\beta (deg)'); ylabel('r (deg/s)');
 legend('Location','best'); grid on;
 set(gca,'FontName','Times New Roman','FontSize',11);
-print(fh, 'fig_dlc_betar.png','-dpng','-r300');
 
 %% ---------- 图3：纵向车速 ----------
 fh = figure('Color','w','Position',[100 100 720 420]);
@@ -80,6 +83,5 @@ xlabel('Reference station (m)'); ylabel('V_x (km/h)');
 xlim([DLC_S0 DLC_S1]);
 legend('Location','best'); grid on;
 set(gca,'FontName','Times New Roman','FontSize',11);
-print(fh, 'fig_dlc_vx.png','-dpng','-r300');
 
-disp('Done: fig_dlc_trajectory.png, fig_dlc_betar.png, fig_dlc_vx.png');
+disp('Done: 3 figures displayed.');

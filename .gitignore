@@ -50,3 +50,8 @@ Desktop.ini
 *.swp
 *.tmp
 ~$*
+
+# 本地绘图配置与产物（不进仓库）
+/plot/plot_local.m
+/plot/*.png
+/plot/COM_plot_package_*/
