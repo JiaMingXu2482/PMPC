@@ -30,8 +30,6 @@
 /Results/
 /simulation_results/
 
-# Historical plotting workspace
-/plot/
 
 # Local execution ledgers and review packages
 /.superpowers/
