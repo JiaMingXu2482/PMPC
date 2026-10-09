@@ -16,6 +16,7 @@ end
 ctrls = {'MPC','ZENG','PMPC'};
 colors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980], [0.4660 0.6740 0.1880]}; % 蓝/红/绿
 DLC_S0 = 28.756; DLC_S1 = 200.645;   % DLC 参考里程区间 (m)
+X_OFF = 30;   % 横坐标统一平移：X-30，DLC 起点从 ~0 开始
 
 % 参考路径
 R = load(fullfile(root,'COM_reference.mat'));
@@ -46,7 +47,6 @@ for i = 1:nC
 end
 
 %% ---------- 图1：车辆轨迹 X-Y ----------
-X_OFF = 30;   % 横坐标平移：X-30，DLC 起点从 ~0 开始
 fh = figure('Color','w','Position',[100 100 720 520]);
 hold on;
 plot(refX - X_OFF, refY, 'k--', 'LineWidth', 1.2, 'DisplayName', 'Reference');
@@ -76,7 +76,7 @@ set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColo
 fh = figure('Color','w','Position',[100 100 720 420]);
 hold on;
 for i = 1:nC
-    plot(dat{i}.t.station_m, dat{i}.t.vx_kmh, ...
+    plot(dat{i}.t.station_m - X_OFF, dat{i}.t.vx_kmh, ...
         'Color', colors{i}, 'LineWidth', 1.6, 'DisplayName', ctrls{i});
 end
 hold off;

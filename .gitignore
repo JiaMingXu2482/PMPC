@@ -55,3 +55,6 @@ Desktop.ini
 /plot/plot_local.m
 /plot/*.png
 /plot/COM_plot_package_*/
+/plot/DLC/
+/plot/Jturn/
+/plot/Slalom/
