@@ -48,7 +48,7 @@ for i = 1:nC
 end
 hold off;
 xlabel('X (m)'); ylabel('Y (m)');
-legend('Location','best'); grid on; axis equal;
+legend('Location','best'); grid on; axis normal;
 set(gca,'FontName','Times New Roman','FontSize',11);
 print(fh, 'fig_dlc_trajectory.png','-dpng','-r300');
 
