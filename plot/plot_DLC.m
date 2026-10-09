@@ -63,23 +63,33 @@ set(gca,'DataAspectRatioMode','auto','PlotBoxAspectRatioMode','auto');  % 拖动
 set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65],'LineWidth',1,'Position',[0.0853 0.2201 0.8542 0.6269]); box on;
 
 %% ---------- 图2：beta-r 相平面 ----------
-% 稳定域边界（参考 Zeng et al. 2025, IEEE TTE, Eq.12）：
-%   β_saddle_l ≤ β ≤ β_saddle_r ,  r_min ≤ r ≤ r_max
-%   r_max/min = ±μg/vx；β_saddle 为鞍点 β 坐标（μ/vx/δ 三维查表，见论文 Fig.4）
+% 稳定包络（参考 Zeng et al. 2025, IEEE TTE, Eq.27 + Fig.9）：
+%   -alpha_r_sat + (lr/vx)*r ≤ β ≤ alpha_r_sat + (lr/vx)*r   (后轴侧偏饱和约束，平行四边形)
+%   |r| ≤ μg/vx                                              (横摆角速度极限，Eq.12)
+%   alpha_r_sat = atan(μ*m*g*lf/(Cαr*L))，见 func_Envelope.m
 MU = 0.5; G = 9.81;                       % DLC 段路面附着
-vx_mean = mean(dat{1}.t.vx_kmh)/3.6;      % 平均车速 (m/s)
-r_lim = MU*G/vx_mean*180/pi;              % 横摆角速度极限 (deg/s)
-BETA_SADDLE_L = -12.3; BETA_SADDLE_R = 12.7;  % 鞍点 β (deg)：μ=0.5/V≈88km/h 由鞍点库(mu0p4/mu0p6, V60)双线性插值；高速偏单侧，取双侧有效值
+vx_ms = mean(dat{1}.t.vx_kmh)/3.6;        % 平均车速 (m/s)
+r_lim = MU*G/vx_ms;                       % 横摆角速度极限 (rad/s)
+% 整车参数（DLC 空载，见 func_VehicleParams.m）
+MV_m = 1860; MV_lf = 1.2466; MV_lr = 1.7034; MV_L = 2.95;
+Fzr_st = MV_m*G*MV_lf/MV_L;               % 后轴静载 (N)
+C_ar = 62923;                             % 后轴侧偏刚度 (N/rad)，μ=0.5 估计值（CarHat 按 μ 折算）
+a_sat = atan(MU*Fzr_st/C_ar);             % 后轴饱和侧偏角 (rad)
+% 平行四边形顶点：(β,r)，β 为 x 轴，r 为 y 轴
+rv = [-r_lim, r_lim];                     % r 顶点 (rad/s)
+b_lo = -a_sat + (MV_lr/vx_ms)*rv;         % 下斜边 β (rad)
+b_up =  a_sat + (MV_lr/vx_ms)*rv;         % 上斜边 β (rad)
+R2D = 180/pi;
+bx = [b_lo(1), b_lo(2), b_up(2), b_up(1), b_lo(1)]*R2D;
+by = [rv(1), rv(2), rv(2), rv(1), rv(1)]*R2D;
 fh = figure('Color','w','Position',[100 100 560 480]);
 hold on;
 for i = 1:nC
     plot(dat{i}.t.beta_deg, dat{i}.t.yaw_rate_deg_s, ...
         'Color', colors{i}, 'LineWidth', 1.4, 'DisplayName', disp_names{i});
 end
-% 稳定域矩形（黑虚线，对标论文 Fig.3；用 plot 画以支持图例）
-bx = [BETA_SADDLE_L, BETA_SADDLE_R, BETA_SADDLE_R, BETA_SADDLE_L, BETA_SADDLE_L];
-by = [-r_lim, -r_lim, r_lim, r_lim, -r_lim];
-plot(bx, by, 'k--', 'LineWidth', 1.2, 'DisplayName', 'Stability boundary');
+% 稳定包络平行四边形（黑虚线，对标论文 Fig.9）
+plot(bx, by, 'k--', 'LineWidth', 1.2, 'DisplayName', 'Stability envelope');
 hold off;
 xlabel('\beta (deg)'); ylabel('r (deg/s)');
 legend('Location','best'); grid on;
