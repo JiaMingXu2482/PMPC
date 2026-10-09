@@ -14,6 +14,8 @@ else
     root = fullfile(fileparts(mfilename('fullpath')), 'COM_plot_package_4fb1637_R70_20261009');
 end
 ctrls = {'MPC','ZENG','PMPC'};
+% 图例显示名：Controller A=baseline MPC, Controller B=ZENG, Proposed=Priority MPC
+disp_names = {'Controller A','Controller B','Proposed'};
 colors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980], [0.4660 0.6740 0.1880]}; % 蓝/红/绿
 DLC_S0 = 28.756; DLC_S1 = 200.645;   % DLC 参考里程区间 (m)
 X_OFF = 30;   % 横坐标统一平移：X-30，DLC 起点从 ~0 开始
@@ -52,7 +54,7 @@ hold on;
 plot(refX - X_OFF, refY, 'k--', 'LineWidth', 1.2, 'DisplayName', 'Reference');
 for i = 1:nC
     plot(dat{i}.Xo - X_OFF, dat{i}.Yo, 'Color', colors{i}, 'LineWidth', 1.6, ...
-        'DisplayName', ctrls{i});
+        'DisplayName', disp_names{i});
 end
 hold off;
 xlabel('X (m)'); ylabel('Y (m)');
@@ -67,15 +69,15 @@ set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColo
 MU = 0.5; G = 9.81;                       % DLC 段路面附着
 vx_mean = mean(dat{1}.t.vx_kmh)/3.6;      % 平均车速 (m/s)
 r_lim = MU*G/vx_mean*180/pi;              % 横摆角速度极限 (deg/s)
-BETA_SADDLE = 7;                          % 鞍点 |β| (deg)，μ=0.5/vx≈88km/h 按论文 Fig.4 插值；有精确表时替换
+BETA_SADDLE_L = -12.3; BETA_SADDLE_R = 12.7;  % 鞍点 β (deg)：μ=0.5/V≈88km/h 由鞍点库(mu0p4/mu0p6, V60)双线性插值；高速偏单侧，取双侧有效值
 fh = figure('Color','w','Position',[100 100 560 480]);
 hold on;
 for i = 1:nC
     plot(dat{i}.t.beta_deg, dat{i}.t.yaw_rate_deg_s, ...
-        'Color', colors{i}, 'LineWidth', 1.4, 'DisplayName', ctrls{i});
+        'Color', colors{i}, 'LineWidth', 1.4, 'DisplayName', disp_names{i});
 end
 % 稳定域矩形（黑虚线，对标论文 Fig.3）
-rectangle('Position',[-BETA_SADDLE,-r_lim,2*BETA_SADDLE,2*r_lim],...
+rectangle('Position',[BETA_SADDLE_L,-r_lim,BETA_SADDLE_R-BETA_SADDLE_L,2*r_lim],...
     'EdgeColor','k','LineStyle','--','LineWidth',1.2,...
     'DisplayName','Stability boundary');
 hold off;
@@ -88,7 +90,7 @@ fh = figure('Color','w','Position',[100 100 720 420]);
 hold on;
 for i = 1:nC
     plot(dat{i}.t.station_m - X_OFF, dat{i}.t.vx_kmh, ...
-        'Color', colors{i}, 'LineWidth', 1.6, 'DisplayName', ctrls{i});
+        'Color', colors{i}, 'LineWidth', 1.6, 'DisplayName', disp_names{i});
 end
 hold off;
 xlabel('Reference station (m)'); ylabel('V_x (km/h)');
