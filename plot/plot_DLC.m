@@ -61,12 +61,23 @@ set(gca,'DataAspectRatioMode','auto','PlotBoxAspectRatioMode','auto');  % 拖动
 set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65],'LineWidth',1,'Position',[0.0853 0.2201 0.8542 0.6269]); box on;
 
 %% ---------- 图2：beta-r 相平面 ----------
+% 稳定域边界（参考 Zeng et al. 2025, IEEE TTE, Eq.12）：
+%   β_saddle_l ≤ β ≤ β_saddle_r ,  r_min ≤ r ≤ r_max
+%   r_max/min = ±μg/vx；β_saddle 为鞍点 β 坐标（μ/vx/δ 三维查表，见论文 Fig.4）
+MU = 0.5; G = 9.81;                       % DLC 段路面附着
+vx_mean = mean(dat{1}.t.vx_kmh)/3.6;      % 平均车速 (m/s)
+r_lim = MU*G/vx_mean*180/pi;              % 横摆角速度极限 (deg/s)
+BETA_SADDLE = 7;                          % 鞍点 |β| (deg)，μ=0.5/vx≈88km/h 按论文 Fig.4 插值；有精确表时替换
 fh = figure('Color','w','Position',[100 100 560 480]);
 hold on;
 for i = 1:nC
     plot(dat{i}.t.beta_deg, dat{i}.t.yaw_rate_deg_s, ...
         'Color', colors{i}, 'LineWidth', 1.4, 'DisplayName', ctrls{i});
 end
+% 稳定域矩形（黑虚线，对标论文 Fig.3）
+rectangle('Position',[-BETA_SADDLE,-r_lim,2*BETA_SADDLE,2*r_lim],...
+    'EdgeColor','k','LineStyle','--','LineWidth',1.2,...
+    'DisplayName','Stability boundary');
 hold off;
 xlabel('\beta (deg)'); ylabel('r (deg/s)');
 legend('Location','best'); grid on;
