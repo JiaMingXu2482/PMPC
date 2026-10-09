@@ -58,7 +58,7 @@ hold off;
 xlabel('X (m)'); ylabel('Y (m)');
 legend('Location','best'); grid on;
 set(gca,'DataAspectRatioMode','auto','PlotBoxAspectRatioMode','auto');  % 拖动可自由改变比例
-set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65]);
+set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65],'LineWidth',1,'Position',[0.0853 0.2201 0.8542 0.6269]); box on;
 
 %% ---------- 图2：beta-r 相平面 ----------
 fh = figure('Color','w','Position',[100 100 560 480]);
@@ -70,7 +70,7 @@ end
 hold off;
 xlabel('\beta (deg)'); ylabel('r (deg/s)');
 legend('Location','best'); grid on;
-set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65]);
+set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65],'LineWidth',1,'Position',[0.0853 0.2201 0.8542 0.6269]); box on;
 
 %% ---------- 图3：纵向车速 ----------
 fh = figure('Color','w','Position',[100 100 720 420]);
@@ -83,6 +83,6 @@ hold off;
 xlabel('Reference station (m)'); ylabel('V_x (km/h)');
 xlim([DLC_S0 DLC_S1]);
 legend('Location','best'); grid on;
-set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65]);
+set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65],'LineWidth',1,'Position',[0.0853 0.2201 0.8542 0.6269]); box on;
 
 disp('Done: 3 figures displayed.');
