@@ -14,8 +14,10 @@ DLC_S0 = 28.756; DLC_S1 = 200.645;   % DLC 参考里程区间 (m)
 
 % 参考路径
 R = load(fullfile(root,'COM_reference.mat'));
-W = R.W;                       % 981x9, W(:,2)=X, W(:,3)=Y
-refX = W(:,2); refY = W(:,3);
+W = R.W;                       % 981x9, W(:,2)=X, W(:,3)=Y, W(:,7)=参考里程
+refS = W(:,7);
+refIdx = refS >= DLC_S0 & refS <= DLC_S1;
+refX = W(refIdx,2); refY = W(refIdx,3);
 
 %% ---------- 读三组数据 ----------
 nC = numel(ctrls);
@@ -48,7 +50,8 @@ for i = 1:nC
 end
 hold off;
 xlabel('X (m)'); ylabel('Y (m)');
-legend('Location','best'); grid on; axis normal;
+legend('Location','best'); grid on;
+set(gca,'DataAspectRatioMode','auto','PlotBoxAspectRatioMode','auto');  % 拖动可自由改变比例
 set(gca,'FontName','Times New Roman','FontSize',11);
 print(fh, 'fig_dlc_trajectory.png','-dpng','-r300');
 
