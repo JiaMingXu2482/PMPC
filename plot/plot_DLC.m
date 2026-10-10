@@ -13,8 +13,8 @@ if exist('plot_local.m','file') == 2
 else
     root = fullfile(fileparts(mfilename('fullpath')), 'COM_plot_package_4fb1637_R70_20261009');
 end
-ctrls = {'MPC','ZENG','PMPC'};
-% 图例显示名：Controller A=baseline MPC, Controller B=ZENG, Proposed=Priority MPC
+ctrls = {'mpc_mil','nodelay_mil','pmpc_mil'};
+% 图例显示名：Controller A=baseline MPC, Controller B=PMPC无时延补偿(消融), Proposed=完整PMPC
 disp_names = {'Controller A','Controller B','Proposed'};
 colors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980], [0.4660 0.6740 0.1880]}; % 蓝/红/绿
 DLC_S0 = 28.756; DLC_S1 = 200.645;   % DLC 参考里程区间 (m)
@@ -104,7 +104,7 @@ for i = 1:nC
 end
 hold off;
 xlabel('Reference station (m)'); ylabel('V_x (km/h)');
-xlim([DLC_S0 DLC_S1]);
+xlim([DLC_S0 DLC_S1] - X_OFF);
 legend('Location','best'); grid on;
 set(gca,'FontName','Times New Roman','FontSize',14,'FontWeight','bold','GridColor',[0.65,0.65,0.65],'LineWidth',1,'Position',[0.0853 0.2201 0.8542 0.6269]); box on;
 
