@@ -31,6 +31,7 @@ Ne = MPCParameters.Ne;  Nr = MPCParameters.Nr;
 nvars = Nu*Nc + Ne + Nr;
 cert  = nan(Ne + 3, 1);     % codegen: 提前 return 的路径上也必须有定义
 prio_on = false;
+lex_on = isfield(MPCParameters,'lex_on') && MPCParameters.lex_on;
 gdb_idx = 2;
 if nargin >= 9 && isstruct(Constraints)
     prio_on = isfield(Constraints,'PrioModeRT') && (Constraints.PrioModeRT == 1);
@@ -118,7 +119,36 @@ x0s = min(max(x0s, lbs), ubs);   % 裁进界内, 省一次 active-set 的 Phase-
 lamQ = zeros(size(A_cons,1) + 2*nvars, 1);   % codegen: 各分支都要有定义
 if qsel == 1
     % ---- KWIK (mpcqpsolver): R2018a 上唯一可 codegen 的路径 ----
-    [xs, st, ~, lamQ] = func_QPKwik(Hs, fs, As, b_cons, lbs, ubs, 2500, true);
+    reduce_priority = false;
+    if isfield(MPCParameters,'ControllerVariant') && isfield(MPCParameters,'abl')
+        reduce_priority = MPCParameters.ControllerVariant == 3 && MPCParameters.abl ~= 3;
+    end
+    if reduce_priority && Ne == 8 && Nr == 3
+        % Six unused slacks are zero; the AFS/CDC gammas are one.
+        % Substitute these constants exactly: same QP, no redundant bounds.
+        free = [1:Nu*Nc, Nu*Nc+(1:2), Nu*Nc+Ne+gdb_idx];
+        xs_fixed = lbs;
+        xs_fixed(free) = 0;
+        fr = fs(free) + Hs(free,:)*xs_fixed;
+        br = b_cons - As*xs_fixed;
+        if lex_on
+            [xr, st] = func_QPLexPriority(Hs(free,free), fr, ...
+                As(:,free),br,lbs(free),ubs(free),Nu*Nc, ...
+                sc(Nu*Nc+(1:2)),MPCParameters.lex_tol);
+            lamr=zeros(size(A_cons,1)+2*numel(free),1);
+        else
+            [xr, st, lamr] = func_QPKwikPriority(Hs(free,free), fr, ...
+                As(:,free), br, lbs(free), ubs(free), 2500);
+        end
+        xs = xs_fixed;
+        xs(free) = xr;
+        na = size(A_cons,1); nf = numel(free);
+        lamQ(1:na) = lamr(1:na);
+        lamQ(na+free) = lamr(na+(1:nf));
+        lamQ(na+nvars+free) = lamr(na+nf+(1:nf));
+    else
+        [xs, st, ~, lamQ] = func_QPKwik(Hs, fs, As, b_cons, lbs, ubs, 2500, true);
+    end
     %  统一成 quadprog 的 exitflag 语义: 1=成功, 其余=失败
     %  KWIK 的 status>0 才是最优(值=迭代次数); status=0 达到上限,
     %  官方文档明说此时解**可能次优也可能不可行**, 按失败处理
@@ -176,7 +206,7 @@ end
 %  取值为 0 时 (H*x)_v = 0(这两类变量的 Hessian 块是对角的), s_v = f_v - nu_lb <= f_v,
 %  取正值时 s_v = f_v + (H*x)_v > f_v。故 cert_v = s_v / f_v 以 1 为分界。
 %  对 gamma, 系数 -(umax-uc) 正好是论文按 r_j^+ 归一化的行, s_v 即 1'mu_j。
-if qsel == 1 && exitflag == 1
+if qsel == 1 && exitflag == 1 && ~lex_on
     lamA = lamQ(1:size(A_cons,1));
     for j = 1:Ne
         v = Nu*Nc + j;

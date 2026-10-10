@@ -32,16 +32,30 @@ for j = 1:4
         ip = 0;
     end
     F_request_nl = -F_des(j);   % CarSim -> NLCSNN polarity
-    [ij, ~] = nlcsnn_force_to_current(net, ctx.x(j), ctx.v(j), ...
-        ctx.a(j), F_request_nl, cfg.temp, ctx.h(:,j), ...
-        cfg.i_max, ip);
+    if isfield(net, 'lag_kmax')
+        [ij, Fp_nl] = nlcsnn_v17_inverse(net, ctx.x(j), ctx.v(j), ...
+            ctx.a(j), F_request_nl, cfg.temp, ctx.h(:,j), ...
+            cfg.i_max, ip, ctx.Fgrid(:,j));
+    elseif isfield(net, 'weights')
+        [ij, Fp_nl] = nlcsnn_v14_inverse(net, ctx.x(j), ctx.v(j), ...
+            ctx.a(j), F_request_nl, cfg.temp, ctx.h(:,j), ...
+            cfg.i_max, ip, ctx.Fgrid(:,j));
+    else
+        [ij, Fp_nl] = nlcsnn_force_to_current(net, ctx.x(j), ctx.v(j), ...
+            ctx.a(j), F_request_nl, cfg.temp, ctx.h(:,j), ...
+            cfg.i_max, ip);
+    end
     if ~isfinite(ij)
         ij = ip;
     end
     ij = min(max(ij, 0), cfg.i_max);
     % Predicted achieved force at the tick state with the new current.
-    Fp = -nlcsnn_predict_force(net, ctx.x(j), ctx.v(j), ctx.a(j), ...
-                               ij, cfg.temp, ctx.h(:,j));
+    if isfield(net, 'lag_kmax') || isfield(net, 'weights')
+        Fp = -Fp_nl;
+    else
+        Fp = -nlcsnn_predict_force(net, ctx.x(j), ctx.v(j), ctx.a(j), ...
+            ij, cfg.temp, ctx.h(:,j));
+    end
     if ~isfinite(Fp)
         Fp = 0;
     end

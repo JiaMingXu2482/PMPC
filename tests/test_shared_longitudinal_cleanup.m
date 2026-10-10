@@ -42,7 +42,7 @@ verifyFalse(testCase,isfield(P.S0.Constraints,'LongCoordMode'));
 verifyFalse(testCase,isfield(P.S0.Constraints,'LongLim_diag'));
 end
 
-function testPmpcWrappersKeepTwelveZeroDiagnosticChannels(testCase)
+function testPmpcWrappersExposeTwelvePriorityDiagnosticChannels(testCase)
 for variant = [3 4]
     assignin('base','PMPC_CONTROLLER_VARIANT',variant);
     assignin('base','PMPC_VERBOSE',0);
@@ -66,10 +66,12 @@ for variant = [3 4]
     verifySize(testCase,sys,[54 1]);
     verifySize(testCase,i_cmd,[4 1]);
     verifySize(testCase,long_diag,[12 1]);
-    verifyEqual(testCase,long_diag,zeros(12,1));
+    verifyNotEqual(testCase,long_diag,zeros(12,1));
+    verifyEqual(testCase,long_diag(10),sys(15));
     verifySize(testCase,sys2,[54 1]);
     verifySize(testCase,i_cmd2,[4 1]);
-    verifyEqual(testCase,long_diag2,zeros(12,1));
+    verifyNotEqual(testCase,long_diag2,zeros(12,1));
+    verifyEqual(testCase,long_diag2(10),sys2(15));
 end
 end
 

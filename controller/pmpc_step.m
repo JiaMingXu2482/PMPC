@@ -6,7 +6,7 @@ function [sys, St, i_cmd] = pmpc_step(u, Pm, St, h_plant, x_plant, v_plant, a_pl
 %   Pm: 参数 (setup_pmpc 产出, 运行中不变)
 %   St: 跨拍状态 (InitialParams / WarmStart / rho), 进出都要
 %   h_plant/x_plant/v_plant/a_plant: 1 kHz plant 在拍首采样的状态
-%     (控制器角序 [L1;R1;L2;R2]; h_plant 8x4, 其余 4x1)
+%     (控制器角序 [L1;R1;L2;R2]; v17 h_plant 217x4, 其余 4x1)
 %   sys : 54x1 输出
 %   i_cmd : 4x1 电流指令 [A], 控制器角序; plant 侧 ZOH 保持到下一拍
 %
@@ -91,9 +91,9 @@ Roll = ParaHAT.Roll; Rollrate = ParaHAT.Rollrate;
 % at the tick. Corner order is [L1;R1;L2;R2] (allocation order); the plant
 % owns the hidden state h, the controller never integrates it.
 DamperContext = struct('x',zeros(4,1), 'v',zeros(4,1), ...
-    'a',zeros(4,1), 'h',zeros(8,4), ...
+    'a',zeros(4,1), 'h',zeros(size(h_plant), 'like', h_plant), ...
     'F_lo',zeros(4,1), 'F_hi',zeros(4,1), ...
-    'F_center',zeros(4,1));
+    'F_center',zeros(4,1), 'Fgrid',zeros(9,4));
 DamperLimits = struct('Fdu',zeros(4,1), 'Fdl',zeros(4,1), ...
     'Fd_center',zeros(4,1), 'external',false);
 i_cmd = zeros(4,1);
@@ -352,7 +352,25 @@ Ut  = kron(ones(Nc,1), zeta(Nx+(1:Nu)));
 
 
 %% ---- 打包传给下层函数的参数 ----
-Pred = struct('PSI',PSI, 'THETA',THETA, 'PHI',PHI, 'GAMMA',GAMMA);
+Pred = struct('PSI',PSI, 'THETA',THETA, 'PHI',PHI, 'GAMMA',GAMMA, ...
+    'Aterminal',StateSpaceModel.A_aug(:,:,end), ...
+    'Bterminal',StateSpaceModel.B_aug(:,:,end), ...
+    'dterminal',StateSpaceModel.D_aug(:,:,end)*GAMMA(end-2:end), ...
+    'Dterminal',StateSpaceModel.D_aug(:,:,end), ...
+    'kap_tail',repmat(GAMMA(end-2),MPCParameters.terminal_steps+1,1), ...
+    'd_tail',repmat(StateSpaceModel.D_aug(:,:,end)*GAMMA(end-2:end),1,MPCParameters.terminal_steps), ...
+    'smooth_cost_constant',0);
+% Preview beyond Np for the experimental backup/physical tail, not extra decisions.
+if MPCParameters.terminal_on && (MPCParameters.terminal_preview || MPCParameters.terminal_mode==2) && ~MPCParameters.FishhookMode
+    Mt=MPCParameters; Mt.Np=MPCParameters.Np+MPCParameters.terminal_steps;
+    [~,~,kd,~,kn]=func_RefTraj_LocalPlanning(Mt,VehiclePara, ...
+        InitialParams.WayPoints_IndexPre,Reftraj,VehStateMeasured,ParaHAT);
+    Pred.kap_tail=kn(MPCParameters.Np:end);
+    for jt=1:MPCParameters.terminal_steps
+        Pred.d_tail(:,jt)=Pred.Dterminal*[kd(MPCParameters.Np+jt);GAMMA(end-1:end)];
+    end
+    Pred.dterminal=Pred.Dterminal*[Pred.kap_tail(end);GAMMA(end-1:end)];
+end
 Wts = struct('Q',Q, 'R',R, 'S',S, 'W',W, 'V',V);
 % ---- AFS 控制量的幅值界: 机械限 + 前轴摩擦圆 ----
 % 预测模型 (func_DynamicalModel 第 53 行):
@@ -471,9 +489,14 @@ W_dgamma = diag(Wdg_v); % Delta-gamma 惩罚, 见 mdlInitializeSizes
 [H, f] = func_BuildQPCost(MPCParameters, Constraints, Pred, Wts,...
 zeta, AI, Ut, ref_Vy, ref_r, lambda_L1,...
 gamma_prev, W_dgamma);
+if MPCParameters.ControllerVariant==3 && MPCParameters.steer_smooth_weight>0
+    [Hs,fs,cs]=func_SteerIncrementCost(Nu,Nc,size(H,1),dFyfmax, ...
+        InitialParams.prevstate.dAFS,MPCParameters.steer_smooth_weight);
+    H=H+Hs; f=f+fs; Pred.smooth_cost_constant=cs;
+end
 
 %% ---- 约束 ----
-[A_cons, b_cons, lb, ub, umax, umin] = func_BuildQPConstraints(...
+[A_cons, b_cons, lb, ub, umax, umin, Terminal] = func_BuildQPConstraints(...
 MPCParameters, Constraints, Envelope, Pred, AI, Ut, zeta, Lim);
 
 %% ---- 优先级认证与安全权重 (论文 III-E, 仅 PMPC) ----
@@ -484,6 +507,17 @@ if prio_on
 [wpr, pc, dUc, gc] = func_PriorityCert(MPCParameters, Constraints, Pred, Wts,...
 zeta, Ut, ref_Vy, ref_r, H, f, A_cons, b_cons, WarmStart, umin, umax, Lim);
 f(Nu*Nc + (1:2)) = wpr;
+if MPCParameters.terminal_on && any(Terminal.diag(2:3)<1)
+    pc(6:7)=0; % No terminal safety certificate when construction is invalid.
+end
+if MPCParameters.terminal_on && MPCParameters.terminal_mode==2
+    % Finite physical lookahead is not an invariant/recursive safety certificate.
+    pc(6:7)=0;
+end
+if MPCParameters.lex_on
+    % The weighted-QP certificates do not describe the sequential solve.
+    pc(4:7)=NaN; pc(8:9)=NaN;
+end
 end
 
 %% ---- 求解 ----
@@ -500,14 +534,25 @@ WarmStart = func_WarmStart_shiftHorizon([dUc; zeros(Ne,1); gtmp], MPCParameters)
 fb_used = 1;
 end
 % 在线证书 cert(论文 III-E)只做记录, 不参与控制。
-% MATLAB Function 状态必须固定尺寸；统一布局为 36x1:
+% MATLAB Function 状态必须固定尺寸；基础诊断 36x1，PMPC 另有 8 项终端诊断:
 % [先验认证14; 后验证书11; 松弛8; gamma_DB1; exitflag; 兜底标志]。
 if prio_on
 % PMPC: 14 先验认证 + 11 后验证书 + 8 松弛 + gamma_DB + 两个状态标志
-St.cert = [pc; cert; epsilon_val; rho_val(2); double(exitflag); fb_used];
+baseCert = [pc; cert; epsilon_val; rho_val(2); double(exitflag); fb_used];
 else
 % 其它控制器没有先验认证，前 14 项用 NaN 占位；gamma 只记录 DB 项。
-St.cert = [nan(14,1); cert; epsilon_val; rho_val(2); nan(2,1)];
+baseCert = [nan(14,1); cert; epsilon_val; rho_val(2); nan(2,1)];
+end
+St.cert(1:36)=baseCert;
+if coder.const(MPCParameters.ControllerVariant==3)
+    if Terminal.diag(2)>0
+        Terminal.diag(4)=min(Terminal.b1-Terminal.A1*x_opt(1:Nu*Nc));
+    end
+    if Terminal.diag(3)>0
+        Terminal.diag(5)=min(Terminal.b2-Terminal.A2*x_opt(1:Nu*Nc));
+    end
+    if exitflag~=1, Terminal.diag(4:5)=NaN; end
+    St.cert(37:44)=Terminal.diag;
 end
 
 if exitflag == 1
@@ -520,6 +565,7 @@ end
 InitialParams.U(1) = zeta(Nx+1) + delta_U_first(1); % Fyf
 InitialParams.U(2) = zeta(Nx+2) + delta_U_first(2); % MFx
 InitialParams.U(3) = zeta(Nx+3) + delta_U_first(3); % Md
+InitialParams.prevstate.dAFS = delta_U_first(1);
 
 Fyf_next = InitialParams.U(1);
 MFx_next = InitialParams.U(2);

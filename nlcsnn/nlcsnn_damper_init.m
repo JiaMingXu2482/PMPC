@@ -1,7 +1,7 @@
 function net = nlcsnn_damper_init(matFile)
 %NLCSNN_DAMPER_INIT Load weights once, outside the per-step function.
-% Keep the existing 8-state plant as default until four-model v14 wiring.
-% Pass v14_weights.mat explicitly to use the 2-layer GRU model.
+% setup_pmpc selects v14_weights.mat explicitly for all four MIL models.
+% The legacy default is retained only for archived tests and comparisons.
 
 if nargin < 1 || isempty(matFile)
     thisDir = fileparts(mfilename('fullpath'));
@@ -11,7 +11,6 @@ end
 S = load(matFile);
 if isfield(S, 'weights')
     net = struct('weights', S.weights, 'norm_cfg', S.norm_cfg, ...
-        'model_cfg', S.model_cfg, ...
         'current_lag_a', single(S.current_lag_a), ...
         'current_lag_kernel', single(S.current_lag_kernel), ...
         'current_lag_length', int32(S.current_lag_length), ...

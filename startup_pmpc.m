@@ -4,6 +4,7 @@ root = fileparts(mfilename('fullpath'));
 addpath(fullfile(root, 'config'));
 addpath(fullfile(root, 'controller'));
 addpath(fullfile(root, 'nlcsnn'));
+addpath(fullfile(root, 'nlcsnn', 'v17_pmpc_package'));
 addpath(fullfile(root, 'data'));
 if exist(fullfile(root, 'data', 'generated'), 'dir') == 7
     addpath(fullfile(root, 'data', 'generated'));

@@ -11,10 +11,17 @@ InitialParams = localInitialParams();
 % ---- NLCSNN CDC model shared by MPC, ZENG, and PMPC ----
 NLCSNN = struct();
 NLCSNN.enabled = logical(localWsget('PMPC_NLCSNN', 1));
-NLCSNN.net = nlcsnn_damper_init();
+NLCSNN.net = v17_damper_init(fullfile(fileparts(mfilename('fullpath')), ...
+    'nlcsnn', 'v17_pmpc_package', 'v17_weights.mat'));
+% Shared deployment envelope from the previous stable damper chain.
+% Set PMPC_NLCSNN_GUARD=0 only for raw-model diagnostic runs.
+NLCSNN.net.force_guard_enabled = logical(localWsget('PMPC_NLCSNN_GUARD',1));
+NLCSNN.net.force_guard_c_min = 0.8;   % N/(mm/s), previous soft-state floor
+NLCSNN.net.force_guard_v_eps = 5;     % mm/s, smooth velocity reversal
+NLCSNN.net.force_guard_power_eps = 50; % N mm/s
 NLCSNN.i_max = 1.6;
 NLCSNN.temp = 42.5;
-NLCSNN.x_ref = 281.0645;
+NLCSNN.x_ref = NLCSNN.net.norm.x_ref;
 NLCSNN.dt_plant = 0.001;   % 1 kHz plant 步长 (多速率: 正模型在 plant 侧跑)
 % 旧 NLCSNN.dt = 0.01 是 10 ms 控制器宏步, 新架构下正/逆模型不再共用, 已弃用
 % Causal vehicle-side acceleration preprocessing only. It does not delay
@@ -22,12 +29,8 @@ NLCSNN.dt_plant = 0.001;   % 1 kHz plant 步长 (多速率: 正模型在 plant �
 % 0.04 s suppresses the 15--16 Hz finite-difference feedback that produced
 % late-run wheel-hop in DLC/J-turn while preserving the 1 kHz plant update.
 NLCSNN.tau_accel = 0.04;
-% Smooth 1 kHz dissipative projection after the neural forward model.
-% c_min is the measured 1.6 A soft-state equivalent damping at 1.66 Hz;
-% it prevents an out-of-training-band neural prediction from removing all
-% wheel-hop damping. Units: c_min [N/(mm/s)], v_eps [mm/s],
-% power_eps [N*mm/s].
-NLCSNN.passivity = struct('c_min', 0.8, 'v_eps', 5, 'power_eps', 50);
+% Raw v17 force is logged separately; the deployment envelope is shared
+% by the plant and inverse, not inserted only after the controller.
 
 %% ==== 运行配置 (详见 README_运行配置.md) ====
 InitialParams.BaselineMode    = localWsget('PMPC_BASELINE',   0);   % 1=无控制baseline
@@ -287,10 +290,27 @@ MPCParameters.first_Tc = localWsget('PMPC_FIRSTTC', 0);
 %                                不足 DLC 一个门区(~13.5m) -> 必须取 Np
 MPCParameters.Ncons_sh  = MPCParameters.Nc;
 MPCParameters.Ncons_r   = MPCParameters.Nc;
+% PMPC COM optimization (2026-10-09): retain the full-horizon configuration
+% used in the selected closed-loop trial. Other variants are unchanged.
+if ControllerVariant == 3
+    MPCParameters.Ncons_sh = MPCParameters.Np;
+    MPCParameters.Ncons_r = MPCParameters.Np;
+end
 MPCParameters.Ncons_env = localWsget('PMPC_NCONS_ENV', MPCParameters.Np);   % 工作区可覆盖(对照试验用)
 MPCParameters.ConNodes_sh = (1:MPCParameters.Ncons_sh)';
 MPCParameters.ConNodes_r = (1:MPCParameters.Ncons_r)';
 MPCParameters.ConNodes_env = (1:MPCParameters.Ncons_env)';
+% Experimental terminal/tail paths are OFF: R75 COM validation regressed.
+% Keep the independently validated damper-bound feasibility repair enabled.
+MPCParameters.terminal_on = logical(localWsget('PMPC_TERMINAL_ON',0)) && ControllerVariant==3;
+MPCParameters.terminal_steps = localWsget('PMPC_TERMINAL_STEPS',3);
+% 1: legacy equilibrium core; 2: continuous physical-risk lookahead (no invariant claim).
+MPCParameters.terminal_mode = localWsget('PMPC_TERMINAL_MODE',2);
+MPCParameters.terminal_preview = logical(localWsget('PMPC_TERMINAL_PREVIEW',0)); % experimental, rejected as default
+% Tolerance-qualified sequential objectives; no huge safety penalty needed.
+MPCParameters.lex_on = logical(localWsget('PMPC_LEX_ON',0)) && ControllerVariant==3; % experimental, off
+MPCParameters.lex_tol = 1e-5;
+MPCParameters.steer_smooth_weight = localWsget('PMPC_STEER_SMOOTH',0)*double(ControllerVariant==3);
 
 % 0 removes per-step diagnostics from generated code (Pm is coder.Constant).
 MPCParameters.Verbose = localWsget('PMPC_VERBOSE', 1);
@@ -436,6 +456,9 @@ P.Pm = struct('MPCParameters',MPCParameters, 'CostWeights',CostWeights, ...
 P.S0 = struct('InitialParams',InitialParams, 'WarmStart',WarmStart, 'rho',rho, ...
     'VehiclePara',VehiclePara, 'Constraints',Constraints, ...
               'cert', nan(36, 1));
+if ControllerVariant==3
+    P.S0.cert=nan(44,1); % original 36 plus eight terminal diagnostics
+end
 
 % 没有输出参数时, 顺手写进 base 工作区
 if nargout == 0
@@ -461,6 +484,7 @@ Pa.U = zeros(3,1);
 
 Pa.prevstate = struct();
 Pa.prevstate.sw = 0;
+Pa.prevstate.dAFS = 0; % last executed AFS increment for the optional L3 smoothness cost
 Pa.prevstate.Fyf = 0;
 Pa.prevstate.MFx = 0;
 Pa.prevstate.Md = 0;

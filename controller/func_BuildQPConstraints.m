@@ -1,4 +1,4 @@
-function [A_cons, b_cons, lb, ub, umax, umin] = func_BuildQPConstraints( ...
+function [A_cons, b_cons, lb, ub, umax, umin, Terminal] = func_BuildQPConstraints( ...
         MPCParameters, Constraints, Envelope, Pred, AI, Ut, zeta, Lim)
 % func_BuildQPConstraints  组装 MPC 的不等式约束与变量上下界
 % -------------------------------------------------------------------------
@@ -46,6 +46,9 @@ Md_up    = max(Lim.Mdmax, Lim.Mdmin);
 Md_low   = min(Lim.Mdmax, Lim.Mdmin);
 Md_up_s  = min( (Md_up >=0)*0.9*Md_up  + (Md_up <0)*1.1*Md_up , Md_up  );
 Md_low_s = max( (Md_low<=0)*0.9*Md_low + (Md_low>0)*1.1*Md_low, Md_low );
+if isfield(MPCParameters,'ControllerVariant') && MPCParameters.ControllerVariant==3
+    [Md_low_s,Md_up_s]=func_ShrinkDamperMomentBox(Md_low,Md_up);
+end
 
 % AFS: 若给了非对称转角界则用之（控制量为前轮转角时必须非对称）
 if isfield(Lim,'dlt_ub') && ~isempty(Lim.dlt_ub)
@@ -55,6 +58,7 @@ else
 end
 umax = [ afs_ub;  0.95*Lim.MFxmax;  Md_up_s  ];
 umin = [ afs_lb; -0.95*Lim.MFxmax;  Md_low_s ];
+physical_umax=umax; physical_umin=umin;
 
 % ---- 保证箱体始终包含当前控制量 ----
 %  Fyfmax/MFxmax/Mdmax 都是随垂向载荷与摩擦圆实时变化的量，箱体可以
@@ -263,6 +267,28 @@ else
                -AI, zeros(Nu*Nc, Ne) ];
     b_input = [ Umax - Ut;
                 Ut - Umin ];
+end
+
+% Attach recoverability rows to the SAME s1/s2, not actuator priorities.
+[nt1,nt2]=func_TerminalRowCounts(MPCParameters);
+Terminal=struct('A1',zeros(nt1,Nu*Nc),'b1',ones(nt1,1), ...
+    'A2',zeros(nt2,Nu*Nc),'b2',ones(nt2,1),'diag',zeros(8,1));
+if nt1>0
+    if isfield(MPCParameters,'terminal_mode') && MPCParameters.terminal_mode==2
+        Terminal=func_FutureRiskTail(MPCParameters,Envelope,Pred,AI,zeta);
+    elseif isfield(MPCParameters,'terminal_preview') && MPCParameters.terminal_preview
+        Terminal=func_TerminalRecoverabilityPreview(MPCParameters,Constraints,Envelope, ...
+            Pred,AI,zeta,Lim,physical_umin,physical_umax);
+    else
+        Terminal=func_TerminalRecoverability(MPCParameters,Constraints,Envelope, ...
+            Pred,AI,zeta,Lim,physical_umin,physical_umax);
+    end
+    es1=zeros(nt1,Ne); es1(:,1)=-double(Terminal.diag(2)>0);
+    es2=zeros(nt2,Ne); es2(:,2)=-double(Terminal.diag(3)>0);
+    A_cons_sh=[A_cons_sh;Terminal.A2 es2 zeros(nt2,Nr)];
+    b_cons_sh=[b_cons_sh;Terminal.b2];
+    A_cons_env=[A_cons_env;Terminal.A1 es1 zeros(nt1,Nr)];
+    b_cons_env=[b_cons_env;Terminal.b1];
 end
 
 %% ---- 4) 合并 ----

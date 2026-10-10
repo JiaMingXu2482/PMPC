@@ -31,6 +31,8 @@ N_sh  = min(max(1, round(MPCParameters.Ncons_sh )), Np);
 N_r   = min(max(1, round(MPCParameters.Ncons_r  )), Np);
 N_env = min(max(1, round(MPCParameters.Ncons_env)), Np);
 n_in  = 2*Nu*Nc;  n_sh = 4*N_sh;  n_r = 2*N_r;  n_env = 4*N_env;
+[nt1,nt2]=func_TerminalRowCounts(MPCParameters);
+n_sh=n_sh+nt2; n_env=n_env+nt1;
 idx2  = n_in + (1:n_sh);                                         % 第二层: 横摆 + 后轴侧偏
 idx1  = n_in + n_sh + (1:(n_r + n_env));                         % 第一层: LTR + 车道四角点
 n1    = Nu*Nc;
@@ -67,6 +69,9 @@ H4  = H(1:n1, 1:n1);   f4 = f(1:n1);
 Yr  = [ref_Vy(:)'; ref_r(:)'; zeros(Ny-2, Np)];
 e0  = Pred.PSI*zeta + Pred.PHI*Pred.GAMMA - Yr(:);
 c0  = e0'*(Wts.Q*e0) + Ut'*(Wts.S*Ut);        % J4 的常数项(QP 代价里省掉了)
+if isfield(Pred,'smooth_cost_constant')
+    c0=c0+Pred.smooth_cost_constant;
+end
 F   = max(0.5*(dUc'*(H4*dUc)) + f4'*dUc + c0, 0) + Wb*gc + rho*gc^2;
 F0  = max(0.5*(dU0'*(H4*dU0)) + f4'*dU0 + c0, 0);
 

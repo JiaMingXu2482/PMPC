@@ -1,5 +1,5 @@
 function [F_plant, h_new, a_filt_new, v_prev_new, init_new, ...
-          x_plant, v_plant, a_plant] = ...
+          x_plant, v_plant, a_plant, F_raw] = ...
     func_NLCSNNPlant4(net, cmpD, cmpRD, i_cmd, h, a_filt, v_prev, ...
                       init_done, cfg)
 %FUNC_NLCSNNPLANT4  NLCSNN damper plant, four corners, 1 ms step.
@@ -75,7 +75,13 @@ cmpRD = reshape(cmpRD, 4, 1);
 o = [1 3 2 4];
 cmpD_i  = cmpD(o);
 cmpRD_i = cmpRD(o);
-h_i     = h;
+if isfield(net, 'lag_kmax')
+    h_i = double(h); % v17 GRU and current-memory state match float64 weights
+elseif isfield(net, 'weights')
+    h_i = single(h); % v14 GRU/current-lag state is single precision
+else
+    h_i = h;         % archived 8-state model keeps its original precision
+end
 a_i     = a_filt;
 vp_i    = v_prev;
 
@@ -119,31 +125,49 @@ end
 
 % ---- per-corner forward step at 1 ms ----
 F_int = zeros(4,1);
-h_int = zeros(8,4);
+F_raw_int = zeros(4,1);
+h_int = zeros(size(h_i), 'like', h_i);
 for j = 1:4
     ij = min(max(i_cmd(j), 0), cfg.i_max);
     if ~isfinite(ij)
         ij = 0;
     end
-    % dcurr is a dead input (build_nfl does not use di/dt); pass 0.
-    [F_nl, hj] = nlcsnn_damper_step(net, x(j), v(j), a_new(j), ...
-                                    ij, 0, cfg.temp, dt, h_i(:,j));
+    % Package streaming default uses dI/dt=0. The commanded ZOH current is
+    % not a measured coil-current derivative; keep this convention explicit.
+    if isfield(net, 'lag_kmax')
+        [F_nl, hj] = nlcsnn_v17_step_flat(net, x(j), v(j), a_new(j), ...
+            ij, cfg.temp, dt, h_i(:,j));
+    else
+        [F_nl, hj] = nlcsnn_damper_step(net, x(j), v(j), a_new(j), ...
+            ij, 0, cfg.temp, dt, h_i(:,j));
+    end
     if ~isfinite(F_nl) || any(~isfinite(hj))
         % fail-safe: freeze state, report force from the frozen state
         hj = h_i(:,j);
-        F_nl = nlcsnn_predict_force(net, x(j), v(j), a_new(j), ...
-                                    ij, cfg.temp, hj);
+        if isfield(net, 'lag_kmax')
+            [~,F_nl] = nlcsnn_v17_force_at_current(net,x(j),v(j), ...
+                a_new(j),ij,cfg.temp,hj);
+        elseif isfield(net, 'weights')
+            [~,F_nl] = nlcsnn_v14_force_at_current(net, x(j), v(j), ...
+                a_new(j), ij, cfg.temp, hj);
+        else
+            F_nl = nlcsnn_predict_force(net, x(j), v(j), a_new(j), ...
+                ij, cfg.temp, hj);
+        end
         if ~isfinite(F_nl)
             F_nl = 0;
         end
     end
-    F_int(j) = -F_nl;      % NLCSNN -> CarSim polarity
+    F_raw_int(j) = -F_nl;
+    F_int(j) = -nlcsnn_deployed_force(net,F_nl,v(j));
     h_int(:,j) = hj;
 end
 
 % ---- reorder back to external conventions ----
 F_plant = zeros(4,1);
 F_plant(o) = F_int;       % -> CarSim order [L1;L2;R1;R2]
+F_raw = zeros(4,1);
+F_raw(o) = F_raw_int;
 h_new = h_int;            % controller order [L1;R1;L2;R2]
 a_filt_new = a_new;
 v_prev_new = v;

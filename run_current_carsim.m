@@ -26,6 +26,56 @@ if ~any(strcmp(model, validModels))
     error('run_current_carsim:InvalidModel', ...
         'model must be mpc_mil, zeng_mil, pmpc_mil, or pmpc_nodelay_mil.');
 end
+% A model already open in this MATLAB session may predate an SLX update on
+% disk. Simulink load_system would silently keep that in-memory version.
+if bdIsLoaded(model)
+    expectedFile = fullfile(root, [model '.slx']);
+    loadedFile = get_param(model, 'FileName');
+    rawPort = [model '/NLCSNN_Forward_1kHz/Fd_raw'];
+    needsReload = ~strcmpi(loadedFile, expectedFile) || ...
+        getSimulinkBlockHandle(rawPort) == -1;
+    stateDelay = [model '/NLCSNN_Forward_1kHz/UD_h'];
+    if getSimulinkBlockHandle(stateDelay) ~= -1
+        needsReload = needsReload || ~strcmp( ...
+            get_param(stateDelay,'InitialCondition'),'zeros(217,4)');
+    end
+    if strcmp(model,'pmpc_mil') || strcmp(model,'pmpc_nodelay_mil')
+        sf = sfroot;
+        ctrlChart = sf.find('-isa','Stateflow.EMChart','Path',[model '/PMPC_MF']);
+        needsReload = needsReload || numel(ctrlChart) ~= 1;
+        if numel(ctrlChart) == 1
+            expectedDiagnostic='long_diag = func_PriorityDiagnostics(St.cert);';
+            if strcmp(model,'pmpc_mil')
+                expectedDiagnostic='long_diag = func_PMPCTerminalDiagnostics(St.cert);';
+            end
+            needsReload = needsReload || ~contains(ctrlChart.Script, ...
+                expectedDiagnostic);
+            if strcmp(model,'pmpc_mil')
+                diagnosticPort=ctrlChart.find('-isa','Stateflow.Data','Name','long_diag');
+                needsReload=needsReload || numel(diagnosticPort)~=1;
+                if numel(diagnosticPort)==1
+                    needsReload=needsReload || ~strcmp(diagnosticPort.Props.Array.Size,'20');
+                end
+            end
+        end
+    end
+    if needsReload
+        if strcmp(get_param(model,'Dirty'),'on')
+            % Save As preserves the user's in-memory edits. R2024b renames
+            % the loaded model to the backup name; the official SLX is untouched.
+            backupDir = fullfile(root,'scratchpad','stale_loaded_models');
+            if ~isfolder(backupDir), mkdir(backupDir); end
+            backupPath = [tempname(backupDir) '.slx'];
+            [~,backupModel] = fileparts(backupPath);
+            save_system(model,backupPath);
+            fprintf('Old loaded %s preserved at %s\n',model,backupPath);
+            close_system(backupModel,0);
+        else
+            close_system(model,0);
+        end
+        rehash;
+    end
+end
 if ~ischar(simfile) && ~isstring(simfile)
     error('run_current_carsim:BadSimfile', 'simfile 必须是文件路径。');
 end
@@ -94,8 +144,26 @@ end
 logfile = fullfile(resdir, 'LastRun_log.txt');
 oldLog = dir(logfile);
 if isempty(oldLog), logstamp = 0; else, logstamp = oldLog.datenum; end
-evalc('sim(model);');
+func_EnableControllerLogging(model);
+diagDir = fullfile(root,'scratchpad');
+if ~isfolder(diagDir), mkdir(diagDir); end
+diagFile = fullfile(diagDir,'run_current_carsim_diagnostics.txt');
+sldiagviewer.diary(diagFile,'UTF-8');
+diagCleanup = onCleanup(@() sldiagviewer.diary('off')); %#ok<NASGU>
+try
+    evalc('simOut = sim(model);');
+catch ME
+    sldiagviewer.diary('off');
+    if isfile(diagFile)
+        details = strtrim(fileread(diagFile));
+        if ~isempty(details)
+            fprintf(2,'Simulink detailed diagnostics (%s):\n%s\n',diagFile,details);
+        end
+    end
+    rethrow(ME);
+end
 func_WaitERD(resdir, logstamp);
+func_SaveControllerLogs(simOut, resdir, model);
 D = func_ReadERD(fullfile(resdir, 'LastRun'));
 assert(strcmp(D.Dataset, sourceName) && abs(D.Vx(1) - requested) < 0.05, ...
     'run_current_carsim:WrongResult', ...

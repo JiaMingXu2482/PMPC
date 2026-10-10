@@ -17,5 +17,5 @@ if isempty(St)
 end
 [sys, St, i_cmd] = pmpc_step(uc, PMPC_NODELAY_P.Pm, St, ...
     h_plant, x_plant, v_plant, a_plant);
-long_diag = zeros(12,1);
+long_diag = func_PriorityDiagnostics(St.cert);
 end
