@@ -1,9 +1,9 @@
 function T = Atuning_pmpc()
 %ATUNING_PMPC  Editable tuning defaults for priority PMPC.
 T.controller = 'PMPC';
-T.Ts = 0.05;
-T.Np = 12;
-T.Nc = 6;
+T.Ts = 0.1;
+T.Np = 10;
+T.Nc = 10;
 
 T.Q1 = 0; T.Q2 =    0; T.Q3 = 20;
 T.Q4 = 0; T.Q5 =  200; T.Q6 = 80;
