@@ -21,7 +21,7 @@ F_des -> inv_mf (V25.2, 100 Hz) -> I_cmd
 | `inv_weights_m.m` | V25.2 权重，best ep179，SHA `4a0567de…29577` |
 | `inv_weights_ep120_m.m` | V25.2 权重，ep120（备用，见下） |
 | `curr_dyn_mf.m` / `curr_dyn_impl.m` | 电流动态仿真块，一阶滞后，上升 tau 4.55 ms / 下降 tau 8.65 ms |
-| `test_closedloop_v252_v22e0.m` | 单 corner 闭环冒烟测试（合成正弦，非验证数据） |
+| `test_closedloop_v252_v22e0.m` | 单 corner 闭环冒烟测试：F_des 由参考电流经正模型生成（可达），非验证数据；旧版位移相位 F_des 已废弃，见脚本头部说明 |
 
 ## MATLAB 下载命令（在 MATLAB 命令行里，cd 到你想放的目录后）
 
