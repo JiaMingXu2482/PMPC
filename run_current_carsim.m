@@ -31,31 +31,25 @@ end
 if bdIsLoaded(model)
     expectedFile = fullfile(root, [model '.slx']);
     loadedFile = get_param(model, 'FileName');
-    rawPort = [model '/NLCSNN_Forward_1kHz/Fd_raw'];
-    needsReload = ~strcmpi(loadedFile, expectedFile) || ...
-        getSimulinkBlockHandle(rawPort) == -1;
-    stateDelay = [model '/NLCSNN_Forward_1kHz/UD_h'];
-    if getSimulinkBlockHandle(stateDelay) ~= -1
-        needsReload = needsReload || ~strcmp( ...
-            get_param(stateDelay,'InitialCondition'),'zeros(217,4)');
-    end
-    if strcmp(model,'pmpc_mil') || strcmp(model,'pmpc_nodelay_mil')
-        sf = sfroot;
-        ctrlChart = sf.find('-isa','Stateflow.EMChart','Path',[model '/PMPC_MF']);
-        needsReload = needsReload || numel(ctrlChart) ~= 1;
-        if numel(ctrlChart) == 1
-            expectedDiagnostic='long_diag = func_PriorityDiagnostics(St.cert);';
-            if strcmp(model,'pmpc_mil')
-                expectedDiagnostic='long_diag = func_PMPCTerminalDiagnostics(St.cert);';
-            end
-            needsReload = needsReload || ~contains(ctrlChart.Script, ...
-                expectedDiagnostic);
-            if strcmp(model,'pmpc_mil')
-                diagnosticPort=ctrlChart.find('-isa','Stateflow.Data','Name','long_diag');
-                needsReload=needsReload || numel(diagnosticPort)~=1;
-                if numel(diagnosticPort)==1
-                    needsReload=needsReload || ~strcmp(diagnosticPort.Props.Array.Size,'20');
-                end
+    needsReload = ~strcmpi(loadedFile, expectedFile);
+    % All four variants now use the manually wired damper interface.
+    needsReload = needsReload || ...
+        getSimulinkBlockHandle([model '/NLCSNN_Forward_1kHz']) ~= -1;
+    sf = sfroot;
+    ctrlChart = sf.find('-isa','Stateflow.EMChart','Path',[model '/PMPC_MF']);
+    needsReload = needsReload || numel(ctrlChart) ~= 1;
+    if numel(ctrlChart) == 1
+        expectedDiagnostic='long_diag(1:12) = func_PriorityDiagnostics(St.cert(1:36));';
+        if strcmp(model,'pmpc_mil')
+            expectedDiagnostic='long_diag = func_PMPCTerminalDiagnostics(St.cert);';
+        end
+        needsReload = needsReload || ~contains(ctrlChart.Script, ...
+            expectedDiagnostic);
+        if strcmp(model,'pmpc_mil')
+            diagnosticPort=ctrlChart.find('-isa','Stateflow.Data','Name','long_diag');
+            needsReload=needsReload || numel(diagnosticPort)~=1;
+            if numel(diagnosticPort)==1
+                needsReload=needsReload || ~strcmp(diagnosticPort.Props.Array.Size,'20');
             end
         end
     end

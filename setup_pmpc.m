@@ -8,20 +8,13 @@ startup_pmpc();
 
 InitialParams = localInitialParams();
 
-% ---- NLCSNN CDC model shared by MPC, ZENG, and PMPC ----
+% ---- External Simulink damper model shared by the controller variants ----
 NLCSNN = struct();
 NLCSNN.enabled = logical(localWsget('PMPC_NLCSNN', 1));
-NLCSNN.net = v17_damper_init(fullfile(fileparts(mfilename('fullpath')), ...
-    'nlcsnn', 'v17_pmpc_package', 'v17_weights.mat'));
-% Shared deployment envelope from the previous stable damper chain.
-% Set PMPC_NLCSNN_GUARD=0 only for raw-model diagnostic runs.
-NLCSNN.net.force_guard_enabled = logical(localWsget('PMPC_NLCSNN_GUARD',1));
-NLCSNN.net.force_guard_c_min = 0.8;   % N/(mm/s), previous soft-state floor
-NLCSNN.net.force_guard_v_eps = 5;     % mm/s, smooth velocity reversal
-NLCSNN.net.force_guard_power_eps = 50; % N mm/s
+NLCSNN.net = struct();
 NLCSNN.i_max = 1.6;
 NLCSNN.temp = 42.5;
-NLCSNN.x_ref = NLCSNN.net.norm.x_ref;
+NLCSNN.x_ref = 281.0645;
 NLCSNN.dt_plant = 0.001;   % 1 kHz plant 步长 (多速率: 正模型在 plant 侧跑)
 % 旧 NLCSNN.dt = 0.01 是 10 ms 控制器宏步, 新架构下正/逆模型不再共用, 已弃用
 % Causal vehicle-side acceleration preprocessing only. It does not delay
@@ -29,8 +22,7 @@ NLCSNN.dt_plant = 0.001;   % 1 kHz plant 步长 (多速率: 正模型在 plant �
 % 0.04 s suppresses the 15--16 Hz finite-difference feedback that produced
 % late-run wheel-hop in DLC/J-turn while preserving the 1 kHz plant update.
 NLCSNN.tau_accel = 0.04;
-% Raw v17 force is logged separately; the deployment envelope is shared
-% by the plant and inverse, not inserted only after the controller.
+% Current forward/inverse weights live in nlcsnn, outside controller Pm.
 
 %% ==== 运行配置 (详见 README_运行配置.md) ====
 InitialParams.BaselineMode    = localWsget('PMPC_BASELINE',   0);   % 1=无控制baseline
@@ -139,7 +131,7 @@ Constraints.AFS_max_deg = localWsget('PMPC_AFSMAX', 5.73);   % 0 = AFS 不作用
 Constraints.AFS_max    = deg2rad(Constraints.AFS_max_deg);
 % Fixed 15 ms prediction lag is a literature estimate, not identified from
 % this project's sinusoidal damper data. NLCSNN plant dynamics remain separate.
-Constraints.tau_MR = 0.015;  % s, MR 力响应时间 (Delphi MagneRide)
+Constraints.tau_MR = 0.05;  % s, MR 力响应时间 (Delphi MagneRide)
 % ZENG 运行模式由控制器变体决定；具体调参见 Atuning_zeng.m。
 Constraints.ZengRho_on = 0;   % 占位, 真值在 ContrlMode 处按数据集名设定
 ZengTuning = Atuning_zeng();
@@ -155,7 +147,6 @@ Constraints.Gov_lamx     = 0.1;      % 分配器里纵向相对横摆的优先�
 %  加 eta*Nc*V 保持正定; 实测 eta 从 1e-4 到 1e-1 都使 unsolved 归零,
 %  取最小的 1e-4 (gamma=1 处二次项仅为线性项的 0.01%)。
 Constraints.gamma_reg = 1e-4;
-
 Constraints.Vel_ref = 25;    % m/s (90 km/h), 用于 r_ref = mu*g/Vel_ref
 Constraints.Vd_ref  = 0.5;   % m/s, 参考减振器速度, 用于 Md_ref
 % 切线刚度下限: |c_bar| >= Ctan_floor_frac * C0。
@@ -344,6 +335,11 @@ else
         zeros(4,1), Constraints.tau_MR);
 end
 MPCParameters.ControllerVariant = ControllerVariant;
+% Every variant receives attainable force bounds from the Simulink damper
+% interface; inverse-current conversion remains outside the controller.
+NLCSNN.external_interface = true;
+NLCSNN.external_F_lo = zeros(4,1);
+NLCSNN.external_F_hi = zeros(4,1);
 ctlStr = {'① 固定权重 MPC (无 sigma/gamma)','② Zeng rho 调权', ...
     '③ 本文 PMPC','④ PMPC-noDelay (无阻尼器时延预测)'};
 if ControllerVariant==4

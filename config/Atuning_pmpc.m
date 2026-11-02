@@ -3,11 +3,11 @@ function T = Atuning_pmpc()
 T.controller = 'PMPC';
 T.Ts = 0.1;
 T.Np = 10;
-T.Nc = 10;
+T.Nc = 5;
 
-T.Q1 = 0; T.Q2 =    0; T.Q3 = 20;
-T.Q4 = 0; T.Q5 =  200; T.Q6 = 80;
-T.R1 = 0.2; T.R2 = 0.5; T.R3 = 0.2;
+T.Q1 = 0; T.Q2 =    0; T.Q3 = 0;
+T.Q4 = 0; T.Q5 =  500; T.Q6 = 80;
+T.R1 = 0.2; T.R2 = 0.2; T.R3 = 0.2;
 T.S1 = 0; T.S2 = 0; T.S3 = 0;
 T.Qf_scale = 1;
 T.V1 = 0; T.V2 = 0; T.V3 = 0;

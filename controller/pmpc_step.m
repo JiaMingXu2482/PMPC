@@ -98,8 +98,22 @@ DamperLimits = struct('Fdu',zeros(4,1), 'Fdl',zeros(4,1), ...
     'Fd_center',zeros(4,1), 'external',false);
 i_cmd = zeros(4,1);
 if NLCSNN.enabled
-    DamperContext = func_NLCSNNContext(NLCSNN.net, ...
-        x_plant, v_plant, a_plant, h_plant, NLCSNN);
+    if NLCSNN.external_interface
+        % PMPC external interface passes force bounds through the otherwise
+        % unused x_plant/v_plant inputs; the twin owns physical x and v.
+        lo = x_plant(:);
+        hi = v_plant(:);
+        for j = 1:4
+            if ~isfinite(lo(j)), lo(j) = 0; end
+            if ~isfinite(hi(j)), hi(j) = 0; end
+        end
+        DamperContext.F_lo = min(lo,hi);
+        DamperContext.F_hi = max(lo,hi);
+        DamperContext.F_center = 0.5*(DamperContext.F_lo+DamperContext.F_hi);
+    else
+        DamperContext = func_NLCSNNContext(NLCSNN.net, ...
+            x_plant, v_plant, a_plant, h_plant, NLCSNN);
+    end
     DamperLimits.Fdu = DamperContext.F_hi;
     DamperLimits.Fdl = DamperContext.F_lo;
     DamperLimits.Fd_center = DamperContext.F_center;
@@ -611,7 +625,13 @@ if MPCParameters.abl == 2
     end
 end
 InitialParams.prevstate.Fd = Fd_cmd;   % command force, QPA warm start
-if NLCSNN.enabled
+if NLCSNN.enabled && NLCSNN.external_interface
+    % The QP/allocation ends in force space. The replaceable twin interface
+    % owns inverse-current conversion and the actual force sent to CarSim.
+    i_cmd = Fd_cmd;
+    Fd_L1 = Fd_cmd(1); Fd_R1 = Fd_cmd(2);
+    Fd_L2 = Fd_cmd(3); Fd_R2 = Fd_cmd(4);
+elseif NLCSNN.enabled
     % Inverse only: the 1 kHz plant owns h and applies i_cmd over the next
     % 10 ms. F_pred is the controller's force prediction at the tick state
     % for logging (sys 5:8); the force that actually reaches CarSim is

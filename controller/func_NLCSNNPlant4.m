@@ -1,7 +1,7 @@
 function [F_plant, h_new, a_filt_new, v_prev_new, init_new, ...
           x_plant, v_plant, a_plant, F_raw] = ...
     func_NLCSNNPlant4(net, cmpD, cmpRD, i_cmd, h, a_filt, v_prev, ...
-                      init_done, cfg)
+                      init_done, cfg, cmpAD)
 %FUNC_NLCSNNPLANT4  NLCSNN damper plant, four corners, 1 ms step.
 %   %#codegen compatible (no file I/O, no persistent state).
 %
@@ -103,23 +103,28 @@ end
 x = cfg.x_ref - cmpD_i;   % mm, rig absolute position
 v = -cmpRD_i;             % mm/s
 
-% ---- acceleration: 1 ms finite difference + first-order lag ----
-if init_done > 0.5
-    a_raw = (v - vp_i) / dt;
+% PMPC's 58-channel CarSim export supplies measured compression
+% acceleration (g); older 54-channel callers retain the finite-difference
+% path. The v17 model uses rebound-positive mm/s^2.
+if nargin >= 10
+    cmpAD = reshape(cmpAD,4,1);
+    a_new = -cmpAD(o)*9806.65;
 else
-    a_raw = zeros(4,1);   % no differentiation spike on the first step
-end
-for j = 1:4
-    if ~isfinite(a_raw(j))
-        a_raw(j) = 0;
+    if init_done > 0.5
+        a_raw = (v - vp_i) / dt;
+    else
+        a_raw = zeros(4,1);
     end
+    for j = 1:4
+        if ~isfinite(a_raw(j)), a_raw(j) = 0; end
+    end
+    tau = max(cfg.tau_accel, eps);
+    alpha = 1 - exp(-dt / tau);
+    a_new = (1 - alpha) * a_i + alpha * a_raw;
 end
-tau = max(cfg.tau_accel, eps);
-alpha = 1 - exp(-dt / tau);
-a_new = (1 - alpha) * a_i + alpha * a_raw;
 for j = 1:4
     if ~isfinite(a_new(j))
-        a_new(j) = 0;
+        a_new(j) = a_i(j);
     end
 end
 

@@ -13,9 +13,15 @@ if evalin('base', 'exist(''PMPC_VERBOSE'', ''var'') ~= 1')
     assignin('base', 'PMPC_VERBOSE', 1);
 end
 evalin('base', ['clear ' blockName]);
+if variant ~= 3
+    evalin('base', 'clear pmpc_external_variant_block');
+end
 
 P = setup_pmpc();
 assignin('base', bundleName, P);
+if variant ~= 3
+    assignin('base', 'PMPC_P', P);
+end
 assignin('base', 'NLCSNN', P.Pm.NLCSNN);
 
 fprintf('\n===== %s ready =====\n', upper(modelName));
