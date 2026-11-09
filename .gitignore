@@ -1,0 +1,35 @@
+# MATLAB / Simulink 生成物
+/slprj/
+*.slxc
+*.autosave
+*.asv
+*.mex*
+*.pdb
+*.obj
+*.exp
+*.lib
+*.dll
+codegen/
+
+# Simulink 备份
+*.bak
+*.bak_*
+*.original
+*_backup_*.slx
+
+# CarSim 句柄文件（每次 Send to Simulink 重新生成）
+simfile.sim
+
+# 临时诊断产物
+**/dbg_*.mat
+**/diag_*.mat
+**/certlog*.mat
+**/replay_*.mat
+
+# 系统与编辑器元数据
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.tmp
+~$*

@@ -1,0 +1,7 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+JT c=1 gamma_free=0 w1=1e+05 w2=1e+06 Q=[100 2000 10] hard=1 ssf=[1.0 1.0 1.0 1.0]
+JT c=2 gamma_free=0 w1=1e+05 w2=1e+06 Q=[100 2000 10] hard=1 ssf=[2.0 0.5 0.5 10.0]
+JT c=3 gamma_free=1 w1=1e+05 w2=1e+06 Q=[100 2000 10] hard=1 ssf=[1.0 1.0 1.0 1.0]
+DLC c=1 mu=0.50 gamma_free=0 Q=[100 50 80] hard=0 wg=100
+DLC c=2 mu=0.50 gamma_free=0 Q=[100 50 80] hard=0 wg=100
+DLC c=3 mu=0.50 gamma_free=1 Q=[100 50 80] hard=0 wg=100

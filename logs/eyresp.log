@@ -1,0 +1,7 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+ey response to +1 Nm Mz at steps 1..10:
+   1.0e-03 *
+
+    0.0001    0.0016    0.0060    0.0150    0.0295    0.0502    0.0773    0.1109    0.1512    0.1981
+
+cumulative/sum=0.00064, end=0.0001981

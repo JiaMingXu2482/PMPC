@@ -1,0 +1,8 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+--- pmpc_core/pmpc_step.m
+--- pmpc_core/pmpc_init.m
+--- pmpc_core/lon_arbitrate.m
+--- pmpc_jturn_setup.m
+L 66 (C 7-15): 将 'clear' 与 'functions' 选项结合使用通常会降低代码性能，一般无需执行此操作。
+
+init ok: R=[20 200 0.2] wg=2000 wd=5e-05 mu=0.85 path=[921 9]

@@ -1,0 +1,26 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+
+Simulink Agentic Toolkit - Installation Check
+===============================================
+
+Prerequisites
+  ✓ MATLAB 24.2.0.2712019 (R2024b)
+  ✓ Simulink installed and licensed
+
+MATLAB Environment
+  ✓ All 9 tool entry points on path
+  ✓ Package resolution correct (+sage, +mbd inside SATK)
+
+MCP Server
+  ✓ matlab-mcp-server.exe found: C:\Users\user\.matlab\agentic-toolkits\bin\matlab-mcp-server.exe
+
+MCP Connectivity
+  ✓ shareMATLABSession available (MATLAB-side MCP components installed)
+  ✓ MATLAB connector running (port 31516)
+
+===============================================
+Result: PASS
+
+c=1 QP=1 cand=0 SW=-7.20 Mz=-43 Fdes=[246 246 -246 -246]
+c=2 QP=1 cand=0 SW=-7.20 Mz=-43 Fdes=[246 246 -246 -246]
+c=3 QP=1 cand=0 SW=-7.20 Mz=-46 Fdes=[246 246 -246 -246]

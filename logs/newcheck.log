@@ -1,0 +1,35 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+
+Simulink Agentic Toolkit - Installation Check
+===============================================
+
+Prerequisites
+  ✓ MATLAB 24.2.0.2712019 (R2024b)
+  ✓ Simulink installed and licensed
+
+MATLAB Environment
+  ✓ All 9 tool entry points on path
+  ✓ Package resolution correct (+sage, +mbd inside SATK)
+
+MCP Server
+  ✓ matlab-mcp-server.exe found: C:\Users\user\.matlab\agentic-toolkits\bin\matlab-mcp-server.exe
+
+MCP Connectivity
+  ✓ shareMATLABSession available (MATLAB-side MCP components installed)
+  ✓ MATLAB connector running (port 31516)
+
+===============================================
+Result: PASS
+
+L 16 (C 9-16): 变量的大小似乎在每个循环迭代都会更改。请考虑进行预分配以提升速度。
+L 18 (C 9-16): 变量的大小似乎在每个循环迭代都会更改。请考虑进行预分配以提升速度。
+L 19 (C 9-16): 变量的大小似乎在每个循环迭代都会更改。请考虑进行预分配以提升速度。
+L 20 (C 9-16): 变量的大小似乎在每个循环迭代都会更改。请考虑进行预分配以提升速度。
+L 21 (C 9-16): 变量的大小似乎在每个循环迭代都会更改。请考虑进行预分配以提升速度。
+L 23 (C 13-20): 变量的大小似乎在每个循环迭代都会更改。请考虑进行预分配以提升速度。
+L 25 (C 13-20): 变量的大小似乎在每个循环迭代都会更改。请考虑进行预分配以提升速度。
+
+    {'mu_grid'}    {'V_grid_kmh'}    {'delta_grid_deg'}    {'betaL'}    {'betaR'}    {'ok'}
+
+init: n_active=190, controller=3, slack_w=[500 500 500 400]
+rho test: 0.000
