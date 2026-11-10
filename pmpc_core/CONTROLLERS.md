@@ -534,3 +534,31 @@ beta 1.82°、QP 100%。90 三车都丢路径，100 三车接近且都失败。
 `summary_ey.png`、`three_controllers_85.png`、
 `three_controllers_90.png`、`three_controllers_100.png`、
 `metrics_speed_sweep.csv`。
+
+
+## 18. DLC mu=0.4 速度扫描（初速=目标速度）
+
+CarSim DLC 路面从 0.5 改为 0.4（split-mu friction map 的
+`#DiagramTwo0` 表和 `Run_all.par` 内联表都改为 0.4），并确认 `Vx` 从目标
+车速开始。扫描 60/70/75/80 km/h：
+
+| 初速=目标 | MPC ey max/RMS | ZENG ey max/RMS | Proposed ey max/RMS |
+|---:|---:|---:|---:|
+| 60 | 0.600 / 0.180 | 0.594 / 0.174 | **0.558 / 0.169** |
+| **70** | **0.750 / 0.345** | **0.814 / 0.367** | **0.631 / 0.252** |
+| 75 | 2.463 / 1.095 | 1.163 / 0.548 | **0.743 / 0.293** |
+| 80 | 6.031 / 2.585 | **0.906 / 0.398** | 1.010 / 0.349 |
+
+全部 QP 100%。
+
+**推荐 70 km/h 作为 mu=0.4 主对比**：这是三车都还受控的最高速度，
+Proposed 相对 MPC `ey max -15.9%`、`ey RMS -27.0%`、`SW -79.8%`、
+`beta -23.8%`、`Md -10.6%`；相对 ZENG `ey max -22.5%`、`ey RMS -31.3%`。
+75 时 MPC 已饱和（2.46 m、720°），只能作为边界工况；80 时 MPC 失稳
+（6.03 m），ZENG 的 max 略好于 Proposed，但 Proposed 的 RMS/SW/beta 更好。
+60 太容易，三车差距小，且 10 s 只跑了 160 m，未到完整路径终点。
+
+图/指标：`PMPC_Results/DLC_mu0.4_speed_compare/`：
+`summary_ey.png`、`three_controllers_70.png`、
+`three_controllers_75.png`、`three_controllers_80.png`、
+`metrics_speed_sweep.csv`。

@@ -1,0 +1,86 @@
+# DLC mu=0.4 speed sweep — 2026-11-10
+
+CarSim dataset: `Run_4d669775` (`DLC80_mu0.5_PMPC`, name kept from the old
+setup; the actual DLC friction is now **0.4**).
+
+## How mu=0.4 was set
+
+- Split-mu friction map `RdMu_c76da67c-...par`, table `#DiagramTwo0`:
+  changed the test-pad value from 0.5 to 0.4; name changed to
+  `Mu = 0.4 Test Pad; 0.85 Everywhere Else`.
+- The inlined friction table in
+  `Results\Run_4d669775\Run_all.par` was also changed to 0.4.
+- Initial speed was set equal to target by setting the CarSim
+  procedure/run-control `*SPEED` and confirming `SV_VXS` in the run par;
+  `Vx` logs start at the target speed.
+- Original 0.5 friction par backup:
+  `C:\Users\user\AppData\Local\Temp\opencode\jt_run\RdMu_c76_mu05_backup.par`.
+
+## Sweep results (ey max / RMS, m)
+
+| Initial = target | MPC | ZENG | Proposed | Note |
+|---:|---:|---:|---:|---|
+| 60 | 0.600 / 0.180 | 0.594 / 0.174 | **0.558 / 0.169** | easy; 10 s covers 160 m, not full path |
+| **70** | **0.750 / 0.345** | **0.814 / 0.367** | **0.631 / 0.252** | all controlled; Proposed best |
+| 75 | 2.463 / 1.095 | 1.163 / 0.548 | **0.743 / 0.293** | MPC saturates; boundary |
+| 80 | 6.031 / 2.585 | **0.906 / 0.398** | 1.010 / 0.349 | MPC fails; ZENG max best, Proposed RMS/SW/beta best |
+
+All QP success rates 100%.
+
+## Recommended: 70 km/h
+
+70 km/h is the highest speed where all three controllers remain controlled.
+Full metrics:
+
+| Controller | ey max | ey RMS | ey final | SW max | Mz max | Md max | beta max | yaw max | LTR max | QP |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MPC | 0.750 | 0.345 | 0.051 | 429.7 | 2768 | 1553 | 2.27 | 15.2 | 0.41 | 100% |
+| ZENG | 0.814 | 0.367 | 0.175 | 525.0 | 2906 | 1626 | 2.47 | 16.2 | 0.44 | 100% |
+| **Proposed** | **0.631** | **0.252** | **0.027** | **87.0** | 2876 | **1389** | **1.73** | **13.8** | **0.39** | **100%** |
+
+Relative to MPC:
+
+- `ey max -15.9%`
+- `ey RMS -27.0%`
+- `SW max -79.8%`
+- `beta max -23.8%`
+- `Md max -10.6%`
+- `LTR -4.9%`
+- `Mz max` +3.9% (slightly worse)
+
+Relative to ZENG:
+
+- `ey max -22.5%`
+- `ey RMS -31.3%`
+- `SW max -83.4%`
+- `beta max -30.0%`
+- `Md max -14.6%`
+- `yaw max -14.8%`
+- `LTR -11.4%`
+
+## Why 70, not 75/80/60
+
+- 60: all easy, little discrimination; 10 s run does not reach the full path.
+- 70: all controlled; Proposed clearly best. **Recommended main comparison.**
+- 75: MPC already saturates (`2.46 m`, SW 720°); boundary case.
+- 80: MPC fails (`6.03 m`); ZENG max `0.906` is slightly better than
+  Proposed `1.010`, while Proposed is better on RMS/SW/beta. Not a clean win.
+
+## Proposed parameters used
+
+- DLC `Q_epsi=5`
+- `Wb=10`
+- `w2_max=w1_max=2e3`
+- `w2_gain=w1_gain=3`
+- `R2=200`
+
+## Files
+
+- `PMPC_Results/DLC_mu0.4_speed_compare/summary_ey.png/.pdf`
+- `three_controllers_70.png/.pdf` (recommended)
+- `three_controllers_75.png/.pdf`
+- `three_controllers_80.png/.pdf`
+- `three_controllers_60.png/.pdf`
+- `metrics_speed_sweep.csv`
+- Documentation: `pmpc_core/CONTROLLERS.md` section 18,
+  `PMPC_Results/DLC_mu0.4_speed_compare/README.md`
