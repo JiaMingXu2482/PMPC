@@ -11,20 +11,6 @@ M.Np = 10;                      % 预测步数
 M.Nc = 5;                       % 控制步数
 M.Ts_exec = 0.01;               % 执行周期
 
-% AFS：delta_d 为驾驶员前轮转角，u(1)=Delta delta 为附加角；
-M.afs_on = true; %DLC & Jturn
-% M.afs_on = false; %FishHook
-% 控制器：1=MPC（固定权重），2=ZENG（稳定性权重调度），3=Proposed（余量分层松弛）
-M.controller = 3;
-if nargin>=2 && ~isempty(controller_override)
-    M.controller = controller_override;
-end
-
-% 三种控制器共用的代价权重（从 0.1 量级起整定）
-M.Q_norm  = [0; 0; 5; 0; 50; 5; 0];   % [Vy;r;phi;p;ey;epsi;Md]
-M.R_norm  = [0.1; 500; 0.1];          % [dDelta;dMz;dMd]
-M.slack_w = [5; 5; 5; 5];             % [r;alpha;LTR;env]
-
 %% 2. 制动系统响应参数
 M.tau_mz = 0.2;                 % 横摆力矩全量程建立时间 [s]
 
@@ -56,14 +42,14 @@ V.g = 9.80665;                  % 重力加速度 [m/s^2]
 V.h_RC_f = 0.09372;             % 前轴侧倾中心高度 [m]
 V.h_RC_r = 0.09050;             % 后轴侧倾中心高度 [m]
 V.h_RC = (V.lr/V.L)*V.h_RC_f +...
-         (V.lf/V.L)*V.h_RC_r;   % 侧倾中心到地面高度 [m]
+        (V.lf/V.L)*V.h_RC_r;   % 侧倾中心到地面高度 [m]
 V.h_S2R = V.h_SL - V.h_RC;      % 簧载质心到侧倾中心距离 [m]
 
 % ==================== 转向系统参数 ====================
 V.isw = 18.57;                  % 转向传动比
 V.delta_sw_max = deg2rad(720);  % 最大方向盘转角 [rad]
 V.delta_sw_rate_max = ...
-                 deg2rad(720);  % 最大方向盘角速度 [rad/s]
+                deg2rad(540);  % 最大方向盘角速度 [rad/s]
 
 % ==================== 悬架弹簧参数 ====================
 V.kf = 82e3;                    % 前轴弹簧刚度 [N/m]
@@ -78,7 +64,7 @@ V.rd_r = 0.754;                 % 后轴减振器运动比
 % 四角顺序：[L1;L2;R1;R2]
 % 小角度、簧下侧倾变化忽略时，压缩速度对车身侧倾角速度的几何系数 [m/rad]。
 V.kv_roll = .5*[-V.rd_f*V.tf;-V.rd_r*V.tr; ...
-                 V.rd_f*V.tf; V.rd_r*V.tr];
+                V.rd_f*V.tf; V.rd_r*V.tr];
 
 % ==================== 辅助侧倾刚度 ====================
 V.Kaux_f = 384 * 180 / pi;      % 前轴 [N*m/rad]
@@ -99,7 +85,7 @@ Ktr = 0.5 * V.kw * V.tr^2;
 
 % ==================== 整车等效侧倾刚度 ====================
 V.Kt = 1/(1/Kf_susp + 1/Ktf) + ...
-       1/(1/Kr_susp + 1/Ktr);
+        1/(1/Kr_susp + 1/Ktr);
 
 V.k_cs = 0;                     % 转向柔性默认关闭 [rad/N]
 V.CafHat = -57772.51 * 2;       % 前轴名义侧偏刚度 [N/rad]
@@ -109,6 +95,28 @@ V.CbarF = 0;
 V.CbarR = 0;
 V.CafTan = 0;
 V.CarTan = 0;
+
+% AFS：delta_d 为驾驶员前轮转角，u(1)=Delta delta 为附加角；
+M.afs_on = true;                %DLC & Jturn
+% M.afs_on = false;             %FishHook
+
+% 控制器：1=MPC（固定权重），2=ZENG 2025（稳定性权重调度），3=Proposed（余量分层松弛）
+M.controller = 1;               % 默认 MPC；Proposed 需显式传 3
+if nargin>=2 && ~isempty(controller_override)
+    M.controller = controller_override;
+end
+
+% 三种控制器共用的代价权重（从 0.1 量级起整定）
+M.Q_norm  = [0; 0; 5; 0; 50; 5; 0];   % [Vy;r;phi;p;ey;epsi;Md]
+M.R_norm  = [80; 500; 0.1];           % [dDelta;dMz;dMd]
+M.slack_w = [5; 5; 5; 5];             % [r;alpha;LTR;env]
+M.rho_I0 = 0.7;                       % ZENG rho 起始阈值（论文 0.7）
+M.rho_dI = 0.3;                       % ZENG rho 过渡宽度（论文 0.3）
+M.Wb = 100;                           % Proposed: DB 激活量 gamma 的线性罚
+M.w2_max = 2e3;                       % Proposed: 稳定性松弛权重上限（整定）
+M.w2_gain = 3;                        % Proposed: 稳定性松弛权重增益
+M.w1_max = 2e3;                       % Proposed: 道路/侧倾松弛权重上限（整定）
+M.w1_gain = 3;                        % Proposed: 道路/侧倾松弛权重增益
 
 %% 5. 参考轨迹
 % 仅决定使用哪条参考路径，不改变 PMPC 算法。
@@ -120,11 +128,14 @@ end
 switch maneuver
 
     case 1                       % DLC（60/70/80 km/h 对比，原 tanh 路径）
-        Road.mu = 0.5;           % 与当前 CarSim DLC 路面（mu=0.5）对齐
+        Road.mu = 0.5;           % 当前 CarSim DLC 路面：mu=0.5
         % DLC 专用权重
         M.Q_norm  = [0; 0; 10; 0; 100; 20; 0];
-        M.R_norm  = [10; 200; 0.1];
+        M.R_norm  = [100; 200; 0.1];   % 60 km/h: R1=30; 80 km/h 建议改回 10
         M.slack_w = [1e4; 1e4; 1e4; 1e4];
+        if M.controller==3
+            M.Q_norm(6) = 10;          % Proposed DLC 整定：epsi 权重 20 -> 10
+        end
 
         % 保留原拟合曲线（用户确认该路径在原工程中可行）
         X = (0:0.5:200)';

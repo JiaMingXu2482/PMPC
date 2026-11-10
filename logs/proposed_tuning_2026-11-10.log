@@ -1,0 +1,118 @@
+# Proposed controller tuning log
+
+Date: 2026-11-10
+Branch: jturn-current
+Repository: JiaMingXu2482/PMPC
+
+## Condition
+
+- CarSim dataset: `Run_4d669775-9558-4a06-a4ef-d6a3994def34`
+- Run control: `DLC80_mu0.5_PMPC`, vehicle `i_i`
+- Initial speed: 80 km/h, target 80 km/h
+- Road: DLC mu=0.5 split-friction test pad (0.5 inside the DLC area)
+- TSTOP: 10 s
+- Reference: original tanh DLC path in `pmpc_init` case 1
+
+## Controller parameters
+
+| Controller | Q_epsi | R2 | slack / caps | Other |
+|---|---:|---:|---|---|
+| MPC-NPC | 20 | 200 | `[0.5e4;0.5e4;1e4;1e4]` | fixed weights |
+| ZENG | 10 | 200 | `slack=1e4` | `rho_I0=1.0`, `rho_dI=0.3` |
+| Proposed | 10 | 200 | `w2_max=w1_max=2e3` | `Wb=100`, `w2_gain=w1_gain=3` |
+
+The MPC and ZENG parameters are the version in
+`PMPC_Results/DLC_mu0.5_80_compare/zeng_tuned_vs_mpc.png`.
+
+## Proposed tuning sweep
+
+Fixed: `Q_epsi=10`, `Wb=100`, `gain=3`, `R2=200`.
+
+| w2_max / w1_max | ey max | ey RMS | SW max | QP |
+|---|---:|---:|---:|---:|
+| 1e6 / 1e5 (original) | 0.792 | 0.379 | 358.1 deg | 99.5% |
+| 1e4 / 1e4 | 0.695 | 0.326 | 362.6 deg | 100% |
+| **2e3 / 2e3 (selected)** | **0.674** | **0.272** | **88.6 deg** | **100%** |
+| 1e3 / 1e3 | 0.698 | 0.268 | 87.2 deg | 100% |
+| 500 / 500 | 0.731 | 0.270 | 90.6 deg | 100% |
+
+The original caps allowed the online weights to reach `1e6/1e5` near
+`margin -> 0`, causing QP active-set chattering, large steering, `Mz`
+oscillation, and occasional QP failure. Capping the weights at `2e3`
+regularized the QP and let the controller allocate yaw/roll effort to
+`Mz/Md` instead of steering.
+
+`Wb` (1/10/100) and `w2_gain/w1_gain` (1/3/5) had little effect once the
+caps were at `1e3-2e3`; the cap is the dominant knob.
+
+## Final three-controller result
+
+| Controller | ey max | ey RMS | ey final | SW max | Mz max | Md max | beta max | yaw max | LTR max | QP |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MPC-NPC | 0.805 | 0.363 | 0.097 | 396.1 | 2778 | 1325 | 1.72 | 13.1 | 0.48 | 100% |
+| ZENG | 0.689 | 0.316 | 0.084 | 320.5 | 2815 | 1710 | 1.79 | 14.9 | 0.48 | 100% |
+| **Proposed tuned** | **0.674** | **0.272** | **0.031** | **88.6** | **2729** | **1152** | **1.40** | 13.1 | **0.44** | **100%** |
+
+All quantities except QP are lower-is-better. SW/Mz/Md units: deg and N*m;
+beta: deg; yaw: deg/s.
+
+## Improvement of Proposed vs baselines
+
+Formula: `(baseline - proposed) / baseline * 100%`; positive is better.
+
+| Metric | vs MPC | vs ZENG |
+|---|---:|---:|
+| ey max | +16.27% | +2.18% |
+| ey RMS | +25.07% | +13.92% |
+| SW max | +77.63% | +72.36% |
+| Mz max | +1.76% | +3.06% |
+| Md max | +13.06% | +32.63% |
+| beta max | +18.60% | +21.79% |
+| yaw max | 0.00% | +12.08% |
+| LTR max | +8.33% | +8.33% |
+| QP | equal (100%) | equal (100%) |
+
+Before tuning, Proposed was `ey 1.556/0.676`, `SW 500.7 deg`, `QP 98.9%`.
+After tuning it is `ey 0.674/0.272`, `SW 88.6 deg`, `QP 100%`.
+
+## Verification and reproduction
+
+The tuned values are now defaults in `pmpc_core/pmpc_init.m`:
+
+```matlab
+M.Wb = 100;
+M.w2_max = 2e3;
+M.w2_gain = 3;
+M.w1_max = 2e3;
+M.w1_gain = 3;
+% DLC + controller 3
+M.Q_norm(6) = 10;
+M.R_norm(2) = 200;
+```
+
+Default check:
+
+```matlab
+dlc_one(1e4,10,'prop_default_check',3,80)
+```
+
+Result: `ey max 0.674`, `ey RMS 0.272`, `QP 100%` — identical to the
+selected sweep point `prop_cap2k`.
+
+## Files
+
+- Final figure: `PMPC_Results/DLC_mu0.5_80_compare/prop_tuned_vs_mpc_zeng.png/.pdf`
+- Before-tuning figure: `PMPC_Results/DLC_mu0.5_80_compare/three_controllers_img_params.png/.pdf`
+- Metrics: `PMPC_Results/DLC_mu0.5_80_compare/prop_tuned_vs_mpc_zeng_metrics.csv`
+- Documentation: `pmpc_core/CONTROLLERS.md` section 13
+
+## Notes
+
+- Proposed uses only about 4.6 deg front-wheel steering (`Steer_L1`) and
+  performs the turn mainly with `Mz/Md`; `LTR` is lower (0.44 vs 0.48), so
+  this is not achieved by relaxing the roll constraint.
+- The ZENG 14.4% max / 12.9% RMS result is relative to the MPC baseline
+  with `Q_epsi=20`. If MPC is also retuned to `Q_epsi=10`, MPC reaches
+  `0.650/0.311`; this caveat must be stated in the paper.
+- `2e3/2e3` is tuned at DLC 80 km/h, mu=0.5. Recheck before using the same
+  Proposed caps on J-turn/Slalom or other speeds.

@@ -1,6 +1,8 @@
-function rho = func_ZengRho(Vx, mu, delta_f, beta, r, g)
+function rho = func_ZengRho(Vx, mu, delta_f, beta, r, g, I0, dI)
 %FUNC_ZENGRHO  Zeng 2025 稳定指标与权重调度因子 rho。
 %#codegen
+if nargin < 7, I0 = 0.7; end
+if nargin < 8, dI = 0.3; end
 %  Zeng, Y. et al., "Integrated Motion Control of Interaction Safety,
 %  Stability, and Path-Tracking for Front-and-Rear-Independently-Driven
 %  Electric Vehicles," IEEE Trans. Transportation Electrification, 2025.
@@ -34,12 +36,12 @@ else
 end
 
 I_ind = max(I_beta, I_r);
-if I_ind <= 0.7
+if I_ind <= I0
     rho = 0;
-elseif I_ind >= 1.0
+elseif I_ind >= I0 + dI
     rho = 1;
 else
-    rho = 0.5*(1 - cos(pi*(I_ind - 0.7)/0.3));
+    rho = 0.5*(1 - cos(pi*(I_ind - I0)/dI));
 end
 end
 

@@ -224,7 +224,7 @@ end
 % 控制增量按固定参考尺度归一化；不再使用 c.duMax 作为分母。
 R=kron(eye(K),diag(P.M.R_norm./[DFYF_REF;MFX_REF;MD_REF].^2));
 Wb=0;                          % 只有 Proposed 对 DB 激活量定价
-if P.M.controller==3, Wb=100; end   % 待调
+if P.M.controller==3, Wb=P.M.Wb; end
 rho_g=1e-4*Wb;
 % 标准目标为 0.5*z'*H*z+f'*z；小对角项用于数值正定化。
 H=zeros(n); f=zeros(n,1);
@@ -305,14 +305,16 @@ residual=A*[candidate;0;0;0;0;gamma]-b;
 margin=[-max(residual(6*K+4*N+1:6*K+10*N));-max(residual(6*K+(1:4*N)))];
 F=max(.5*candidate'*H(1:nd,1:nd)*candidate+f(1:nd)'*candidate+e'*Q*e,0) ...
     +Wb*gamma+rho_g*gamma^2;
-% 松弛权重：MPC 固定；ZENG 固定但横摆乘 rho；Proposed 按余量在线。
+% 松弛权重：MPC 固定；ZENG 固定但稳定性松弛乘 rho；Proposed 按余量在线。
 if P.M.controller==3
-    w2=1e6;
-    if margin(2)>0, w2=min(max(3*F/margin(2),1),1e6); end
-    w1=1e5;
+    w2=P.M.w2_max;
+    if margin(2)>0
+        w2=min(max(P.M.w2_gain*F/margin(2),1),P.M.w2_max);
+    end
+    w1=P.M.w1_max;
     if margin(1)>0
         slack=max(-margin(2),0);
-        w1=min(max(3*(F+w2*slack+rho_g*slack^2)/margin(1),1),1e5);
+        w1=min(max(P.M.w1_gain*(F+w2*slack+rho_g*slack^2)/margin(1),1),P.M.w1_max);
     end
     wr=w2; wa=w2; wl=w1; we=w1;
 else
@@ -320,8 +322,11 @@ else
     wl=P.M.slack_w(3); we=P.M.slack_w(4);
     if P.M.controller==2
         rho_z=func_ZengRho(c.v,P.vehicle.mu,c.delta, ...
-            atan2(c.zeta(1),max(c.v,0.5)),c.zeta(2),P.vehicle.g);
-        wr=wr*max(rho_z,0.1);
+            atan2(c.zeta(1),max(c.v,0.5)),c.zeta(2),P.vehicle.g, ...
+            P.M.rho_I0,P.M.rho_dI);
+        % Zeng 2025: rho 乘在稳定性松弛权重上
+        wr=wr*rho_z;
+        wa=wa*rho_z;
     end
 end
 f(nd+(1:4))=[wr;wa;wl;we];

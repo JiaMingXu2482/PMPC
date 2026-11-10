@@ -6,7 +6,7 @@
 M.controller = 3;   % 1=MPC, 2=ZENG, 3=Proposed
 ```
 
-`pmpc_init.m` 里默认是 3。做对比时也可以直接传第二个参数：
+`pmpc_init.m` 里默认是 1（MPC）。做对比时也可以直接传第二个参数：
 
 ```matlab
 [params,Reftraj,state0,meas0] = pmpc_init(3,1);   % J-turn + MPC
@@ -19,7 +19,7 @@ M.controller = 3;   % 1=MPC, 2=ZENG, 3=Proposed
 ## 2. 控制器层字段
 
 ```matlab
-M.controller = 3;
+M.controller = 3;   % 1=MPC, 2=ZENG, 3=Proposed
 M.Q_norm     = [0;0;5;0;50;5;0];   % [Vy;r;phi;p;ey;epsi;Md]
 M.R_norm     = [0.1;500;0.1];      % [dDelta;dMz;dMd]
 M.slack_w    = [5;5;5;5];          % [r;alpha;LTR;env]
@@ -29,7 +29,7 @@ M.slack_w    = [5;5;5;5];          % [r;alpha;LTR;env]
 
 | 工况 | Q_norm | R_norm | slack_w | 目标车速 |
 |---|---|---|---|---|
-| DLC (mu=0.5) | `[0;0;10;0;100;20;0]` | `[0.1;200;0.1]` | `[1e4;1e4;1e4;1e4]` | 60/70/80 km/h 对比 |
+| DLC (mu=0.5) | `[0;0;10;0;100;20;0]` | `[100;200;0.1]` | `[1e4;1e4;1e4;1e4]` | 60/70/80 km/h 对比 |
 | Slalom | 暂用 J-turn | 暂用 J-turn | 暂用 J-turn | 待定 |
 | J-turn (mu=0.85) | `[0;0;5;0;50;5;0]` | `[0.1;500;0.1]` | `[5;5;5;5]` | 70 km/h |
 
@@ -47,9 +47,8 @@ DLC 使用原 tanh 路径。该路径峰值曲率约 `0.036 1/m`：
 
 | 行为 | MPC | ZENG | Proposed |
 |---|---|---|---|
-| 松弛权重 | `M.slack_w` 固定 | `M.slack_w` 固定，`w_r *= rho` | 余量在线算 `w1/w2` |
+| 松弛权重 | `M.slack_w` 固定 | `M.slack_w` 固定，`w_r`、`w_alpha` 都乘 `rho` | 余量在线算 `w1/w2` |
 | `gamma` | 固定 1 | 固定 1 | 自由，`W_b=100`（待调） |
-| Zeng 稳定域 | 用 | 用 | 用 |
 | 绝对 Mz 二次罚 | 无 | 无 | 无 |
 | 约束 | 全软 | 全软 | 全软 |
 
@@ -101,21 +100,26 @@ alpha_r_sat = min(atan(mu*Fzr_st/Cr_cur), atan(3*mu*Fzr_st/abs(CarHat)));
 Gsh = [r_max; r_max; alpha_r_sat; alpha_r_sat];
 ```
 
-## 6. ZENG 的 rho
+## 6. ZENG 2025 的 rho
 
-`func_ZengRho.m` 实现 Zeng 2025 Eq.(12)-(14)：
+`func_ZengRho.m` 实现 Zeng 2025 Eq.(12)-(14)：先查 SUV 鞍点库得到
+`beta_saddle_l/r`，再算 `I_beta`、`I_r`，取 `I_ind=max(I_beta,I_r)`：
 
 ```text
-I_r   = local_idx(r, -mu*g/Vx, mu*g/Vx)
-I_beta= local_idx(beta, bL, bR)     % ZengSaddleDB_SUV.mat
-I_ind = max(I_beta, I_r)
-rho   = 0 / 0.5*(1-cos(pi*(I_ind-0.7)/0.3)) / 1
+rho = 0                              , I_ind <= I0
+rho = 0.5*(1-cos(pi*(I_ind-I0)/dI))  , I0 < I_ind < I0+dI
+rho = 1                              , I_ind >= I0+dI
 ```
 
-只有 `w_r` 乘 `rho`，`w_alpha` 不调度。
+当前 `I0=0.7`、`dI=0.3`。`rho` 乘在稳定性松弛权重上：
 
-数据库文件：`pmpc_core/ZengSaddleDB_SUV.mat`（从 `Thesis\MR_NLCSNN\PMPC\data` 复制）。
+- `w_r     = w_r0     * rho`
+- `w_alpha = w_alpha0 * rho`
 
+稳定时 `rho=0`，放松稳定性、优先跟踪；接近/超过稳定域时
+`rho→1`，收紧稳定性。LTR/道路松弛不乘 `rho`。
+
+鞍点库 `ZengSaddleDB_SUV.mat` 与 `func_ZengRho.m` 为控制器 2 的正式实现。
 ## 7. 改完必须重新初始化
 
 4 个松弛改变了 QP 维数，`state0.active_main` 长度从
@@ -130,12 +134,15 @@ rho   = 0 / 0.5*(1-cos(pi*(I_ind-0.7)/0.3)) / 1
 ## 8. 当前状态
 
 - DLC 已恢复为原 tanh 路径，没有改成 60 m 正弦路径；
-- DLC 权重定为 `Q=[0;0;10;0;100;20;0]`、`R=[0.1;200;0.1]`、`slack_w=[1e4;1e4;1e4;1e4]`；
+- DLC 权重定为 `Q=[0;0;10;0;100;20;0]`、`R=[100;200;0.1]`、`slack_w=[1e4;1e4;1e4;1e4]`；
 - MPC/ZENG 已在 60/70/80 km/h 下对比，Proposed 暂不参与；
 - Slalom 权重暂用 J-turn，后续单独整定；
 - Proposed 的 `W_b` 目前固定 100，写在 `build_qp` 里，后续再调。
 
 ## 9. DLC MPC vs ZENG（mu=0.5，10 s，按同一 station 截取）
+
+**注意：本节表格是旧 ZENG 版本（只乘 `w_r`，且有 `rho_min=0.1`）的历史结果；
+当前代码已改为 `w_r`/`w_alpha` 都乘 `rho`、无下限，数值会变。**
 
 **2026-11-08 修正**：之前表里的 `ey max = 1.9/6.9/7.1 m` 是
 `Cf_floor = 0.2` 的结果。轮胎饱和时预测侧偏刚度的下限取得太高，
@@ -263,22 +270,20 @@ DLC 下 ZENG 优势不明显的原因之一。
 整定后：
 
 ```matlab
-M.R_norm = [10; 200; 0.1];          % DLC
+M.R_norm = [30; 200; 0.1];          % 60 km/h：R1=30；80 km/h 建议改回 10
 V.delta_sw_rate_max = deg2rad(540); % 最大方向盘角速度
 ```
 
-80 km/h、mu=0.9、MPC 的结果：
+60 km/h 下 R1 的对比：
 
-| 指标 | R1=0.1, 720°/s | R1=10, 540°/s |
-|---|---:|---:|
-| ey max / RMS | 0.490 / 0.151 | 0.495 / 0.172 |
-| dSW max | 720°/s | 480°/s |
-| dSW RMS（1.5–6.5 s） | 272°/s | 180°/s |
-| 高频残差 RMS | 1.58° | 0.44° |
-| 换向次数 | 56 | 17 |
+| R1 | ey max / RMS | dSW RMS | 高频残差 RMS | 换向次数 |
+|---:|---|---:|---:|---:|
+| 10 | 0.507 / 0.153 | 178°/s | 0.90° | 39 |
+| 20 | 0.497 / 0.145 | 139°/s | 0.82° | 16 |
+| **30** | **0.504 / 0.150** | **125°/s** | **0.36°** | **11** |
 
-60/70/80 km/h 的 `ey max` 分别为 `0.304/0.412/0.495 m`，QP 100%。
-如果希望跟踪再紧一点，可把 R1 降到 5；如果还嫌抖，可升到 20–30。
+80 km/h 下 R1=30 会把 `ey max` 推到 2.14 m（R1=10 是 1.10 m），
+所以 80 km/h 工况建议保持 R1=10。
 
 ## 12. 方向盘抖动与转向速率
 
@@ -317,3 +322,40 @@ R1=10 把高频抖动从 1.58° 降到 0.41°（-74%），`ey max` 基本不变�
 DLC 的 `M.R_norm(1)` 从 0.1 提到 10，进一步抑制 QP 在轮胎饱和附近的高频切换。
 80 km/h、mu=0.9 下：`ey max 0.495 m`，方向盘高频残差从 1.58° 降到 0.44°，
 换向次数从 56 降到 17。
+
+
+## 13. Proposed 整定（DLC 80 km/h，mu=0.5）
+
+原始 Proposed 的在线权重上限是 `w2_max=1e6`、`w1_max=1e5`。在
+`margin→0` 的极限附近，`w2=3F/margin` 会冲到上限，QP 活动集在相邻拍
+切换，表现为 `Mz` 抖动、`SW` 过大，`ey max=1.556 m`、`QP=98.9%`。
+
+整定后（已写入 `pmpc_init.m` 默认值）：
+
+```matlab
+M.Wb      = 100;
+M.w2_max  = 2e3;
+M.w2_gain = 3;
+M.w1_max  = 2e3;
+M.w1_gain = 3;
+% DLC + controller 3
+M.Q_norm(6) = 10;      % epsi 权重 20 -> 10
+M.R_norm(2) = 200;
+```
+
+结果（同一 CarSim 数据 `Run_4d669775`，DLC80_mu0.5，80 km/h）：
+
+| 控制器 | ey max | ey RMS | SW max | Mz max | Md max | beta max | yaw max | LTR max | QP |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MPC-NPC (`Q_epsi=20`) | 0.805 | 0.363 | 396.1° | 2778 | 1325 | 1.72° | 13.1°/s | 0.48 | 100% |
+| ZENG (`Q_epsi=10`, `I0=1.0`) | 0.689 | 0.316 | 320.5° | 2815 | 1710 | 1.79° | 14.9°/s | 0.48 | 100% |
+| **Proposed 整定** | **0.674** | **0.272** | **88.6°** | 2729 | **1152** | **1.40°** | 13.1°/s | **0.44** | **100%** |
+
+相对 MPC：`ey max -16.3%`、`ey RMS -25.1%`、`SW max -77.6%`、
+`Md max -13.1%`、`beta max -18.6%`，QP 从 98.9% 恢复到 100%。
+
+关键现象：Proposed 整定后用很小的前轮转角（`Steer_L1 max ≈ 4.6°`）
+配合 `Mz/Md` 完成 DLC，`LTR` 反而更低（0.44 vs 0.48），说明不是靠
+放松侧倾约束换跟踪，而是把执行器从方向盘转移到横摆力矩。
+
+结果文件：`PMPC_Results/DLC_mu0.5_80_compare/prop_tuned_vs_mpc_zeng.png`。
