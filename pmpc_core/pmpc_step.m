@@ -26,7 +26,13 @@ Np=coder.const((numel(state.active_main)-4*numel(state.plan)-10)/12);
 % 无效测量或参考路径时输出 NaN，避免 XY Graph 保留上一拍的旧路径。
 Xlocal=nan(Np+1,1);
 Ylocal=nan(Np+1,1);
-SW=rad2deg(min(max(params.vehicle.isw*(delta_d+state.u_prev(1)),-deg2rad(720)),deg2rad(720)));
+% 转向柔度前馈：delta_actual = delta_cmd + cs_fy*Fyf
+% 前馈项按方向盘速率上限相对上一拍 SW 做速率限制。
+Fyf_ff=sum(meas.Fy([1,3]));
+SW_raw=rad2deg(min(max(params.vehicle.isw*(delta_d+state.u_prev(1) ...
+    - params.vehicle.cs_fy*Fyf_ff),-deg2rad(720)),deg2rad(720)));
+max_step=rad2deg(params.vehicle.delta_sw_rate_max*params.M.Ts_exec);
+SW=state.sw_prev+min(max(SW_raw-state.sw_prev,-max_step),max_step);
 Tb=state.brake_prev;
 % 两路必须同尺寸；各自用编译期常量索引，避免旧4x1特化时引用第2列。
 assert(size(Flo,1)==4 && isequal(size(Flo),size(Fhi)), ...
@@ -148,7 +154,12 @@ function [SW,Fdes,Tb,s]=allocate_actuators(u,c,P,s)
 % u(1) 是 AFS 附加角 Delta delta；本拍总前轮转角取 c.delta_d+u(1)。
 V=P.vehicle;
 delta_cmd=c.delta_d+u(1);
-SW=rad2deg(min(max(V.isw*delta_cmd,-deg2rad(720)),deg2rad(720)));
+% 转向柔度前馈 + 方向盘速率限制（相对上一拍命令）
+SW_raw=rad2deg(min(max(V.isw*(delta_cmd - V.cs_fy*c.Fyf), ...
+    -deg2rad(720)),deg2rad(720)));
+max_step=rad2deg(V.delta_sw_rate_max*P.M.Ts_exec);
+SW=s.sw_prev+min(max(SW_raw-s.sw_prev,-max_step),max_step);
+s.sw_prev=SW;
 % 制动映射 Mz=B*T，四列为 L1/L2/R1/R2；T 是非负轮端制动力矩。
 B=[V.tf/2*cos(delta_cmd)-V.lf*sin(delta_cmd),V.tr/2, ...
    -V.tf/2*cos(delta_cmd)-V.lf*sin(delta_cmd),-V.tr/2]/V.rt;

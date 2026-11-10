@@ -23,14 +23,14 @@ M.preview_alpha = 1;          % 当前/预瞄力区间混合：0 关闭，0.5 �
 M.bounds_keep = 1.0;            % 区间半宽保留比例；1 不另加未经标定的收缩
 
 %% 4. 车辆参数
-V.m = 1860;                     % 整车质量 [kg]
+V.m = 1830;                     % 整车质量 [kg]（CarSim eclass2 M_TL）
 V.ms = 1590;                    % 簧载质量 [kg]
-V.Iz = 3438;                    % 横摆惯量 [kg*m^2]
-V.Ix = 1038;                    % 侧倾惯量 [kg*m^2]
-V.h_TL = 0.671694;              % 整车质心高度 [m]
+V.Iz = 3378.9735;               % 横摆惯量 [kg*m^2]（CarSim IZZ_TL）
+V.Ix = 1070.177651;             % 侧倾惯量 [kg*m^2]（CarSim IXX_TL）
+V.h_TL = 0.6760655738;          % 整车质心高度 [m]（CarSim H_CG_TL）
 V.h_SL = 0.720;                 % 簧载质心高度 [m]
 V.L = 2.95;                     % 轴距 [m]
-V.lf = 1.246613;                % 质心到前轴 [m]
+V.lf = 1.218688525;             % 质心到前轴 [m]（CarSim LX_CG_TL）
 V.lr = V.L - V.lf;              % 质心到后轴 [m]
 V.tf = 1.575; V.tr = 1.575;     % 前、后轮距 [m]
 V.lsf = 1.2; V.lsr = 1.2;       % 弹簧横向间距 [m]
@@ -86,10 +86,16 @@ Ktr = 0.5 * V.kw * V.tr^2;
 % ==================== 整车等效侧倾刚度 ====================
 V.Kt = 1/(1/Kf_susp + 1/Ktf) + ...
         1/(1/Kr_susp + 1/Ktr);
+% 2026-11-10 稳态圆周辨识：Kt=81.5 kN*m/rad，hs=0.62761 m。
+V.Kt = 81.5e3;
 
-V.k_cs = 0;                     % 转向柔性默认关闭 [rad/N]
-V.CafHat = -57772.51 * 2;       % 前轴名义侧偏刚度 [N/rad]
-V.CarHat = -53484.51 * 2;       % 后轴名义侧偏刚度 [N/rad]
+V.k_cs = 0;                     % 轮胎侧偏刚度柔度（旧字段，保持关闭）
+% 转向系统柔度：delta_actual = delta_cmd + cs_fy*Fyf_axle
+V.cs_fy = -3.2e-6;              % [rad/N]，eclass2 CS_FY_COEFFICIENT
+
+% 2026-11-10 轮胎模型幅值校核：kf=1.029、kr=1.044
+V.CafHat = -145.4e3;            % 前轴名义侧偏刚度 [N/rad]
+V.CarHat = -103.8e3;            % 后轴名义侧偏刚度 [N/rad]
 % 在线轮胎切线刚度（当前未做在线更新，保留字段供 Zeng 稳定域使用）
 V.CbarF = 0;
 V.CbarR = 0;
@@ -134,7 +140,8 @@ switch maneuver
         M.R_norm  = [100; 200; 0.1];   % 60 km/h: R1=30; 80 km/h 建议改回 10
         M.slack_w = [1e4; 1e4; 1e4; 1e4];
         if M.controller==3
-            M.Q_norm(6) = 10;          % Proposed DLC 整定：epsi 权重 20 -> 10
+            M.Q_norm(6) = 5;           % Proposed DLC 整定：epsi 权重 20 -> 5
+            M.Wb = 10;                 % Proposed DLC 整定：DB gamma 罚 100 -> 10
         end
 
         % 保留原拟合曲线（用户确认该路径在原工程中可行）
@@ -181,6 +188,10 @@ switch maneuver
         M.Q_norm  = [0; 0; 5; 0; 50; 5; 0];
         M.R_norm  = [0.1; 500; 0.1];
         M.slack_w = [5; 5; 5; 5];
+        if M.controller==3
+            M.w2_max = 1e4;       % Proposed J-turn 整定：比 DLC 的 2e3 更松
+            M.w1_max = 1e4;
+        end
 
         ds = 0.25;
         L1 = 60;                 % 入弯前直线长度 [m]
@@ -288,7 +299,11 @@ Cs = fzs .* polyval(TireF.cq,fzs);
 
 TireF.C0 = max(Cs ./ (1 + TireF.kcs*Cs));
 
+% 2026-11-10 稳态圆周轮胎模型校核：kf=1.029、kr=1.044
+cq0 = TireF.cq;
+TireF.cq = cq0 * 1.029;
 TireR = TireF;                   % 前后轴采用相同基础轮胎标定
+TireR.cq = cq0 * 1.044;
 
 %% 9. 参数结构体
 params = struct('M',M,'vehicle',V,'road',Road, ...
@@ -302,7 +317,7 @@ params = struct('M',M,'vehicle',V,'road',Road, ...
 % 活动集先为四个下界，再为四个上界，均按 L1/L2/R1/R2 排列。
 
 state0 = struct('u_prev',zeros(3,1),'plan',zeros(3*M.Nc,1), ...
-    'path_index',1,'brake_prev',zeros(4,1),'damper_prev',zeros(4,1), ...
+    'path_index',1,'sw_prev',0,'brake_prev',zeros(4,1),'damper_prev',zeros(4,1), ...
     'active_main',false(6*M.Nc+12*M.Np+2*(3*M.Nc+5),1), ...
     'active_brake',false(8,1),'active_damper',false(8,1));
 

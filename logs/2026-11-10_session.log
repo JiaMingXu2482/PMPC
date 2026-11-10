@@ -1,0 +1,109 @@
+# Session log — 2026-11-10
+
+## 1. CarSim dataset cleanup
+
+Deleted 12 redundant/old datasets from the `PMPC` category:
+
+- DLC80_mu0.5_MPC / _ZENG
+- DLC80_mu0.5_DriverModel
+- JT80_R69_mu0.85_MPC / _ZENG
+- Slalom_mu1_MPC / _ZENG
+- Slalom_mu1_DriverModel
+- Slalom_mu1_PMPC_noDelay
+- NLCSNNtest #Road w/Roughness
+- COMB90_DLC05_JT_R70_mu0.5to0.85_MPC / _ZENG
+
+Kept:
+
+- DLC80_mu0.5_PMPC
+- JT80_R69_mu0.85_PMPC
+- Slalom_mu1_PMPC
+- COMB90_DLC05_JT_R70_mu0.5to0.85_PMPC
+- Verify* datasets (circle/step/K&C)
+
+Backup:
+`D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Jturn\CarSim_dataset_backup_2026-11-10\`
+
+## 2. Vehicle model port from Predict_Model_Verify
+
+`pmpc_init.m`:
+
+- `m=1830`, `Ix=1070.177651`, `Iz=3378.9735`
+- `h_TL=0.6760655738`, `lf=1.218688525`, `lr=1.731311475`
+- `Kt=81.5e3`, `CafHat=-145.4e3`, `CarHat=-103.8e3`
+- `cs_fy=-3.2e-6`
+- `TireF.cq *= 1.029`, `TireR.cq *= 1.044`
+- `state0.sw_prev=0`
+
+`prepare_step.m`:
+
+- `Cf/Cr` floor `0.04 -> 0.032`
+- `c.Fyf=sum(Fy([1,3]))`
+
+`pmpc_step.m`:
+
+- steering compliance feed-forward
+- `sw_prev` rate limit at 540 deg/s
+- `stateNext.sw_prev=SW`
+
+Validation: DLC 80 km/h MPC = `0.597/0.236`, exactly the
+Predict_Model_Verify DLC + steer-FF reference.
+
+## 3. Proposed retune on the new model
+
+Final DLC parameters:
+
+```matlab
+Q_epsi = 5;
+Wb = 10;
+w2_max = 2e3;
+w1_max = 2e3;
+w2_gain = 3;
+w1_gain = 3;
+R2 = 200;
+```
+
+At 80 km/h: Proposed `0.598/0.229`, MPC `0.597/0.236`,
+ZENG `0.611/0.242`; SW 77 vs 96.5/112.5; Md 1289 vs 1423/1837.
+
+## 4. DLC speed sweep with initial speed = target
+
+CarSim initial speed was set via procedure/run-control `*SPEED` and
+`SV_VXS`; Simulink `v_target` matched. Full sweep:
+
+| Speed | MPC ey max/RMS | ZENG ey max/RMS | Proposed ey max/RMS |
+|---:|---:|---:|---:|
+| 80 | 0.597 / 0.236 | 0.611 / 0.242 | 0.598 / 0.229 |
+| 82 | 0.604 / 0.273 | 0.603 / 0.269 | 0.609 / 0.239 |
+| 83 | 0.697 / 0.324 | 0.673 / 0.311 | 0.615 / 0.246 |
+| 84 | 0.848 / 0.387 | 0.687 / 0.325 | 0.622 / 0.257 |
+| 85 | 3.244 / 1.480 | 8.416 / 3.552 | 0.631 / 0.277 |
+| 90 | 9.457 / 3.583 | 9.668 / 3.675 | 3.951 / 1.804 |
+| 100 | 7.690 / 2.670 | 7.592 / 2.641 | 7.562 / 2.730 |
+
+All QP 100%.
+
+Interpretation:
+
+- 84 km/h is the best clean comparison: all controlled, no steering
+  saturation; Proposed 0.622/0.257 vs MPC 0.848/0.387 and ZENG 0.687/0.325.
+- 85 km/h is the controllability boundary: MPC/ZENG lose the path while
+  Proposed remains controlled. It is not a clean tracking comparison.
+- 90/100 are failed-limit references.
+- Do not relabel 84 km/h data as 85 km/h. The 84->85 change is a
+  bifurcation, not a short initial-speed transient; Vx/trajectory checks
+  would reveal the mismatch.
+
+## 5. Results-folder cleanup
+
+Kept:
+
+- `PMPC_Results/DLC_mu0.5_80_compare/`
+- `PMPC_Results/DLC_mu0.5_speed_compare/`
+- `PMPC_Results/analysis/` (SUV saddle / Zeng DB / rho check)
+
+Removed old intermediate result folders (DLC_R1_10, MPC_vs_ZENG, rho60/80,
+mu0.85 v100, mu0.9, J-turn 70/80, Slalom 60).
+
+Backup:
+`C:\Users\user\AppData\Local\Temp\opencode\PMPC_Results_backup_2026-11-10`

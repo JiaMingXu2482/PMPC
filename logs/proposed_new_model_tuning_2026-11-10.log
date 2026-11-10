@@ -1,0 +1,64 @@
+# Proposed tuning on updated vehicle model
+
+Date: 2026-11-10
+Condition: DLC 80 km/h, mu=0.5, CarSim `Run_4d669775` (DLC80_mu0.5_PMPC)
+Vehicle model: updated `m/Ix/Iz/lf/h_TL`, `Kt=81.5e3`, tyre `cq` scaling,
+steering compliance feed-forward `cs_fy=-3.2e-6` with `sw_prev` rate limit.
+
+## Final parameters (written to pmpc_init.m, DLC + controller 3)
+
+```matlab
+M.Q_norm(6) = 5;      % epsi weight 20 -> 5
+M.Wb        = 10;     % DB gamma linear penalty 100 -> 10
+M.w2_max    = 2e3;
+M.w1_max    = 2e3;
+M.w2_gain   = 3;
+M.w1_gain   = 3;
+M.R_norm(2) = 200;
+```
+
+`Wb=10` is DLC-specific; J-turn/Slalom still use `Wb=100` unless retuned.
+
+## Tuning summary
+
+| Setting | ey max | ey RMS | SW max | Mz max | Md max | beta max | QP |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Q10, Wb100, caps 2e3 (initial new model) | 0.641 | 0.249 | 104.2 | 2715 | 1359 | 1.66 | 100% |
+| Q5, Wb100, caps 2e3 | 0.623 | 0.244 | 99.3 | 2731 | 1311 | 1.68 | 100% |
+| Q10, Wb100, caps 1e4 | 0.601 | 0.257 | 141.1 | 2699 | 1425 | 1.66 | 100% |
+| Q5, Wb100, caps 1e4 | 0.607 | 0.262 | 118.1 | 2731 | 1430 | 1.66 | 100% |
+| **Q5, Wb10, caps 2e3 (selected)** | **0.598** | **0.229** | **77.0** | **2717** | **1289** | 1.59 | **100%** |
+| Q5, Wb20, caps 2e3 | 0.598 | 0.231 | 74.5 | 2710 | 1316 | 1.60 | 100% |
+| Q5, Wb1000, caps 2e3 | 0.663 | 0.248 | 60.8 | 247 | 1455 | 2.10 | 100% |
+
+R2=50/100/300/500 did not improve the selected point; R2=200 kept.
+Caps 5e3/1e4 improve `ey max` but make RMS/SW worse; caps 2e3 is balanced.
+`Wb=1000` suppresses DB (`Mz max=247`), so `ey` degrades to 0.663.
+
+## Final three-controller comparison
+
+| Controller | ey max | ey RMS | ey final | SW max | Mz max | Md max | beta max | yaw max | LTR max | QP |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MPC-NPC | **0.597** | 0.236 | 0.036 | 96.5 | 2729 | 1423 | **1.58** | 13.4 | 0.46 | 100% |
+| ZENG | 0.611 | 0.242 | 0.034 | 112.5 | 2807 | 1837 | 1.66 | 14.7 | 0.47 | 100% |
+| **Proposed final** | **0.598** | **0.229** | **0.024** | **77.0** | **2717** | **1289** | 1.59 | **13.3** | **0.45** | **100%** |
+
+Relative to MPC: `ey max` -0.2%, `ey RMS` +3.0%, `SW max` +20.2%,
+`Md max` +9.4%, `beta` -0.01 deg (slightly worse), `LTR` +2.2%.
+Relative to ZENG: `ey max` +2.1%, `ey RMS` +5.4%, `SW` +31.6%, `Md` +29.8%.
+
+## Verification
+
+Default check:
+
+```matlab
+dlc_one(1e4,10,'prop_new_default_check',3,80)
+```
+
+Result: `ey max 0.598`, `ey RMS 0.229`, `QP 100%`.
+
+Figure:
+`PMPC_Results/DLC_mu0.5_80_compare/three_controllers_new_model_tuned.png`
+
+Metrics:
+`PMPC_Results/DLC_mu0.5_80_compare/three_controllers_new_model_tuned_metrics.csv`

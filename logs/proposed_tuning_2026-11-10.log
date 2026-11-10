@@ -2,6 +2,10 @@
 
 Date: 2026-11-10
 Branch: jturn-current
+
+> NOTE: the results in this log use the old vehicle model. After the
+> 2026-11-10 vehicle-model / steering-compliance update, see
+> `logs/proposed_new_model_tuning_2026-11-10.log`.
 Repository: JiaMingXu2482/PMPC
 
 ## Condition

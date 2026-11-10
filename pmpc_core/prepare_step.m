@@ -42,8 +42,8 @@ xi=sqrt(max(1-(Fx./(V.mu*Fz)).^2,0));% 摩擦圆剩余比例 xi
 xf=sum(Fz([1,3]).*xi([1,3]))/sum(Fz([1,3]));
 xr=sum(Fz([2,4]).*xi([2,4]))/sum(Fz([2,4]));
 Ff=xf*Ff;           Fr=xr*Fr; 
-Cf=-max(abs(xf*Cf),0.04*abs(V.CafHat));
-Cr=-max(abs(xr*Cr),0.04*abs(V.CarHat));
+Cf=-max(abs(xf*Cf),0.032*abs(V.CafHat));
+Cr=-max(abs(xr*Cr),0.032*abs(V.CarHat));
 
 % 轮胎切线偏置：Fy ≈ C*alpha + offset。
 % 预测模型的控制量是 Delta delta，因此把驾驶员项 -Cf*delta_d 并入
@@ -180,6 +180,7 @@ Gr=[.8;.8]-k*kg*(offsetPred(1)*cos(delta)+offsetPred(2))/V.m*[1;-1];
 
 %%
 c=struct('zeta',zeta,'ey',ey,'Cf',Cf,'Cr',Cr,'offset',offsetPred,'v',vx,'delta',delta, ...
+    'Fyf',sum(Fy([1,3])), ...
     'delta_d',delta_d,'kap',kap,'kapNode',kapNode,'yr',yr,'Fz',Fz,'Flo',lo,'Fhi',hi, ...
     'brakeMax',brakeMax,'umin',umin,'umax',umax,'duMax',duMax, ...
     'MdloPlan',MdloPlan,'MdhiPlan',MdhiPlan, ...

@@ -326,6 +326,9 @@ DLC 的 `M.R_norm(1)` 从 0.1 提到 10，进一步抑制 QP 在轮胎饱和附�
 
 ## 13. Proposed 整定（DLC 80 km/h，mu=0.5）
 
+> 以下结果基于旧车辆模型；2026-11-10 更新车辆参数和转向柔度后，
+> 结果见第 15 节。
+
 原始 Proposed 的在线权重上限是 `w2_max=1e6`、`w1_max=1e5`。在
 `margin→0` 的极限附近，`w2=3F/margin` 会冲到上限，QP 活动集在相邻拍
 切换，表现为 `Mz` 抖动、`SW` 过大，`ey max=1.556 m`、`QP=98.9%`。
@@ -359,3 +362,175 @@ M.R_norm(2) = 200;
 放松侧倾约束换跟踪，而是把执行器从方向盘转移到横摆力矩。
 
 结果文件：`PMPC_Results/DLC_mu0.5_80_compare/prop_tuned_vs_mpc_zeng.png`。
+
+
+## 14. 车辆模型参数更新（2026-11-10，来自 Predict_Model_Verify）
+
+按 `Thesis/Code/Predict_Model_Verify/verification/README.md` 的最终版，
+把 Jturn 控制器的车辆模型同步到当前 CarSim 定制车：
+
+```matlab
+V.m    = 1830;            % 原 1860
+V.Ix   = 1070.177651;     % 原 1038
+V.Iz   = 3378.9735;       % 原 3438
+V.h_TL = 0.6760655738;    % 原 0.671694
+V.lf   = 1.218688525;     % 原 1.246613
+V.lr   = V.L - V.lf;      % 1.731311475
+
+V.Kt   = 81.5e3;          % 稳态圆周辨识值（原公式 78.97e3）
+V.cs_fy = -3.2e-6;        % eclass2 CS_FY_COEFFICIENT [rad/N]
+
+V.CafHat = -145.4e3;      % 轮胎模型静态值
+V.CarHat = -103.8e3;
+
+% TireF.cq = cq0*1.029; TireR.cq = cq0*1.044; 保留载荷相关和 Fiala
+```
+
+`prepare_step.m`：
+
+- `Cf/Cr` 下限从 `0.04*|CafHat|` 改为 `0.032*|CafHat|`，
+  保持绝对下限约 4.65 kN/rad；
+- `c.Fyf = sum(Fy([1,3]))`，供转向柔度前馈使用。
+
+`pmpc_step.m`：
+
+```matlab
+Fyf_ff = sum(meas.Fy([1,3]));
+SW_raw = rad2deg(isw*(delta_d + u(1) - V.cs_fy*Fyf_ff));
+SW = sw_prev + clip(SW_raw - sw_prev, ±delta_sw_rate_max*Ts_exec);
+stateNext.sw_prev = SW;
+```
+
+`state0.sw_prev = 0`，`PMPC_StateBus` 由 `pmpc_bus` 自动增加该字段。
+`V.isw` 仍保持 18.57，不把有效转向比塞回传动比。
+
+注意：
+
+- 这是**预测模型**的参数/执行器柔度修正，不改变 CarSim 被控对象；
+- 修改后 DLC/J-turn/Slalom 的 `ey/LTR/Mz` 会变，需要重新跑基线；
+- 当前 J-turn 80 km/h/mu=0.85 仍是不可行工况，不能用来评价这次修正；
+- 初步对照见 `Predict_Model_Verify/verification/README.md` 第 3.3(e) 节：
+  DLC 80 km/h 加入转向柔度前馈后 `ey RMS` 约 0.236 m、`ey max` 约 0.597 m。
+
+
+## 15. 更新车辆模型后的 DLC 三控制器（2026-11-10）
+
+车辆模型已按 `Predict_Model_Verify/verification/README.md` 更新：
+`m/Ix/Iz/lf/h_TL`、`Kt=81.5e3`、`CafHat/CarHat`、轮胎 `cq` 幅值修正，
+以及转向柔度前馈 `V.cs_fy=-3.2e-6` + `sw_prev` 540°/s 速率限制。
+
+工况：`Run_4d669775`，DLC 80 km/h，mu=0.5。
+MPC：`Q_epsi=20`、`slack=0.5e4`；ZENG：`Q_epsi=10`、`I0=1.0`、`slack=1e4`；
+Proposed：`Q_epsi=10`、`w2_max=w1_max=2e3`（旧模型整定值）。
+
+| 控制器 | ey max | ey RMS | ey final | SW max | Mz max | Md max | beta max | yaw max | LTR max | QP |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MPC-NPC | **0.597** | **0.236** | 0.036 | **96.5°** | 2729 | 1423 | **1.58°** | 13.4°/s | **0.46** | 100% |
+| ZENG | 0.611 | 0.242 | 0.034 | 112.5° | 2807 | 1837 | 1.66° | 14.7°/s | 0.47 | 100% |
+| Proposed（整定前） | 0.641 | 0.249 | **0.025** | 104.2° | **2715** | **1359** | 1.66° | **13.3°/s** | 0.47 | 100% |
+
+结论：
+
+- 更新模型/转向柔度后，MPC 从旧模型的 `0.805/0.363` 降到
+  **`0.597/0.236`**，与 `Predict_Model_Verify` 的 DLC + steer FF 结果
+  （0.597/0.236）一致，说明移植正确；
+- 现在 **MPC 的 ey/beta 最好**；Proposed 的 ey 比 MPC 差约 7%，
+  但 `Mz 均值` 更低（1063 vs 1364）、`Md max` 更低（1359 vs 1423）、
+  终点 ey 更小（0.025 vs 0.036）；
+- Proposed 的 `2e3/2e3`、`Q_epsi=10` 是在旧模型上整定的；新模型上的
+  重新整定见第 16 节；
+- ZENG 在这组仍然略差于 MPC，`rho` 调度没有带来路径收益。
+
+图：`PMPC_Results/DLC_mu0.5_80_compare/three_controllers_updated_model.png`。
+
+
+## 16. Proposed 在新车辆模型上的最终整定（DLC 80 km/h，mu=0.5）
+
+新模型/转向柔度前馈生效后，Proposed 原来的 `Q_epsi=10`、`Wb=100` 不再合适。
+重新扫描 `Q_epsi`、`Wb`、`w2/w1` caps 和 `R2`，最终选择：
+
+```matlab
+% pmpc_init.m, DLC + controller 3
+M.Q_norm(6) = 5;      % epsi 权重 20 -> 5
+M.Wb        = 10;     % DB gamma 罚 100 -> 10
+M.w2_max    = 2e3;
+M.w1_max    = 2e3;
+M.w2_gain   = 3;
+M.w1_gain   = 3;
+M.R_norm(2) = 200;
+```
+
+整定趋势（`ey max / RMS`）：
+
+| 设置 | ey max | ey RMS | 说明 |
+|---|---:|---:|---|
+| `Q_epsi=10`、`Wb=100`、caps `2e3` | 0.641 | 0.249 | 新模型初始值 |
+| `Q_epsi=5`、`Wb=100`、caps `2e3` | 0.623 | 0.244 | 降 Q_epsi 有帮助 |
+| `Q_epsi=10`、`Wb=100`、caps `1e4` | 0.601 | 0.257 | max 好，RMS/SW 变差 |
+| `Q_epsi=5`、`Wb=100`、caps `1e4` | 0.607 | 0.262 | max 好，RMS 差 |
+| **`Q_epsi=5`、`Wb=10`、caps `2e3`** | **0.598** | **0.229** | **最终选择** |
+| `Q_epsi=5`、`Wb=20`、caps `2e3` | 0.598 | 0.231 | SW/Mz 更小，beta 略高 |
+| `Q_epsi=5`、`Wb=1000`、caps `2e3` | 0.663 | 0.248 | gamma 罚太大，DB 几乎不用 |
+
+最终三控制器：
+
+| 控制器 | ey max | ey RMS | ey final | SW max | Mz max | Md max | beta max | yaw max | LTR max | QP |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MPC-NPC | **0.597** | 0.236 | 0.036 | 96.5° | 2729 | 1423 | **1.58°** | 13.4°/s | 0.46 | 100% |
+| ZENG | 0.611 | 0.242 | 0.034 | 112.5° | 2807 | 1837 | 1.66° | 14.7°/s | 0.47 | 100% |
+| **Proposed 最终** | **0.598** | **0.229** | **0.024** | **77.0°** | **2717** | **1289** | 1.59° | **13.3°/s** | **0.45** | **100%** |
+
+结论：
+
+- Proposed 的 `ey max` 与 MPC 基本持平（0.598 vs 0.597），`ey RMS`
+  好 3.0%，`SW max` 小 20.2%，`Md max` 小 9.4%，`beta` 只差 0.01°；
+- `Wb=10` 是关键：新模型下 MPC/ZENG 的转向柔度前馈已经把方向盘压到
+  96–112°，Proposed 不能再用 `Wb=100` 去过度惩罚 DB；`Wb=10` 允许
+  gamma 正常参与，从而用更小的方向盘和 Md 达到同等 ey；
+- `Wb=1000` 会几乎关闭 DB（`Mz max` 只有 247 N·m），ey 退化到 0.663；
+- `Wb=20` 是更平滑的备选（SW 74.5°、Mz max 2710、HF 13），但 beta 1.60°。
+
+图：`PMPC_Results/DLC_mu0.5_80_compare/three_controllers_new_model_tuned.png`。
+默认参数复现：`dlc_one(1e4,10,'prop_new_default_check',3,80)` →
+`ey 0.598/0.229`，QP 100%。
+
+
+## 17. DLC mu=0.5 速度扫描：初始速度 = 目标速度
+
+CarSim 数据集 `Run_4d669775`，通过 CarSim 的 procedure/run-control
+`*SPEED` 设置初速，并在 `Run_all.par` 中确认 `SV_VXS` 与目标一致；
+Simulink `v_target` 同步设置。每档实际 `Vx` 从目标车速开始。
+
+| 初速=目标 | MPC ey max/RMS | ZENG ey max/RMS | Proposed ey max/RMS |
+|---:|---:|---:|---:|
+| 80 | 0.597 / 0.236 | 0.611 / 0.242 | **0.598 / 0.229** |
+| 82 | 0.604 / 0.273 | 0.603 / 0.269 | **0.609 / 0.239** |
+| 83 | 0.697 / 0.324 | 0.673 / 0.311 | **0.615 / 0.246** |
+| 84 | 0.848 / 0.387 | 0.687 / 0.325 | **0.622 / 0.257** |
+| **85** | **3.244 / 1.480** | **8.416 / 3.552** | **0.631 / 0.277** |
+| 90 | 9.457 / 3.583 | 9.668 / 3.675 | **3.951 / 1.804** |
+| 100 | 7.690 / 2.670 | 7.592 / 2.641 | 7.562 / 2.730 |
+
+全部 QP 成功率 100%。
+
+### 85 km/h 是否刻意挑选？
+
+不是单点挑出来的。80–82 三车都还受控；83–84 Proposed 逐步占优
+（84: 0.622 vs MPC 0.848 / ZENG 0.687）；**85 是临界边界**：
+MPC/ZENG 丢路径（3.24/8.42 m），Proposed 仍保持 0.631 m、SW 170°、
+beta 1.82°、QP 100%。90 三车都丢路径，100 三车接近且都失败。
+
+论文建议：
+
+- **84 km/h 作为干净的主对比**：三车都还受控，Proposed
+  `0.622/0.257`，MPC `0.848/0.387`，ZENG `0.687/0.325`；
+  Proposed 相对 MPC `ey max -26.6%`、`ey RMS -33.6%`、`SW -73%`，
+  且没有方向盘饱和。**不要把这组 84 km/h 数据标成 85 km/h**；
+- **85 km/h 作为“可控包络边界”**：MPC/ZENG 已丢路径，Proposed 仍受控；
+  同时给出 80–100 扫描，说明 85 不是任意挑的；
+- 90/100 只作为失败极限参考，不作为跟踪精度主结果。
+
+图/指标：`PMPC_Results/DLC_mu0.5_speed_compare/`：
+`summary_ey.png`、`three_controllers_85.png`、
+`three_controllers_90.png`、`three_controllers_100.png`、
+`metrics_speed_sweep.csv`。
