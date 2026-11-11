@@ -1,8 +1,9 @@
-function [params, Reftraj, state0, meas0] = pmpc_init(maneuver_override, controller_override)
+function [params, Reftraj, state0, meas0] = pmpc_init(maneuver_override, controller_override, horizon_override)
 %PMPC_INIT 共享参数、全局路径及控制器跨拍状态。只在仿真前执行。
 % InitFcn: [params, Reftraj, state0, meas0] = pmpc_init();
-% 可选 maneuver_override（工况）：1=DLC，2=Slalom，3=U-turn；空/省略时默认3。
+% 可选 maneuver_override（工况）：1=DLC，2=Slalom，3=U-turn，4=FishHook；空/省略时默认1。
 % 可选 controller_override：1=MPC，2=ZENG，3=Proposed；空/省略时用 M.controller。
+% 可选 horizon_override：struct('Ts',...,'Np',...,'Nc',...)，用于瞬态工况缩短/加密时域。
 % params/Reftraj 在控制块中声明为 Parameter；state0 用作 0.01 s Unit Delay 初值。
 
 %% 1. MPC预测模型参数
@@ -11,12 +12,22 @@ M.Np = 10;                      % 预测步数
 M.Nc = 5;                       % 控制步数
 M.Ts_exec = 0.01;               % 执行周期
 
+% 瞬态工况时域覆盖（FishHook 等）；state0/总线尺寸会随 Np/Nc 重新生成。
+if nargin >= 3 && ~isempty(horizon_override)
+    if isfield(horizon_override,'Ts'), M.Ts = horizon_override.Ts; end
+    if isfield(horizon_override,'Np'), M.Np = horizon_override.Np; end
+    if isfield(horizon_override,'Nc'), M.Nc = horizon_override.Nc; end
+end
+
 %% 2. 制动系统响应参数
 M.tau_mz = 0.2;                 % 横摆力矩全量程建立时间 [s]
 
 %% 3. 悬架系统响应参数
 M.tau_d = 0.01;                 % 命令到实际 Md 的等效一阶时间常数 [s]
 M.tau_md = 0.1;                 % Md 命令全范围变化时间 [s]
+M.tau_lead = 0;                 % CDC 时滞补偿的超前时间 [s]，0=不补偿
+% CDC 执行器实现：1=连续（逆模型跟踪 Fdes）；2=SH 开关（按阻尼力/车身速度符号给 0/1.6 A）
+M.cdc_mode = 1;
 % 预瞄力界参数：L 是取运动状态的时间偏移，不再叠加为动力学纯延迟。
 M.preview_L = 0.03;             % [s] 暂定生效时刻，未辨识；范围 0 <= L <= Ts
 M.preview_alpha = 1;          % 当前/预瞄力区间混合：0 关闭，0.5 折中，1 全预瞄
@@ -25,18 +36,18 @@ M.bounds_keep = 1.0;            % 区间半宽保留比例；1 不另加未经�
 %% 4. 车辆参数
 V.m = 1830;                     % 整车质量 [kg]（CarSim eclass2 M_TL）
 V.ms = 1590;                    % 簧载质量 [kg]
-V.Iz = 3378.9735;               % 横摆惯量 [kg*m^2]（CarSim IZZ_TL）
-V.Ix = 1070.177651;             % 侧倾惯量 [kg*m^2]（CarSim IXX_TL）
-V.h_TL = 0.6760655738;          % 整车质心高度 [m]（CarSim H_CG_TL）
+V.Iz = 3378.974;                % 横摆惯量 [kg*m^2]（CarSim IZZ_TL）
+V.Ix = 1070.178;                % 侧倾惯量 [kg*m^2]（CarSim IXX_TL）
+V.h_TL = 0.676;                 % 整车质心高度 [m]（CarSim H_CG_TL）
 V.h_SL = 0.720;                 % 簧载质心高度 [m]
 V.L = 2.95;                     % 轴距 [m]
-V.lf = 1.218688525;             % 质心到前轴 [m]（CarSim LX_CG_TL）
+V.lf = 1.219;                   % 质心到前轴 [m]（CarSim LX_CG_TL）
 V.lr = V.L - V.lf;              % 质心到后轴 [m]
 V.tf = 1.575; V.tr = 1.575;     % 前、后轮距 [m]
 V.lsf = 1.2; V.lsr = 1.2;       % 弹簧横向间距 [m]
 V.ldf = 1.1; V.ldr = 1.1;       % 减振器横向间距 [m]
 V.rt = 0.393;                   % 车轮半径 [m]
-V.g = 9.80665;                  % 重力加速度 [m/s^2]
+V.g = 9.807;                    % 重力加速度 [m/s^2]
 
 % ==================== 侧倾中心参数 ====================
 V.h_RC_f = 0.09372;             % 前轴侧倾中心高度 [m]
@@ -104,7 +115,11 @@ V.CarTan = 0;
 
 % AFS：delta_d 为驾驶员前轮转角，u(1)=Delta delta 为附加角；
 M.afs_on = true;                %DLC & Jturn
+M.mz_on = true;                 % 差动制动 Mz 是否参与（被动车基线置 false）
 % M.afs_on = false;             %FishHook
+% 外部开环转向：FishHook 由 CarSim 的转向机器人给 SW，Simulink 只输出
+% AFS 增量；此时 delta_d 取实测前轮转角（不再读 Constant 块）。
+M.steer_ext = false;
 
 % 控制器：1=MPC（固定权重），2=ZENG 2025（稳定性权重调度），3=Proposed（余量分层松弛）
 M.controller = 1;               % 默认 MPC；Proposed 需显式传 3
@@ -126,7 +141,7 @@ M.w1_gain = 3;                        % Proposed: 道路/侧倾松弛权重增�
 
 %% 5. 参考轨迹
 % 仅决定使用哪条参考路径，不改变 PMPC 算法。
-maneuver = 1;                  % 工况：1=DLC；2=Slalom；3=U-turn
+maneuver = 1;                  % 工况：1=DLC；2=Slalom；3=U-turn；4=FishHook
 if nargin>=1 && ~isempty(maneuver_override)
     maneuver = maneuver_override;
 end
@@ -143,14 +158,10 @@ switch maneuver
             M.Q_norm(6) = 5;           % Proposed DLC 整定：epsi 权重 20 -> 5
             M.Wb = 10;                 % Proposed DLC 整定：DB gamma 罚 100 -> 10
         end
-
-        % 保留原拟合曲线（用户确认该路径在原工程中可行）
+        % carsim 标准DLC路径拟合公式
         X = (0:0.5:200)';
-        Y = 3.5564696255156258/2 * ...
-            (1+tanh(4/27.85220278516676*(X-80.058689040522395))) ...
-            - 3.5564696255156258/2 * ...
-            (1+tanh(4/24.007795423319223*(X-132.35698740891445)));
-
+        Y = 3.556/2 * (1+tanh(4/27.852*(X-80.059))) ...
+            - 3.556/2 * (1+tanh(4/24.008*(X-132.357)));
         station = [];
 
     case 2                       % Slalom
@@ -160,27 +171,26 @@ switch maneuver
         M.R_norm  = [0.1; 500; 0.1];
         M.slack_w = [5; 5; 5; 5];
 
-        % 使用原 CarSim X-Y-Station 数据
-        root = fileparts(mfilename('fullpath'));
-        pathname = fullfile(root,'Slalom_CarSim_XYS.txt');
+        % 与 CarSim 路面一致的解析路径：入口斜坡 + 3 个正弦周期 + 出口斜坡。
+        % 正弦零穿越斜率 2*pi*A/P 取成与斜坡斜率 k 相同，保证 C1 连续。
+        A  = 1.2;                % 绕桩横向幅值 [m]
+        k  = 0.18;               % 入口/出口横向斜率
+        Lr = 20;                 % 入口斜坡长度 [m]
+        Lo = 40;                 % 出口斜坡长度 [m]
+        P  = 2*pi*A/k;           % 正弦周期 [m]
+        Lx = Lr + 3*P + Lo;      % 路径总长 [m]
 
-        if ~isfile(pathname)
-            pathname = fullfile(fileparts(root), ...
-                                'data','Slalom_CarSim_XYS.txt');
-        end
+        n = ceil(Lx/0.5);
+        X = (0:n)'*0.5;
+        X(end) = Lx;
 
-        assert(isfile(pathname), ...
-            'Slalom 数据不存在：请将 Slalom_CarSim_XYS.txt 放在本文件旁或 data 文件夹');
+        Y = k*(X - Lr);          % 入口斜坡（X<Lr 时为负）
+        i2 = X > Lr & X <= Lr + 3*P;
+        Y(i2) = A*sin(2*pi*(X(i2)-Lr)/P);
+        i3 = X > Lr + 3*P;
+        Y(i3) = k*(X(i3) - Lr - 3*P);
 
-        xys = readmatrix(pathname,'Delimiter',',');
-
-        assert(size(xys,2)==3 && size(xys,1)>2 && ...
-            all(isfinite(xys(:))) && all(diff(xys(:,3))>0), ...
-            'Slalom X-Y-Station 数据无效');
-
-        X = xys(:,1);
-        Y = xys(:,2);
-        station = xys(:,3);
+        station = [];
 
     case 3                       % CarSim道路：直线60m + R70左转90° + 直线60m
         Road.mu = 0.85;          % 与当前 CarSim Mu=0.85 一致
@@ -230,8 +240,48 @@ switch maneuver
                         L1+sArc(2:end);
                         L1+Larc+s3(2:end)];
 
+    case 4                       % FishHook（NHTSA 294deg，80 km/h，mu=0.9）
+        Road.mu = 0.9;
+        M.afs_on = false;        % 控制器不控前轮转角
+        M.steer_ext = true;      % CarSim 开环转动机器人给 SW，Simulink 只给 AFS 增量
+        % CDC 时滞口径（默认 no-comp 基准）：
+        %   预测模型认为阻尼力瞬时建立（tau_d 取极小正值，避免 1/tau_d 发散），
+        %   力界不预瞄（preview_L=0、preview_alpha=0）。
+        % comp25 由 run_fishhook 覆盖为 tau_d=0.025、preview_L=0.025、
+        % preview_alpha=1。
+        M.tau_d = 1e-4;
+        M.preview_L = 0;
+        M.preview_alpha = 0;
+        % 稳定性目标：无路径跟踪权限，只压横摆/侧倾并保住 LTR。
+        M.Q_norm  = [0; 10; 20; 0; 0; 0; 0];   % [Vy;r;phi;p;ey;epsi;Md]
+        M.R_norm  = [0.1; 500; 0.1];
+        % 鱼钩无路径权限：道路/侧倾松弛几乎免费，只保留数值正则。
+        M.slack_w = [100; 100; 1e4; 1e-3];
+        if M.controller==3
+            % Baseline 的 LTR 松弛权重是 1e4；Proposed 的上限不能低于它，
+            % 否则防侧翻优先级反而被削弱。
+            M.w2_max = 1e4;
+            % 鱼钩高载荷（190 kg）下 LTR 松弛上限需要 1e5 量级，否则 QP 在
+            % 余量较大时把 LTR 约束放得太松，侧倾压不住（实测 1e4 -> 翻车，
+            % 2e5 -> 9.8°）。
+            M.w1_max = 2e5;
+            % 鱼钩无路径权限，车辆横向偏离参考线 10 m 以上，道路约束始终不可行。
+            % 若道路松弛沿用 w1（1e4 量级），QP 会把执行器浪费在无法满足的
+            % 道路约束上（实测 roll 12.4° -> 9.9°）。
+            M.w_env = 1e-3;
+            % Md 增量权重：0.1 时 Md 指令在 3-10 Hz 抖动（>3Hz 能量 14.5%），
+            % 提到 10 后抖动减半（>3Hz 2.5%），roll 反而从 9.83° 降到 6.50°。
+            M.R_norm(3) = 50;
+        end
+
+        % 直线参考，仅用于 prepare_step 的局部投影；ey/epsi 权重为 0。
+        X = (-50:0.5:400)';
+        Y = zeros(size(X));
+
+        station = [];
+
     otherwise
-        error('maneuver 只能为 1(DLC)、2(Slalom) 或 3(U-turn)');
+        error('maneuver 只能为 1(DLC)、2(Slalom)、3(U-turn) 或 4(FishHook)');
 end
 
 %% 6. 参考轨迹数据处理
@@ -281,13 +331,9 @@ V.mu = Road.mu;                  % 保持原车辆动力学字段
 % 不依赖 MAT 文件，不调用旧轮胎拟合函数。
 TireF.mu = Road.mu;
 
-TireF.cq = [-2.3214907389095473e-10, ...
-            -9.2937263513579211e-05, ...
-             1.3943365770101135e+01];
+TireF.cq = [-2.321e-10, -9.294e-05, 1.394e+01];
 
-TireF.mq = Road.mu * [-1.9058537070743386e-11, ...
-                      -3.3810642361284200e-06, ...
-                       8.9580790781890640e-01];
+TireF.mq = Road.mu * [-1.906e-11, -3.381e-06, 8.958e-01];
 
 TireF.fzlo = 5638.82;
 TireF.fzhi = 45110.6;

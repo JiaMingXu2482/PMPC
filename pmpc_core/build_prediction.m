@@ -30,8 +30,10 @@ D=[0,cd/V.m,1/V.m;0,V.lf*cd/V.Iz,-V.lr/V.Iz;0,0,0; ...
     0,0,0;-v,0,0];
 
 % 增加实际 Md 状态，用 tau_d 描述力矩命令到实际力矩的一阶响应。
-A=[A,B(:,3);zeros(1,6),-1/M.tau_d];
-B(:,3)=0; B=[B;0,0,1/M.tau_d]; D=[D;zeros(1,3)];
+% tau_d->0 表示阻尼力瞬时建立（no-comp 基准）；取下限避免 1/tau_d 发散。
+tau_d=max(M.tau_d,1e-4);
+A=[A,B(:,3);zeros(1,6),-1/tau_d];
+B(:,3)=0; B=[B;0,0,1/tau_d]; D=[D;zeros(1,3)];
 
 % 矩阵指数同时求 Ad/Bd/Dd，输入与扰动在预测步内零阶保持。
 E=expm([A,B,D;zeros(6,13)]*M.Ts);

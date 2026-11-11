@@ -4,6 +4,10 @@ function [cmpRD_preview,prediction]=pmpc_preview(meas,Reftraj,params,state,delta
 % prediction输出本拍预测矩阵，经独立信号直接送QP块；QP不再重复线性化/ZOH预测。
 % delta_d 为驾驶员前轮转角，u(1)=Delta delta 为 AFS 附加角；总转角=delta_d+u(1)。
 if nargin<5, delta_d=0; end
+% FishHook：驾驶员转角取实测前轮角（CarSim 开环转动机器人给出）。
+if isfield(params.M,'steer_ext') && params.M.steer_ext
+    delta_d = mean(meas.delta_front(:));
+end
 N=coder.const((numel(state.active_main)-4*numel(state.plan)-10)/12);
 nd=coder.const(numel(state.plan));
 cmpRD_preview=repmat(1000*meas.vd,1,N);

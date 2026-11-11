@@ -1,0 +1,205 @@
+================================================================================
+FishHook / CDC 时滞 / 正模型 工作日志
+日期：2026-11-11
+工程：D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Jturn
+================================================================================
+
+1. 目标
+--------------------------------------------------------------------------------
+- FishHook 80 km/h, mu=0.9 工况下对比：
+  * MPC baseline（必须侧翻）
+  * Proposed no-comp（LTR=1.0，但不侧翻）
+  * Proposed comp（CDC 25 ms 时滞补偿，目标 LTR<0.9，不侧翻）
+- 控制器不控前轮转角：M.afs_on=false，u(1)=0；转向由 CarSim 开环机器人给。
+- 车辆：从当前 E-Class, SUV #PMPC stock no-damper #red（Ind_Ind 后独立悬架）
+  复制后加车顶 cargo，不用旧的 solid-axle 车。
+
+2. CarSim 数据集
+--------------------------------------------------------------------------------
+2.1 无 cargo 数据集
+- 名称：FH80_mu0.9_MPC（category PMPC）
+- ID：Run_e0bd0d16-6e4e-40fb-88fd-47e00f9bf500
+- Procedure：Fishhook 294deg NHTSA, 80km/h, Mu=0.9 #Simulink
+- 车辆：E-Class, SUV #PMPC stock no-damper #red
+- 路面：1 km Square w/ Cones, Mu=0.9
+- TSTOP=8 s，*SPEED=80，SV_VXS=80
+- 转向 import：IMP_STEER_SW Add（Priority Strategy #AFS increment）
+- Models: Simulink：PMPC_FH（从 PMPC 复制，仅把 import 从 Replace 改成 Add）
+
+2.2 cargo 数据集
+- 名称：FH80_cargo_MPC（category PMPC）
+- ID：Run_81631180-fa65-4272-a318-93dc477b6e33
+- 车辆：E-Class, SUV #PMPC cargo 170（E-Class）
+- 基础总成：E-Class, SUV #PMPC stock no-damper #red（Ind_Ind）
+- 车顶 payload：Roof Cargo Box #130kg，M_PL=170 kg，H_CG_PL=2.5 m
+- 当前 Run_all.par 的 M_PL 已恢复为 170（试验期间曾临时改成 150/155/160）
+- 其余与 FH80_mu0.9_MPC 相同
+
+2.3 关键点
+- PMPC_FH 的 import 是 Add，CarSim 转向机器人给完整 SW；Simulink 只叠加 AFS 增量。
+- FishHook 下 u(1)=0，所以 Simulink SW 命令恒为 0；实测 CarSim Steer_SW=±294°。
+- 车辆使用 #red 的 Ind_Ind 总成复制加 cargo，与图里的 Ind_SA 车不同。
+
+3. 正模型 / CDC 电流环
+--------------------------------------------------------------------------------
+3.1 旧正模型
+- pmpc_mil 原“低模（1000Hz）”用 nlcsnn/curr_dyn_impl.m：
+  * 电流上升 10–90% = 10 ms -> tau_rise = 10/ln(9) = 4.55 ms
+  * 电流下降 10–90% = 19 ms -> tau_fall = 19/ln(9) = 8.65 ms
+- 这是固定一阶电流动态，不是 S32K 电流闭环。
+
+3.2 新正模型（用户手动修改）
+- pmpc_mil.slx 增加“减振器正模型（1000Hz）”，每个角：
+  I_cmd -> PI(z) -> 饱和 -> Discrete State-Space -> 0.5+0.5z^-1 -> 1/z -> I_a -> fwd_mf
+- Discrete State-Space 参数：A=a_pl, B=b_pl, C=1, D=0,
+  初始条件=Iref_init，采样时间=Ts_avg
+- PI 块用 Kp、Ki、D_init；0.5+0.5z^-1 和 1/z 初值用 Iref_init。
+
+3.3 init_valve2.m 与 InitFcn
+- 已复制 MR_NLCSNN\init_valve2.m -> Jturn\init_valve2.m
+- Jturn 的 pmpc_mil.slx InitFcn 已改为：
+    root = 'D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Jturn';
+    addpath(fullfile(root,'pmpc_core'),'-begin');
+    addpath(fullfile(root,'nlcsnn'),'-begin');
+    run(fullfile(root,'init_valve2.m'));
+    Iref_init  = 0.8;              % A
+    D_init_avg = 3*Iref_init/24;   % 0.1
+    D_init     = (Iref_init > 0)*(3*Iref_init + 0.7)/(24 + 0.7); % 0.1255, Vd=0.7
+- init_valve2 给出的值：
+    Tc=Ts_avg=0.001 s
+    Vdc=24 V, R=3 Ohm, L_H=2e-3 H, tau_e=0.667 ms
+    a_pl = exp(-1.5) = 0.2231301601
+    b_pl = (24/3)*(1-a_pl) = 6.214958719
+    fc = 1000/30 = 33.33 Hz, wc = 209.4395 rad/s
+    Kp = 2.4*wc*L_H/Vdc = 0.041887902
+    Ki = wc*R/Vdc = 26.1799388
+- 1 s smoke test 通过。
+
+3.4 模型路径/缓存坑
+- jt_run 目录曾有一份旧 pmpc_mil.slx，会遮蔽 Jturn 的模型；
+  已把 jt_run\pmpc_mil.slx 改名为 pmpc_mil_old.slx.bak。
+- MATLAB path 上仍有 D:\OneDrive...\周报\4.6\...\Simulink_Model\pmpc_mil.slx
+  会 shadow，run_fh_variant 已改为显式 load_system(fullfile(Jturn,'pmpc_mil.slx'))。
+- 修改 pmpc_step.m 后必须删除 C:\Users\user\AppData\Local\Temp\opencode\jt_run\slprj
+  和 pmpc_mil.slxc，否则 MATLAB Function 块会用旧缓存。
+
+4. 时域
+--------------------------------------------------------------------------------
+- 最终 FishHook 时域：Ts=0.05 s, Np=12, Nc=6（预测 0.6 s，控制 0.3 s）
+- pmpc_init 新增第三个可选参数 horizon_override：
+    h = struct('Ts',0.05,'Np',12,'Nc',6);
+    [P,R,s0,m0] = pmpc_init(4,c,h);
+- 时域扫描（Fair/旧正模型）：
+    Ts=0.10,Np=10,Nc=5（1.0/0.5 s）：145 kg baseline 不翻 18.9°，Proposed 不翻 13.6°
+    Ts=0.05,Np=10,Nc=5（0.5/0.25 s）：145 kg baseline 翻 80.0°，Proposed 不翻 21.3°
+    Ts=0.05,Np=12,Nc=6（0.6/0.3 s）：170 kg baseline 翻 79.9°，Proposed 不翻 12.5°
+    Ts=0.05,Np=20,Nc=10（1.0/0.5 s 细）：145 kg baseline 不翻 11.2°，Proposed 20.3°
+- 1.0 s 预瞄会让 baseline 自己防住侧翻；0.6 s 是“baseline 翻、Proposed 不翻”的窗口。
+
+5. Proposed 整定
+--------------------------------------------------------------------------------
+- FishHook 下 controller 3 的松弛权重上限从默认 2e3 提到 1e4：
+    if M.controller==3
+        M.w2_max = 1e4;
+        M.w1_max = 1e4;
+    end
+- 原因：baseline 的 LTR 松弛权重是 1e4；Proposed 上限只有 2e3 时，
+  它在 LTR 接近边界时反而不如 baseline 重视侧翻。
+- FishHook 目标权重：
+    M.Q_norm = [0; 10; 20; 0; 0; 0; 0];   % [Vy;r;phi;p;ey;epsi;Md]
+    M.R_norm = [0.1; 500; 0.1];
+    M.slack_w = [100; 100; 1e4; 1e-3];
+
+6. 结果（新正模型 + 170 kg cargo）
+--------------------------------------------------------------------------------
+- baseline（controller 1）：2.774 s 侧翻，Roll 79.40°，LTR 1.00，Vx 51.9，QP 100%
+- Proposed no-comp（tau_d=0.01）：8 s，Roll 12.51°，LTR 1.00，Vx 45.6，QP 100%
+- Proposed comp 25 ms（tau_d=0.025，preview_L=0.025）：8 s，Roll 12.50°，
+  LTR 1.00，Vx 45.6，QP 100%
+- 160 kg 新正模型：
+    baseline：2.93 s 侧翻，Roll 80.14°，LTR 1.00
+    no-comp（preview=0）：Roll 11.71°，LTR 1.00
+    comp 25 ms：Roll 11.77°，LTR 1.00
+- 150 kg baseline：不翻，Roll 13.12°
+- 155 kg baseline：不翻，Roll 16.72°
+
+7. LTR 预测与饱和分析
+--------------------------------------------------------------------------------
+- LTR 已经在预测模型里，不是“没预测”：
+  prepare_step.m:
+    Hr = k*(kg*ay + [0 0 V.Kt 0 0 0 1]);
+    Or = k*kg*[-Cf*cos(delta)/V.m, 0, 0];
+    Gr = [.8;.8] - ...
+  pmpc_step.m build_qp，对每个节点 j：
+    A(r,1:nd) = (c.Hr*p.Y(rows,:) + c.Or*p.AI(ur,:))/EPS_LTR_REF;
+    A(r,nd+3) = -1;   % s_LTR
+    b(r) = (c.Gr - c.Hr*p.y(rows) - c.Or*p.Ut(ur))/EPS_LTR_REF;
+- tau_d 在 build_prediction 里改变 Md_actual 的预测，因此预测 LTR 也变。
+- 但 LTR 峰值时刻 Md 指令已经精确等于力界：
+    170 kg no-comp: LTR 1.00 @1.31 s, Md_cmd -2313 = lo -2313
+    170 kg comp25:  LTR 1.00 @1.31 s, Md_cmd -1427 = lo -1427
+    160 kg v1:      LTR 1.00 @1.31 s, Md_cmd -1237 = lo -1237
+    160 kg v2:      LTR 1.00 @1.30 s, Md_cmd -1626 = lo -1626
+- 所以加强 LTR 权重/预瞄（v1/v2）只能把 roll 从 11.7° 降到 11.3–11.9°，
+  LTR 仍是 1.0；瓶颈是减振器力界/附着极限，不是权重或预测缺失。
+
+8. Md 触发时序（公平对比）
+--------------------------------------------------------------------------------
+- 之前 no-comp 默认 preview_L=0.03（30 ms 力界预瞄），已经相当于补偿，
+  所以和 comp 25 ms 看不出差别。
+- 公平口径：no-comp preview_L=0, preview_alpha=0, tau_d=0.01；
+  comp preview_L=0.025, preview_alpha=1, tau_d=0.025。
+- 170 kg 结果：
+    |Md|>=500 : no-comp 0.180 s -> comp 0.150 s（早 30 ms）
+    |Md|>=1000: no-comp 0.260 s -> comp 0.230 s（早 30 ms）
+    |Md|>=2000: no-comp 1.220 s -> comp 1.150 s（早 70 ms）
+    |Md|>=3000: no-comp 未达到 -> comp 1.220 s
+    负峰值：no-comp -2925@1.290 s -> comp -3579@1.250 s（早 40 ms，幅值大 654 N·m）
+    互相关：-13 samples = -130 ms（comp 领先）
+- 结论：补偿后的 Md 确实提前、幅值更大；但 LTR 峰值仍 1.0。
+
+9. 方案讨论
+--------------------------------------------------------------------------------
+- 方案 1：current 层 25 ms 超前
+  I_cmd_comp = I_cmd + 0.025*dI_cmd/dt，放在逆模型输出之后、S32K 电流环之前。
+  这是 SH_delay 的做法，不依赖 QP 权重。
+- 方案 2：已知鱼钩转向表做前馈（用户指出这是“开卷考试”，不采用）
+  不能预知未来转向；SWD/未知转向会失效。
+- 修正方案 2：只用测量转向 + 转向速率做因果预测
+    delta_d(0) = 实测前轮角
+    dot_delta_d(0) = 滤波后的前轮角速率（限幅 720°/s 对应值）
+    delta_d(k+1) = delta_d(k) + Ts*dot_delta_d(k)
+    dot_delta_d(k+1) = exp(-Ts/tau_s)*dot_delta_d(k)
+    tau_s=0.1–0.2 s，T_pred=0.1–0.2 s 后保持
+  预测序列进 prepare_step/build_prediction，逐节点算 Fyf(k)/Cf(k)/Hr(k)/Or(k)；
+  QP 的 LTR 约束已经用 p.y，会自动提前。
+  需要新增 state.delta_d_prev、state.dot_delta_d，pmpc_init/pmpc_bus 扩展。
+  验证：FishHook 160 kg、SWD270、未知 step steer，不换参数。
+- 当前状态：未改 pmpc_core；等用户确认口径。
+
+10. 关键文件
+--------------------------------------------------------------------------------
+- pmpc_core/pmpc_init.m        FishHook case 4、horizon_override、tau_lead、Proposed caps
+- pmpc_core/pmpc_step.m        steer_ext、tau_lead、QP/LTR 约束
+- pmpc_core/pmpc_preview.m     steer_ext
+- pmpc_core/build_prediction.m Md_actual 一阶 tau_d 模型
+- pmpc_core/prepare_step.m     Hr/Or/Gr、Md 力界
+- pmpc_mil.slx                 Jturn 模型（用户手动改的新正模型）
+- init_valve2.m                Jturn 本地 CDC 电流环参数
+- run_fh_variant.m             C:\Users\user\AppData\Local\Temp\opencode\jt_run
+- PMPC_Results/FishHook_80_mu0.9/
+- PMPC_Results/FishHook_80_mu0.9_cargo170/
+- PMPC_Results/FishHook_80_mu0.9_cargo170_newplant/
+  * fishhook_170_newplant_compare.png/.pdf
+  * md_timing_fair.png
+  * md_timing_check.png
+  * 原始 .mat/.vs/.vsb
+
+11. 待办
+--------------------------------------------------------------------------------
+[ ] 用户确认：方案 1（current 层 25 ms 超前）还是修正方案 2（测量转向+速率预测）
+[ ] 若走修正方案 2：改 pmpc_core，新增 delta_d 速率状态与逐节点预测
+[ ] FishHook 160 kg 验证：baseline 翻、no-comp LTR=1.0、comp LTR<0.9
+[ ] SWD270 / 未知 step steer 验证，证明不是 FishHook 专用
+[ ] 更新 CONTROLLERS.md 第 20/21 节和结果 README
+================================================================================

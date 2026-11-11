@@ -371,11 +371,11 @@ M.R_norm(2) = 200;
 
 ```matlab
 V.m    = 1830;            % 原 1860
-V.Ix   = 1070.177651;     % 原 1038
-V.Iz   = 3378.9735;       % 原 3438
-V.h_TL = 0.6760655738;    % 原 0.671694
-V.lf   = 1.218688525;     % 原 1.246613
-V.lr   = V.L - V.lf;      % 1.731311475
+V.Ix   = 1070.178;        % 原 1038
+V.Iz   = 3378.974;        % 原 3438
+V.h_TL = 0.676;           % 原 0.671694
+V.lf   = 1.219;           % 原 1.246613
+V.lr   = V.L - V.lf;      % 1.731
 
 V.Kt   = 81.5e3;          % 稳态圆周辨识值（原公式 78.97e3）
 V.cs_fy = -3.2e-6;        % eclass2 CS_FY_COEFFICIENT [rad/N]
@@ -385,6 +385,9 @@ V.CarHat = -103.8e3;
 
 % TireF.cq = cq0*1.029; TireR.cq = cq0*1.044; 保留载荷相关和 Fiala
 ```
+
+`pmpc_init.m` 中上述参数统一保留 3 位小数（四舍五入），全精度值见
+`Predict_Model_Verify` 的验证记录。
 
 `prepare_step.m`：
 
@@ -562,3 +565,178 @@ Proposed 相对 MPC `ey max -15.9%`、`ey RMS -27.0%`、`SW -79.8%`、
 `summary_ey.png`、`three_controllers_70.png`、
 `three_controllers_75.png`、`three_controllers_80.png`、
 `metrics_speed_sweep.csv`。
+
+## 19. FishHook 80 km/h, mu=0.9：CarSim 数据集与 MPC 基线
+
+### 19.1 新数据集
+
+在 CarSim 里由 `DLC80_mu0.5_PMPC` 复制并改名：
+
+| 项 | 值 |
+|---|---|
+| Run Control | `FH80_mu0.9_MPC`（category `PMPC`） |
+| Dataset ID | `Run_e0bd0d16-6e4e-40fb-88fd-47e00f9bf500` |
+| Procedure | `Fishhook 294deg NHTSA, 80km/h, Mu=0.9 #Simulink` |
+| 车辆 | `E-Class, SUV #PMPC stock no-damper #red` |
+| 车速/时长 | 80 km/h，`TSTOP=8 s`，`SSTOP=200 m` |
+| 路面 | `1 km Square w/ Cones, Mu = 0.9` |
+| Models: Simulink | `PMPC_FH` |
+| 转向 | CarSim 开环 `Rollover Steer Input`：0→+294°@0.4083 s，保持，1.387 s 前反向到 −294°，保持 |
+| 转向 import | `IMP_STEER_SW Add`（`Priority Strategy #AFS increment`） |
+
+`PMPC_FH` 是 `PMPC` 的副本，只把 import 从 Replace 改成 Add。这样 FishHook
+的 SW 完全由 CarSim 的转向机器人给出，Simulink 只能叠加 AFS 增量。
+
+### 19.2 控制器不控前轮转角
+
+`pmpc_init(4, …)` 设置：
+
+```matlab
+M.afs_on    = false;   % u(1)=0
+M.steer_ext = true;    % delta_d 取实测前轮角；SW 输出只含 AFS 增量
+```
+
+`pmpc_step` / `pmpc_preview` 在 `steer_ext=true` 时用
+`mean(meas.delta_front)` 作为 `delta_d`，并且 SW 命令不再叠加
+`delta_d + u(1)`，只输出 `isw*u(1)`。本次 MPC 基线里：
+
+- Simulink SW 命令 = `4.7e-12 deg`（数值 0）；
+- CarSim `Steer_SW` = `±294 deg`。
+
+即车是 CarSim 机器人转的，控制器没有控前轮转角。
+
+### 19.3 MPC 基线结果（controller 1）
+
+| 指标 | 值 |
+|---|---:|
+| Roll | −5.38 … +4.29° |
+| LTR（CarSim，右−左） | −1.00 … +0.73 |
+| 侧偏角 β | −3.65 … +2.99° |
+| 横摆角速度 | −29.2 … +22.8 °/s |
+| 侧向加速度 | 0.70 g |
+| 车速 | 80 → 63.3 km/h |
+| 横向偏离 `Yo` | 到 −69.8 m |
+| Mz | 均值 4.31，峰值 6.86 kN·m |
+| Md | 均值 0.30，峰值 2.87 kN·m |
+| QP | 100% |
+
+两次转向反打时内侧车轮短暂离地（`LTR=±1.0`，各约 0.15–0.2 s），
+但没有翻车，8 s 正常结束。速度从 80 掉到 63 km/h 是差动制动持续工作
+的代价。
+
+### 19.4 权重与口径
+
+FishHook 不是路径跟踪工况：参考线只用于 `prepare_step` 的局部投影，
+`ey/epsi` 权重为 0，道路松弛权重接近 0。当前基线权重为
+
+```matlab
+M.Q_norm  = [0; 10; 20; 0; 0; 0; 0];   % [Vy;r;phi;p;ey;epsi;Md]
+M.R_norm  = [0.1; 500; 0.1];
+M.slack_w = [100; 100; 1e4; 1e-3];
+```
+
+这是稳定性优先的初始值，尚未针对 SH/Proposed 对比做最终整定。
+
+### 19.5 文件
+
+`PMPC_Results/FishHook_80_mu0.9/`：
+
+- `mpc_baseline.png/.pdf` — ey、roll、LTR、Mz、Md、β、r；
+- `steering_check.png` — Simulink SW 命令（0）vs CarSim SW（±294°）；
+- `mpc_baseline_xy.png` — 轨迹；
+- `metrics_mpc_baseline.csv`；
+- `fh80_mpc_b.mat/.vs/.vsb`；
+- `Run_all_FH80_mu0.9_MPC.par`、`simfile_fh.sim`。
+
+## 20. FishHook 80 km/h, mu=0.9, 车顶 cargo 170 kg：baseline 侧翻 vs Proposed
+
+### 20.1 数据集
+
+`FH80_cargo_MPC`，ID `Run_81631180-fa65-4272-a318-93dc477b6e33`：
+
+| 项 | 值 |
+|---|---|
+| Procedure | `Fishhook 294deg NHTSA, 80km/h, Mu=0.9 #Simulink` |
+| 车辆 | `E-Class, SUV #PMPC cargo 170`（E-Class） |
+| 基础总成 | `E-Class, SUV #PMPC stock no-damper #red`（当前独立后悬总成） |
+| 车顶 cargo | `Roof Cargo Box #130kg`，`M_PL=170 kg`，`H_CG_PL=2.5 m` |
+| 路面 | `1 km Square w/ Cones, Mu = 0.9` |
+| 车速/时长 | 80 km/h，`TSTOP=8 s` |
+| 转向 | CarSim 开环 `Rollover Steer Input`，±294° |
+| 转向 import | `IMP_STEER_SW Add` |
+
+`E-Class, SUV #PMPC cargo 170` 是从当前 `#PMPC stock no-damper #red` 总成
+复制后加 payload，保证与无 cargo 工况同一套悬架/轮胎/转向。
+
+### 20.2 时域
+
+FishHook 瞬态工况最终取：
+
+```matlab
+M.Ts = 0.05;   % 50 ms
+M.Np = 12;     % 0.6 s 预测
+M.Nc = 6;      % 0.3 s 控制
+```
+
+`pmpc_init` 新增第三个可选参数 `horizon_override`：
+
+```matlab
+h = struct('Ts',0.05,'Np',12,'Nc',6);
+[P,R,s0,m0] = pmpc_init(4,1,h);
+```
+
+时域扫描：
+
+| Ts | Np | Nc | 预测/控制 | Baseline | Proposed |
+|---:|---:|---:|---|---|---|
+| 0.10 | 10 | 5 | 1.0 / 0.5 s | 145 kg 不翻 (18.9°) | 145 kg 不翻 (13.6°) |
+| 0.05 | 10 | 5 | 0.5 / 0.25 s | 145 kg 翻 (80.0°) | 145 kg 不翻 (21.3°) |
+| **0.05** | **12** | **6** | **0.6 / 0.3 s** | **170 kg 翻 (79.9°)** | **170 kg 不翻 (12.5°)** |
+| 0.05 | 20 | 10 | 1.0 / 0.5 s | 145 kg 不翻 (11.2°) | 145 kg 不翻 (20.3°) |
+
+1.0 s 预瞄会让 baseline 自己防住侧翻；0.5 s 又太短。0.6 s 是
+“baseline 翻、Proposed 不翻”的窗口。
+
+### 20.3 Proposed 松弛权重上限
+
+FishHook 下 Proposed 的 `w2_max/w1_max` 从默认 `2e3` 提到 `1e4`：
+
+```matlab
+if M.controller==3
+    M.w2_max = 1e4;
+    M.w1_max = 1e4;
+end
+```
+
+原因：baseline 的 LTR 松弛权重是 `1e4`；Proposed 上限若只有 `2e3`，它在
+LTR 接近边界时反而不如 baseline 重视侧翻。提高后 170 kg / 0.6 s 下
+Proposed roll 从 78.7° 降到 12.5°。
+
+### 20.4 结果
+
+| 指标 | MPC baseline | Proposed |
+|---|---:|---:|
+| 结束时间 | **2.77 s（侧翻）** | 7.99 s |
+| Roll max | **79.86°** | **12.51°** |
+| LTR min / max | −1.00 / 0.81 | −1.00 / 0.71 |
+| β max | 13.82° | 4.09° |
+| 横摆角速度 max | 34.25°/s | 32.01°/s |
+| Ay max | 0.734 g | 0.654 g |
+| Vx min | 51.9 km/h | 45.5 km/h |
+| Mz mean / max | 5.17 / 8.62 kN·m | 5.79 / 11.40 kN·m |
+| Md mean / max | 0.69 / 3.76 kN·m | 0.39 / 4.80 kN·m |
+| QP | 100% | 100% |
+
+Baseline 在 2.77 s 翻到 80°；Proposed 也有 `LTR=±1.0` 的短暂举轮，但
+roll 峰值 12.5°，回稳并跑完 8 s。代价是更多差动制动和更低车速。
+
+### 20.5 文件
+
+`PMPC_Results/FishHook_80_mu0.9_cargo170/`：
+
+- `fishhook_cargo170_compare.png/.pdf`
+- `detail_fh_final_baseline.png/.pdf`、`detail_fh_final_prop.png/.pdf`
+- `metrics.csv`
+- `fh_final_baseline.mat/.vs/.vsb`、`fh_final_prop.mat/.vs/.vsb`
+- `Run_all_FH80_cargo_MPC.par`、`simfile_fh_cargo.sim`
+

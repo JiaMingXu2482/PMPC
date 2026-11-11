@@ -29,8 +29,17 @@ Ylocal=nan(Np+1,1);
 % 转向柔度前馈：delta_actual = delta_cmd + cs_fy*Fyf
 % 前馈项按方向盘速率上限相对上一拍 SW 做速率限制。
 Fyf_ff=sum(meas.Fy([1,3]));
-SW_raw=rad2deg(min(max(params.vehicle.isw*(delta_d+state.u_prev(1) ...
-    - params.vehicle.cs_fy*Fyf_ff),-deg2rad(720)),deg2rad(720)));
+% FishHook：驾驶员转角由 CarSim 转向机器人给出，取实测前轮角；
+% 输出 SW 只含 AFS 增量，不能把驾驶员转角再叠加一次。
+steer_ext = isfield(params.M,'steer_ext') && params.M.steer_ext;
+if steer_ext
+    delta_d = mean(meas.delta_front(:));
+    SW_raw=rad2deg(min(max(params.vehicle.isw*state.u_prev(1), ...
+        -deg2rad(720)),deg2rad(720)));
+else
+    SW_raw=rad2deg(min(max(params.vehicle.isw*(delta_d+state.u_prev(1) ...
+        - params.vehicle.cs_fy*Fyf_ff),-deg2rad(720)),deg2rad(720)));
+end
 max_step=rad2deg(params.vehicle.delta_sw_rate_max*params.M.Ts_exec);
 SW=state.sw_prev+min(max(SW_raw-state.sw_prev,-max_step),max_step);
 Tb=state.brake_prev;
@@ -155,8 +164,14 @@ function [SW,Fdes,Tb,s]=allocate_actuators(u,c,P,s)
 V=P.vehicle;
 delta_cmd=c.delta_d+u(1);
 % 转向柔度前馈 + 方向盘速率限制（相对上一拍命令）
-SW_raw=rad2deg(min(max(V.isw*(delta_cmd - V.cs_fy*c.Fyf), ...
-    -deg2rad(720)),deg2rad(720)));
+if isfield(P.M,'steer_ext') && P.M.steer_ext
+    % FishHook: 外部机器人给总转角，这里只输出 AFS 增量
+    SW_raw=rad2deg(min(max(V.isw*u(1), ...
+        -deg2rad(720)),deg2rad(720)));
+else
+    SW_raw=rad2deg(min(max(V.isw*(delta_cmd - V.cs_fy*c.Fyf), ...
+        -deg2rad(720)),deg2rad(720)));
+end
 max_step=rad2deg(V.delta_sw_rate_max*P.M.Ts_exec);
 SW=s.sw_prev+min(max(SW_raw-s.sw_prev,-max_step),max_step);
 s.sw_prev=SW;
@@ -179,17 +194,39 @@ else
     [T,ok,s.active_brake]=solve_qp(q,s.active_brake);
     if ok, s.brake_prev=T; else, s.brake_prev=zeros(4,1); end
 end
+% SH 开关 CDC（cdc_mode=2）：只替换减振器实现，制动分配保持正常，
+% 因此 Mz/AFS 与连续版逐点相同（做法 A）。电流由 inv_current_impl_10ms
+% 的 SH_MODE 输出 0 A（纯侧倾 skyhook 退化为常硬）。
+if isfield(P.M,'cdc_mode') && P.M.cdc_mode==2
+    Fdes=zeros(4,1);               % 占位，实际电流由 SH_MODE 决定
+    s.damper_prev=Fdes; Tb=s.brake_prev;
+    return
+end
+
 % 悬架映射 Md=B*F：左侧为负、右侧为正，前后使用各自力臂。
 B=.5*[-V.ldf,-V.ldr,V.ldf,V.ldr];
 previous=min(max(s.damper_prev,c.Flo),c.Fhi);
+Md_des=u(3);
 % 力区间越窄，该角力幅值惩罚越大；同时惩罚相对上一拍力的变化。
 span=max(c.Fhi-c.Flo,1); w=(mean(span)./span).^2; w=w/mean(w);
-q=struct('H',2*(B'*B+.005*diag(w)+.05*eye(4)), ...
-    'f',-2*(B'*u(3)+.05*previous), ...
+% 四角力平滑权重：0.05 时电流在 0/1.6 A 之间跳变，提高后电流连续。
+wprev=0.05;
+if isfield(P.M,'w_prev_alloc') && isfinite(P.M.w_prev_alloc)
+    wprev=P.M.w_prev_alloc;
+end
+q=struct('H',2*(B'*B+.005*diag(w)+wprev*eye(4)), ...
+    'f',-2*(B'*Md_des+wprev*previous), ...
     'A',zeros(0,4),'b',zeros(0,1),'lb',c.Flo,'ub',c.Fhi);
 % 悬架分配失败时保留已裁剪到当前上下界内的上一拍力。
 [F,ok,s.active_damper]=solve_qp(q,s.active_damper);
 if ok, s.damper_prev=F; else, s.damper_prev=previous; end
+% CDC 时滞补偿：四角力指令一阶超前 tau_lead，再夹回当前力界。
+% 放在分配之后，避免被 Md 力矩界提前钳死（实测 Md 层超前完全无效）。
+if isfield(P.M,'tau_lead') && P.M.tau_lead>0
+    F = F + (P.M.tau_lead/P.M.Ts_exec)*(F - previous);
+    F = min(max(F, c.Flo), c.Fhi);
+    s.damper_prev = F;
+end
 Tb=s.brake_prev;
 Fdes=s.damper_prev;
 end
@@ -328,6 +365,9 @@ if P.M.controller==3
         w1=min(max(P.M.w1_gain*(F+w2*slack+rho_g*slack^2)/margin(1),1),P.M.w1_max);
     end
     wr=w2; wa=w2; wl=w1; we=w1;
+    % 道路松弛权重可单独覆盖：鱼钩工况车辆横向偏离参考线 10 m 以上，
+    % 道路约束始终不可行，用 w1 惩罚会把执行器浪费在无法满足的道路约束上。
+    if isfield(P.M,'w_env') && isfinite(P.M.w_env), we=P.M.w_env; end
 else
     wr=P.M.slack_w(1); wa=P.M.slack_w(2);
     wl=P.M.slack_w(3); we=P.M.slack_w(4);
@@ -335,9 +375,13 @@ else
         rho_z=func_ZengRho(c.v,P.vehicle.mu,c.delta, ...
             atan2(c.zeta(1),max(c.v,0.5)),c.zeta(2),P.vehicle.g, ...
             P.M.rho_I0,P.M.rho_dI);
-        % Zeng 2025: rho 乘在稳定性松弛权重上
+        % Zeng 2025: rho 乘在稳定性松弛权重上。
+        % 2026-11-11: 原文献没有侧倾自由度，FishHook 下 rho 对 yaw/alpha
+        % 松弛无效（这两个约束从不激活）。这里把 rho 也乘到 LTR 松弛上，
+        % 让稳定域调度覆盖侧翻约束。
         wr=wr*rho_z;
         wa=wa*rho_z;
+        wl=wl*rho_z;
     end
 end
 f(nd+(1:4))=[wr;wa;wl;we];

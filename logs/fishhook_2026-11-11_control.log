@@ -1,0 +1,243 @@
+# FishHook 控制器定稿与逆模型替换（2026-11-11 下午）
+
+工程：`D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Jturn`
+承接：`logs/fishhook_2026-11-11.log`（上午的时延/正模型工作）
+
+---
+
+## 1. 逆模型：NN → 力界线性插值
+
+### 1.1 为什么换
+
+`nlcsnn/inv_weights_m.m` 头部显示 Jturn 用的是 **V25.2-RI0-CMD** 逆网络，
+但 `MR_NLCSNN` 的训练报告已判定这一系列逆模型不可用：
+
+- `v23/V23B_FINAL_REPORT.md`：逆 NN 对 `F_des` 的控制权限只有满量程 **5.36%**，
+  82% 样本违反单调性，预测电流与上一拍电流相关 **+0.872**、与 `F_des` 相关 **−0.077**
+  ——本质是“保持上一拍电流”。
+- `v24_cascade/V24_FINAL_REPORT.md`：级联训练被阻断，冻结正模型的可达力包络
+  只覆盖 **57.36%** 的真实力目标（门槛 90%）。
+- `v25_2_cmd_proxy/V25_2_FINAL_REPORT.md`：MAE 0.0388 A，相对 persistence 只改善
+  **12.8%**；SH/SR 恒电流工况反而更差。
+
+闭环实测：NN 逆模型的四角力跟踪误差 **120–190 N**（相对误差 27–79%）。
+
+### 1.2 新实现
+
+`nlcsnn/inv_current_impl_10ms.m` 改为力界线性插值：
+
+```matlab
+I = 1.6 * (Fdes - F_at0) / (F_at16 - F_at0);   % 再钳到 [0, 1.6]
+```
+
+`F_at0` / `F_at16` 来自 `force_bounds_impl_10ms`（当前速度下 0 A / 1.6 A 的
+10 ms 平均力）。单调、端点精确、不依赖网络。
+
+闭环实测：力跟踪误差 **40–90 N**（2–3 倍改善）。
+
+### 1.3 模型接线
+
+`pmpc_mil.slx` 的 `逆模型（1000Hz）` 改为 8 参调用：
+
+```matlab
+I_cmd = inv_current_impl_10ms(Fdes, t, Temper, cmpD, cmpRD, cid, F_at0(cid), F_at16(cid));
+```
+
+`F_at0` / `F_at16` 从 `边界模型（100Hz）` 的 out3/out4（4×1）接入，
+在 `减振器逆模型` 子系统内按 `cid` 取本角标量。
+
+### 1.4 删除
+
+- `nlcsnn/inv_weights_m.m`（V25.2 逆网络权重）
+- `nlcsnn/inv_mf_impl_10ms.m`（逆 NN 实现）
+- `nlcsnn/inv_mf.m`（逆 NN 包装）
+- `PMPC_Results/FishHook_80_mu0.9_cargo170_newplant/` 下所有 NN 逆模型结果
+
+备份：`C:\Users\user\AppData\Local\Temp\jturn_backup\`
+（`pmpc_mil_NN_backup.slx`、`inv_weights_m.m`、`inv_current_impl_10ms_NN.m`）
+
+---
+
+## 2. 工况
+
+| 项 | 值 |
+|---|---|
+| 数据集 | `FH80_cargo_MPC`（`Run_81631180-...`） |
+| 车速 | 80 km/h |
+| 路面 | mu = 0.9 |
+| 车顶载荷 | **190 kg**（`M_PL`，`H_CG_PL=2.5 m`） |
+| 转向 | 0→+294°@0.4083 s，保持 0.16 s，反向到 −294°@1.387 s，**720°/s** |
+| 预备段 | **1 s**（`run_fishhook` 的 `steer_prep` 默认 1.0 s） |
+| 时长 | 8 s |
+| 时域 | `Ts=0.05, Np=12, Nc=6` |
+
+`run_fishhook.m` 每次运行会重写 `Run_all.par` 的：
+- `M_PL`（车顶载荷）
+- `STEER_SW_TABLE`（加 1 s 预备段；可选 `steer_rate` 改转向速率）
+
+---
+
+## 3. Proposed 整定（FishHook + controller 3）
+
+```matlab
+M.w1_max = 2e5;      % LTR 松弛上限（原 1e4）
+M.w_env  = 1e-3;     % 道路松弛权重（原 = w1）
+M.R_norm(3) = 50;    % Md 增量权重（原 0.1）
+```
+
+### 3.1 `w_env`：道路松弛权重
+
+`build_qp` 原来 Proposed 把 LTR 和道路松弛用同一个 `w1`：
+
+```matlab
+wr=w2; wa=w2; wl=w1; we=w1;
+```
+
+FishHook 里车辆横向偏离参考线 **10–11 m**，道路约束永远不可行。
+用 `w1`（1e4 量级）去罚它，QP 会把执行器浪费在“把车拉回一条不存在的车道”上。
+
+改成 `we = 1e-3` 后：roll **12.44° → 10.51°**（170 kg）。
+
+### 3.2 `w1_max`：LTR 松弛上限
+
+高载荷（190 kg）下 1e4 太松，QP 在余量较大时把 LTR 约束放掉：
+
+| `w1_max` | Roll（190 kg） |
+|---:|---:|
+| 2e4 | 12.52° |
+| 5e4 | 10.13° |
+| **1e5** | 9.91° |
+| **2e5** | **9.83°**（后续 R3=50 后 6.51°） |
+
+### 3.3 `R_norm(3)`：Md 增量权重（抑制抖动）
+
+| R3 | Md 指令 std(d1) | >3 Hz 能量 | Roll | LTR |
+|---:|---:|---:|---:|---:|
+| 0.1 | 242.9 | 14.5% | 9.83° | 1.00 |
+| 10 | 123.4 | 2.5% | 6.50° | 0.97 |
+| 20 | 119.6 | — | 6.50° | 1.00 |
+| **50** | **114.8** | **2.5%** | **6.51°** | **0.97** |
+| 100 | 115.0 | — | 6.51° | 0.99 |
+
+R3=50 最好：Md 指令抖动降 53%，roll 从 9.83° 降到 6.51°，LTR 0.97。
+
+---
+
+## 4. 四控制器结果（190 kg）
+
+| 控制器 | 结束 | Roll | LTR | Md 实测 | Mz 峰值 | 平均电流 |
+|---|---:|---:|---:|---:|---:|---:|
+| **Passive vehicle**（无 Mz/AFS，0 A） | **3.44 s 翻** | 79.61° | 1.00 | 11510 | 0 | 0.00 A |
+| **MPC**（连续 CDC） | **3.83 s 翻** | 79.74° | 1.00 | 3745 | 8793 | 0.73 A |
+| **Proposed** | 7.99 s | **6.51°** | **0.97** | 2692 | 9147 | 0.81 A |
+| **Proposed + comp 10 ms** | 7.99 s | **6.51°** | **0.96** | 2706 | 9154 | 0.83 A |
+
+- Passive、MPC 翻车；
+- 两个 Proposed 都不翻，LTR 都 < 1。
+
+### 4.1 消融
+
+| 控制器 | Roll | 说明 |
+|---|---:|---|
+| Passive vehicle | 79.61°（翻） | 无控制 |
+| MPC | 79.74°（翻） | 固定权重 |
+| Proposed + passive damper（0 A） | 8.40° | CDC 消融：连续 CDC 贡献 −15.5% |
+| Proposed | 6.51° | 完整 |
+| Proposed + comp 10 ms | 6.51° | 时延补偿 |
+
+### 4.2 时延补偿
+
+补偿加在**四角力指令**上（分配 QP 之后），不是 Md 层：
+
+```matlab
+F = F + (tau_lead/Ts_exec)*(F - previous);
+F = min(max(F, c.Flo), c.Fhi);
+```
+
+`tau_lead=10 ms`，对应实测执行器滞后 0–10 ms（L1 +10 ms，其余 0 ms）。
+加在 Md 层会被力矩界钳死，实测完全无效。
+
+---
+
+## 5. Md / 电流抖动分析
+
+### 5.1 三层抖动
+
+| 层 | 指标 | 处理 |
+|---|---|---|
+| Md 指令 | std(d1) 242.9 → 114.8 | `R_norm(3)=50` |
+| 电流 | std(dI) 0.180，max 1.60 A | 插值逆模型在低速度时力跨度小，逆解敏感 |
+| Md 实测 | std(d1) 168 | 阻尼速度驱动，物理 |
+
+### 5.2 电流限幅试验（已放弃）
+
+试过 `MAX_DI=0.8 A/10 ms`：电流 std 0.180 → 0.118，但 LTR 从 0.97 变 1.00。
+**用户指出实车电流 0→1.6 A 阶跃 <10 ms，不该限幅**，已改回 `MAX_DI=1.6`（不限幅）。
+
+### 5.3 正模型速度低通试验（已放弃）
+
+`fwd_mf_impl.m` 加 `TAU_V` 低通：
+
+| TAU_V | L1 >10Hz | L2 | R1 | R2 | Roll | LTR |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0（不滤波） | 0.6% | 0.6% | **21.4%** | 0.4% | 6.51° | **0.97** |
+| 5 ms | 0.5% | 1.1% | 11.9% | 0.8% | 6.49° | 1.00 |
+| 10 ms | 4.0% | 6.6% | 17.0% | 7.7% | 6.56° | 1.00 |
+| 20 ms | 39.0% | 64.6% | 26.7% | 34.8% | 6.57° | 1.00 |
+
+- 只有 R1 抖（21.4% >10 Hz），其余三角 <1%；
+- R1 的阻尼速度本身 17.6% 能量 >10 Hz（右前悬架振荡），是物理的；
+- 5 ms 滤波能压到 11.9%，但带来 0.1 s 的 LTR=1.0；
+- 10/20 ms 滤波破坏闭环相位，反而更差。
+
+**结论：`TAU_V=0`，不滤波。**
+
+---
+
+## 6. 代码改动清单
+
+| 文件 | 改动 |
+|---|---|
+| `nlcsnn/inv_current_impl_10ms.m` | 力界线性插值；`SH_MODE`（0=插值，2=恒 0 A）；`MAX_DI=1.6` |
+| `nlcsnn/fwd_mf_impl.m` | `TAU_V=0`（速度低通，默认关闭） |
+| `nlcsnn/force_bounds_impl_10ms.m` | 回退 `f_scale` 放大（k=1） |
+| `nlcsnn/inv_weights_m.m` / `inv_mf_impl_10ms.m` / `inv_mf.m` | **删除** |
+| `pmpc_core/pmpc_init.m` | FishHook：`w1_max=2e5`、`w_env=1e-3`、`R_norm(3)=50`；新增 `M.mz_on`、`M.cdc_mode` |
+| `pmpc_core/pmpc_step.m` | `tau_lead` 移到四角力指令；`cdc_mode=2` SH 分支（制动分配之后）；`w_prev_alloc` 参数 |
+| `pmpc_core/prepare_step.m` | `c.Fd`；`mz_on=false` 时 Mz 界压 0 |
+| `pmpc_core/build_prediction.m` | `tau_d` 下限保护 |
+| `run_fishhook.m` | **新增**：FishHook 统一运行脚本（cargo/steer_prep/steer_rate/cdc_mode/w1/w2/R_norm 等覆盖） |
+| `pmpc_mil.slx` | 换成 8 参逆模型接线（含 `Icmd_log`） |
+| `init_valve2.m` | **新增**：CDC 电流环平均值模型参数（模型 InitFcn 调用） |
+
+---
+
+## 7. 结果文件
+
+`PMPC_Results/FishHook_80_mu0.9_cargo170_newplant/`：
+
+| 文件 | 内容 |
+|---|---|
+| `fin190_passive.*` | Passive vehicle |
+| `fh190_c1.*` | MPC |
+| `r3_50_nc.*` | Proposed（R3=50） |
+| `r3_50_c.*` | Proposed + comp 10 ms |
+| `fin190_prop_pdamper.*` | Proposed + 被动减振器（CDC 消融） |
+| `fin190_sh0_c3.*` | SH hard（0 A） |
+| `fishhook_170_four_compare.png/.pdf` | 四控制器总览 |
+| `fishhook_170_damper_force.png/.pdf` | 四控制器 × 四角力（16 子图） |
+| `fishhook_170_ltr_compare.png/.pdf` | LTR 对比 |
+| `fishhook_170_current_compare.png/.pdf` | 四角电流对比 |
+| `fishhook_170_ideal_current.png/.pdf` | 理想开关电流 vs 实测 |
+| `scripts/` | 出图脚本 |
+
+扫描与试验数据在 `exploration/`。
+
+---
+
+## 8. 待办
+
+- [ ] 把本组定稿写进 `pmpc_core/CONTROLLERS.md` 新一节
+- [ ] DLC / J-turn 结果仍基于旧 NN 逆模型，需要重跑
+- [ ] R1 高频抖动是否需要在论文里说明（物理振荡）
+- [ ] `pmpc_fishhook_log.slx` / `pmpc_fishhook_sat.slx` / `pmpc_fh_delay_new.slx` 三个诊断模型是否保留

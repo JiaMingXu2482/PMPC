@@ -59,10 +59,13 @@ function F = fwd_mf_impl(t, Temp_C, cmpD, cmpRD, I_cmd, cid)
 
 %#codegen
 
-persistent net st_h st_prev t_prevs v_prevs a_filts
+persistent net st_h st_prev t_prevs v_prevs a_filts v_filts
 
 NC = 4;
 TAU_ACCEL = 0.002;
+% 阻尼速度低通 [s]：CarSim 的减振器速度含轮胎/悬架数值高频，
+% 正模型直接跟随会让阻尼力出现 10-50 Hz 抖动。0 = 不滤波。
+TAU_V = 0;      % 0 = 不滤波（R1 高频是右前悬架物理振荡，非数值噪声）
 
 if isempty(net)
     net = fwd_weights_m();
@@ -71,6 +74,7 @@ if isempty(net)
     t_prevs = NaN(1, NC);
     v_prevs = zeros(1, NC);
     a_filts = zeros(1, NC);
+    v_filts = zeros(1, NC);
 end
 
 cid = max(1, min(NC, round(cid)));
@@ -92,6 +96,15 @@ t_prevs(cid) = t;
 n = net.norm;
 x_rig = n.x_ref - cmpD;
 v_rig = -cmpRD;
+if TAU_V > 0
+    if first_step
+        v_filts(cid) = v_rig;
+    else
+        alpha_v = 1 - exp(-dt / TAU_V);
+        v_filts(cid) = (1 - alpha_v) * v_filts(cid) + alpha_v * v_rig;
+    end
+    v_rig = v_filts(cid);
+end
 if first_step
     a_rig = 0;
 else

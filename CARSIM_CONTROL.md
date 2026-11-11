@@ -243,6 +243,38 @@ copyfile(fullfile(src,'LastRun_echo.par'), dst);
 
 ---
 
+### 4.4 FishHook run dataset（FH80_mu0.9_MPC）
+
+先复制一份 Models: Simulink，把 import 从 Replace 改成 Add：
+
+```matlab
+h.Gotolibrary('Models: Simulink','PMPC','Coordinated Control');
+h.CreateNew();
+h.DatasetCategory('PMPC_FH','Coordinated Control');
+h.BlueLink('#BlueLink0','I/O Channels: Import', ...
+    'Priority Strategy #AFS increment','MPC inport');
+h.Save();
+```
+
+再复制 run control 并换成 FishHook procedure：
+
+```matlab
+h.Gotolibrary('CarSim Run Control','DLC80_mu0.5_PMPC','PMPC');
+h.CreateNew();
+h.DatasetCategory('FH80_mu0.9_MPC','PMPC');
+h.BlueLink('#BlueLink28','Procedures', ...
+    'Fishhook 294deg NHTSA, 80km/h, Mu=0.9 #Simulink','Stability Testing');
+h.BlueLink('#BlueLink12','Models: Simulink','PMPC_FH','Coordinated Control');
+h.Yellow('*SPEED','80');
+h.Yellow('*TSTOP','8');
+h.Yellow('*SSTOP','200');
+h.Save();
+```
+
+`IMP_STEER_SW Add` 让 CarSim 的开环转向机器人给 SW，Simulink 只叠加 AFS
+增量；FishHook 里 `u(1)=0`，所以 Simulink 的 SW 命令恒为 0。完整结果见
+`pmpc_core/CONTROLLERS.md` 第 19 节。
+
 ## 5. 批量跑圆周 / 阶跃
 
 参考脚本：

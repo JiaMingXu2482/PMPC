@@ -119,6 +119,10 @@ end
 % 左/右侧制动能力不同，正负横摆界各自取用，并保号以确保区间有序。
 Mzpos=max(Mzpos,0);
 Mzneg=min(Mzneg,0);
+% 被动车基线：关掉差动制动（Mz 界压成 0）
+if isfield(params.M,'mz_on') && ~params.M.mz_on
+    Mzpos=0; Mzneg=0;
+end
 umax=[deltaMax;Mzpos;Mdhi];
 umin=[deltaMin;Mzneg;Mdlo];
 
@@ -137,12 +141,12 @@ duMax=[duDelta;duMz;duMd];
 % 必要时放宽绝对输入界，使其与上一拍输入的增量可达区间相交。
 umax(1:2)=max(umax(1:2),zeta(8:9)-duMax(1:2));
 umin(1:2)=min(umin(1:2),zeta(8:9)+duMax(1:2));
-% 预瞄开启时，Md 不放宽到力界之外；冲突走已有失败回退，分配仍受首步力界约束。
-% 旧4x1接口或alpha=0保留原恒定Md框及相交放宽规则，便于基线对照。
+% Md 绝对界始终取真实力界（Mdlo/Mdhi），不放宽到力界之外。
+% 上一拍 Md 命令越界时，由 build_qp 的 duLimit(3) 放宽首步增量额度
+% 把命令拉回界内；若把界本身放宽，QP 会下达四角分配无法实现的 Md，
+% 分配环节静默饱和，指令与实测出现米级差距（2026-11-11 修正）。
 if size(Flo,2)==1 || params.M.preview_alpha<=0
-    umax(3)=max(umax(3),zeta(10)-duMax(3));
-    umin(3)=min(umin(3),zeta(10)+duMax(3));
-    MdloPlan(:)=umin(3); MdhiPlan(:)=umax(3);
+    MdloPlan(:)=Mdlo; MdhiPlan(:)=Mdhi;
 end
 
 %% 状态约束
@@ -181,7 +185,7 @@ Gr=[.8;.8]-k*kg*(offsetPred(1)*cos(delta)+offsetPred(2))/V.m*[1;-1];
 %%
 c=struct('zeta',zeta,'ey',ey,'Cf',Cf,'Cr',Cr,'offset',offsetPred,'v',vx,'delta',delta, ...
     'Fyf',sum(Fy([1,3])), ...
-    'delta_d',delta_d,'kap',kap,'kapNode',kapNode,'yr',yr,'Fz',Fz,'Flo',lo,'Fhi',hi, ...
+    'delta_d',delta_d,'kap',kap,'kapNode',kapNode,'yr',yr,'Fz',Fz,'Fd',Fd,'Flo',lo,'Fhi',hi, ...
     'brakeMax',brakeMax,'umin',umin,'umax',umax,'duMax',duMax, ...
     'MdloPlan',MdloPlan,'MdhiPlan',MdhiPlan, ...
     'Hsh',Hsh,'Gsh',Gsh,'Hr',[Hr;-Hr],'Gr',Gr,'Or',[Or;-Or], ...
