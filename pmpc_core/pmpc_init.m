@@ -1,4 +1,4 @@
-function [params, Reftraj, state0, meas0] = pmpc_init(maneuver_override, controller_override, horizon_override)
+function [params, Reftraj, state0, meas0] = pmpc_init(maneuver_override, controller_override, horizon_override, mu_override)
 %PMPC_INIT 共享参数、全局路径及控制器跨拍状态。只在仿真前执行。
 % InitFcn: [params, Reftraj, state0, meas0] = pmpc_init();
 % 可选 maneuver_override（工况）：1=DLC，2=Slalom，3=U-turn，4=FishHook；空/省略时默认1。
@@ -148,12 +148,21 @@ end
 
 switch maneuver
 
-    case 1                       % DLC（60/70/80 km/h 对比，原 tanh 路径）
-        Road.mu = 0.5;           % 当前 CarSim DLC 路面：mu=0.5
+    case 1                       % DLC（60/70/75 km/h 对比，原 tanh 路径）
+        Road.mu = 0.4;           % CarSim DLC 路面 friction map：Mu = 0.4 Test Pad
         % DLC 专用权重
         M.Q_norm  = [0; 0; 10; 0; 100; 20; 0];
         M.R_norm  = [100; 200; 0.1];   % 60 km/h: R1=30; 80 km/h 建议改回 10
-        M.slack_w = [1e4; 1e4; 1e4; 1e4];
+        % MPC 保持原始固定权重 1e4（mu=0.4、75 km/h 以上会失效）；
+        % ZENG/Proposed 用 mu=0.4 重整定值 0.2e4。
+        M.slack_w = 0.2e4*ones(4,1);
+        if M.controller==1
+            M.slack_w = 1e4*ones(4,1);
+        end
+        if M.controller==2
+            M.Q_norm(6) = 10;          % ZENG DLC 整定：epsi 权重 20 -> 10
+            M.rho_I0 = 1.0;            % ZENG DLC 整定：rho 起始阈值 0.7 -> 1.0
+        end
         if M.controller==3
             M.Q_norm(6) = 5;           % Proposed DLC 整定：epsi 权重 20 -> 5
             M.Wb = 10;                 % Proposed DLC 整定：DB gamma 罚 100 -> 10
@@ -165,11 +174,35 @@ switch maneuver
         station = [];
 
     case 2                       % Slalom
-        Road.mu = 0.85;          % 当前 CarSim 路面附着系数
-        % Slalom 暂用 J-turn 权重，后续单独整定
+        Road.mu = 0.85;          % CarSim Slalom 路面 friction map（0.85）
+        % Slalom 权重（2026-11-11 整定）
         M.Q_norm  = [0; 0; 5; 0; 50; 5; 0];
         M.R_norm  = [0.1; 500; 0.1];
         M.slack_w = [5; 5; 5; 5];
+        % 力界预瞄在 Slalom 净有害（80 km/h ey 0.801->0.815，90 km/h 1.175->1.255，
+        % 见 nlcsnn/force_bounds_impl_10ms.m），三种控制器统一关闭。
+        M.preview_L = 0;
+        M.preview_alpha = 0;
+        if M.controller==2
+            % ZENG 的 rho 下限：Slalom 下 rho<1 会让 ZENG 比 MPC 差
+            % （80 km/h ey 1.041/0.982 vs MPC 0.960）；1.0 时 ZENG ≡ MPC，
+            % 满足“ZENG 不能比 MPC 差”。
+            M.rho_min = 1.0;
+        end
+        if M.controller==3
+            % Proposed 的松弛上限：默认 1e4 比 MPC 的 5 硬 2000 倍，
+            % 会为满足约束牺牲路径（80 km/h ey 1.762 m）；50 时降到 0.846 m。
+            M.w1_max = 50;
+            M.w2_max = 50;
+            % DB gamma 罚：100 时 Mz 被压得太狠，10 时 ey 0.347、Mz 仍比 MPC 低 59%。
+            M.Wb = 10;
+            % tau_d 扫描（80/90 km/h，ey max）：
+            %   1e-4: 0.801/1.175   0.05: 0.796/1.129   0.10: 0.793/1.123
+            %   0.15: 0.776/1.108   0.20: 0.783/1.100   0.30: 0.779/1.100
+            % 单调改善并在 0.15~0.20 饱和，取 0.15（comp 口径）。
+            % no-comp 由 run_slalom 覆盖为 tau_d=1e-4。
+            M.tau_d = 0.15;
+        end
 
         % 与 CarSim 路面一致的解析路径：入口斜坡 + 3 个正弦周期 + 出口斜坡。
         % 正弦零穿越斜率 2*pi*A/P 取成与斜坡斜率 k 相同，保证 C1 连续。
@@ -322,6 +355,13 @@ assert(all(isfinite(Reftraj(:))) && all(diff(station)>0), ...
 
 %% 7. 道路共享参数
 Road.width = 3.5;                % 道路/车道宽度 [m]
+
+% 路面附着覆盖（第 4 个可选参数）：必须在 V.mu / TireF.mu / TireF.mq 之前生效，
+% 否则控制器内部仍用工况默认 mu，与 CarSim 路面不一致。
+% run_fishhook 的 opts.mu 会同时改 CarSim 展开 par 的 MU_ROAD_CONSTANT。
+if nargin>=4 && ~isempty(mu_override) && isfinite(mu_override)
+    Road.mu = mu_override;
+end
 
 V.mu = Road.mu;                  % 保持原车辆动力学字段
 % 轮胎侧偏刚度 C_alpha 由 cq 决定，不随 mu 缩放；峰值由 mq 乘 mu。

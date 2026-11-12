@@ -76,6 +76,18 @@ hit = find(startsWith(strtrim(lines),'M_PL '),1);
 assert(~isempty(hit), 'Run_all.par 中找不到 M_PL');
 lines{hit} = sprintf('M_PL %g',opts.cargo);
 
+% 路面附着：改 CarSim 展开 par 的 MU_ROAD_CONSTANT（两处：road + friction map）。
+% 控制器内部的 Road.mu 在 pmpc_init 之后同步覆盖，保证模型与路面一致。
+nmu = 0;
+if isfield(opts,'mu') && isfinite(opts.mu)
+    for k = 1:numel(lines)
+        if strncmp(strtrim(lines{k}),'MU_ROAD_CONSTANT ',17)
+            lines{k} = sprintf('MU_ROAD_CONSTANT %g',opts.mu); nmu = nmu + 1;
+        end
+    end
+    fprintf('mu %.2f applied to %d MU_ROAD_CONSTANT lines\n', opts.mu, nmu);
+end
+
 % 转向预备段：把 STEER_SW_TABLE 整体后移 prep 秒，并在最前面插入 0° 保持点。
 % 已加过（存在 t>0 且角度为 0 的点）则跳过，保证重复调用幂等。
 if opts.steer_prep > 0
@@ -160,7 +172,9 @@ set_param(mdl,'StopTime',sprintf('%g',opts.stopTime));
 
 % 控制器参数：FishHook + 指定控制器 + 瞬态时域，再按变体覆盖时滞口径。
 h = struct('Ts',0.05,'Np',12,'Nc',6);
-[P,R,s0,m0] = pmpc_init(4,ctrl,h);
+muOpt = [];
+if isfield(opts,'mu') && isfinite(opts.mu), muOpt = opts.mu; end
+[P,R,s0,m0] = pmpc_init(4,ctrl,h,muOpt);
 P.M.tau_d         = cfg.tau_d;
 P.M.preview_L     = cfg.preview_L;
 P.M.preview_alpha = cfg.preview_alpha;

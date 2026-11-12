@@ -375,6 +375,13 @@ else
         rho_z=func_ZengRho(c.v,P.vehicle.mu,c.delta, ...
             atan2(c.zeta(1),max(c.v,0.5)),c.zeta(2),P.vehicle.g, ...
             P.M.rho_I0,P.M.rho_dI);
+        % rho 下限：rho=0 表示稳定性松弛权重归零（约束免费），rho=1 表示
+        % 与 MPC 同权重。Slalom 实测 rho<1 会让 ZENG 比 MPC 差
+        % （80 km/h ey 1.041/0.982 vs MPC 0.960），因此用 rho_min=1.0
+        % 把调度钳到“不放松”，此时 ZENG 与 MPC 逐点等价。
+        if isfield(P.M,'rho_min') && isfinite(P.M.rho_min)
+            rho_z=max(rho_z,P.M.rho_min);
+        end
         % Zeng 2025: rho 乘在稳定性松弛权重上。
         % 2026-11-11: 原文献没有侧倾自由度，FishHook 下 rho 对 yaw/alpha
         % 松弛无效（这两个约束从不激活）。这里把 rho 也乘到 LTR 松弛上，
