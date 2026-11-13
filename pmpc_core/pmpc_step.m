@@ -10,16 +10,19 @@ function [SW,Fdes,Tb,stateNext,Xlocal,Ylocal,logVec] = pmpc_step(meas,Reftraj,pa
 % Xlocal/Ylocal 为全局坐标系下的局部参考路径，尺寸为 (Np+1)x1，单位 m。
 % state 保存上一拍 AFS/Mz/Md 命令、备用增量序列和三个 QP 的活动集；先给输出赋保持值。
 % params/Reftraj/state 与测量、力边界均使用 double；活动集保持 logical。
-% logVec 为25x1诊断日志，不参与控制计算。
+% logVec 为27x1诊断日志，不参与控制计算。
 % [ey,epsi,phi,p,LTR,Md_actual,Md_cmd,Md_min,Md_max,
 %  Fd_L1,Fd_L2,Fd_R1,Fd_R2,Fdes_L1,Fdes_L2,Fdes_R1,Fdes_R2,
-%  Mz_cmd,SW,Vx,r,deltaMd,deltaMd_max,QP_OK,candidate_used]。
+%  Mz_cmd,SW,Vx,r,deltaMd,deltaMd_max,QP_OK,candidate_used,
+%  w_stab,w_LTR]。
+% 第26/27 行是本拍实际生效的稳定性/LTR 松弛权重：
+%   MPC/ZENG 为固定值，Proposed 为按余量在线算出的动态权重。
 
 if nargin<8, delta_d=0; end
 
 % 初始化
 stateNext=state;
-logVec=nan(25,1);
+logVec=nan(27,1);
 logVec(24:25)=-1; % -1表示本拍尚未执行主QP
 
 Np=coder.const((numel(state.active_main)-4*numel(state.plan)-10)/12);
@@ -108,7 +111,7 @@ else
     p=build_prediction(c,params,state.plan);
 end
 % 3. 构造目标函数和约束，并生成符合条件时可回退使用的候选计划。
-[q,candidate,useCandidate,mdFeasible]=build_qp(c,p,params,state);
+[q,candidate,useCandidate,mdFeasible,wr,wl]=build_qp(c,p,params,state);
 % 4. 先使用逐步预瞄界；已知Md区间不相容时直接跳过该QP。
 z=zeros(size(q.f)); ok=false;
 if mdFeasible
@@ -121,7 +124,7 @@ if ~ok && ~useCandidate
     local=c;
     local.MdloPlan(:)=c.MdloPlan(1);
     local.MdhiPlan(:)=c.MdhiPlan(1);
-    [q,candidate,useCandidate,~]=build_qp(local,p,params,state);
+    [q,candidate,useCandidate,~,wr,wl]=build_qp(local,p,params,state);
     [z,ok,stateNext.active_main]=solve_qp(q,false(size(state.active_main)));
 end
 % 5. 本拍执行第一项增量；仅将后续候选计划按实际执行周期对齐。
@@ -140,6 +143,8 @@ end
 logVec(22)=du(3);
 logVec(24)=double(ok);
 logVec(25)=double(candidateUsed);
+logVec(26)=wr;   % 本拍稳定性松弛权重（Proposed 为动态）
+logVec(27)=wl;   % 本拍 LTR 松弛权重（Proposed 为动态）
 stateNext.u_prev=c.zeta(8:10)+du;
 % 旧绝对输入为分段常值，平移Ts_exec后按Ts区间取平均，末端保持。
 % 对0<Ts_exec<=Ts，Unew_j=(1-a)*U_j+a*U_{j+1}，a=Ts_exec/Ts。
@@ -232,13 +237,16 @@ Fdes=s.damper_prev;
 end
 
 %% QP 目标与约束组装
-function [q,candidate,useCandidate,mdFeasible]=build_qp(c,p,P,s) %#codegen
+function [q,candidate,useCandidate,mdFeasible,wr,wl]=build_qp(c,p,P,s) %#codegen
 %BUILD_QP z=[DeltaU;s_r;s_alpha;s_LTR;s_env;gamma_DB]，A*z<=b。
 % 4 个松弛分别对应横摆、后轴侧偏、LTR、道路；gamma 只缩放 DB 边界。
 % 采用固定预测矩阵的尺寸，不用可调参数值分配求解器数组。
 N=coder.const(size(p.Y,1)/7); K=coder.const(size(p.Y,2)/3);
 nd=3*K; n=nd+5;
 % 固定参考尺度（SI，与工况无关），三种控制器共用。
+% 输出给 logVec(26/27) 的两个松弛权重，先显式定成标量，
+% 避免 codegen 把它们判成可变尺寸、进而让 logVec 变成可变尺寸。
+wr=0; wl=0;
 VY_REF=1.0; R_REF=0.2; PHI_REF=deg2rad(2); P_REF=deg2rad(10);
 EY_REF=0.3; EPSI_REF=deg2rad(1);
 DFYF_REF=deg2rad(1); MFX_REF=500; MD_REF=500;

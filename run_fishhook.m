@@ -225,7 +225,7 @@ for ext = {'.vs','.vsb'}
     end
 end
 L = out.pmpc_log; D = squeeze(L.Data);
-if size(D,1) ~= 25, D = D.'; end
+if size(D,1) ~= 27, D = D.'; end
 t = L.Time;
 save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t');
 % 若模型带 Icmd_log（pmpc_fishhook_log），一并保存四角电流。

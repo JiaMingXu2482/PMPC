@@ -1712,3 +1712,62 @@ comp/nc 差距从 3.5% 增到 4.0%；代价是 SW 从 163° 涨到 206°。
 - comp vs nc：ey −4.0%、SW −11.9%、Mz −15.4%（图上紫/绿开始能分开）
 
 图：`slalom_80_x3.pdf`（脚本 `scripts/plot_slalom_x3.py`）。
+
+---
+
+## 32. logVec 扩到 27 行：记录动态权重（2026-11-12）
+
+### 32.1 改了什么
+
+`pmpc_step` 的 `logVec` 从 25 行扩到 **27 行**，新增：
+
+| 行 | 含义 |
+|---:|---|
+| 26 | `w_stab` 本拍稳定性松弛权重（横摆 + 侧偏） |
+| 27 | `w_LTR` 本拍 LTR 松弛权重 |
+
+MPC/ZENG 是固定值（`slack_w`，ZENG 再乘 `rho`），**Proposed 是按力界余量在线算的**。
+
+四角电流本来就有：`<prefix>.mat` 的 `Icmd` 字段（1 kHz，`n×4` 矩阵，
+列顺序 `[L1 L2 R1 R2]`），不需要新增日志。
+
+### 32.2 踩的坑
+
+`pmpc_step` 返回 27×1 后编译报
+`尝试解析欠定信号维度时，模型 'pmpc_mil' 的编译失败`，
+指向 `MATLAB Function` 的 `stateNext` 输出。
+
+真正原因：**chart 里 `logVec` 的输出数据把数组尺寸硬写成了 `[25 1]`**。
+改 `pmpc_step` 不够，还要改 chart：
+
+```matlab
+ch = sfroot().find('-isa','Stateflow.EMChart', ...
+     'Path','pmpc_mil/MPC_Controller（100Hz）/MATLAB Function');
+d = ch.find('-isa','Stateflow.Data');
+d(strcmp({d.Name},'logVec')).Props.Array.Size = '[27 1]';
+save_system('pmpc_mil');
+```
+
+`To Workspace` 是 `Timeseries` + `MaxDataPoints=inf`，宽度自动跟随，不用改。
+
+### 32.3 实测权重范围（t ≥ 2 s）
+
+| 算例 | `w_stab` | `w_LTR` |
+|---|---|---|
+| Slalom 80 Proposed comp（`sw200_c`） | 6.6 – 200.0（均值 159.5） | 12.6 – 200.0（均值 166.7） |
+| DLC 80 Proposed（`p_w10_80`） | 12.4 – 1000.0（均值 671.5） | 11.4 – 1000.0（均值 718.1） |
+| FishHook Proposed（`x3t_q40nc`） | 45.8 – 1524.7（均值 682.6） | **200000 恒定** |
+
+**FishHook 的 `w_LTR` 全程钉在上限 2e5** —— 这是第 29.5 节
+"comp 与 nc 无法区分"的直接证据：LTR 松弛权重被上限架空，
+自适应机制不起作用。`w_stab` 还在动（45.8–1524.7），但 LTR 那条死了。
+
+Slalom/DLC 的权重在 [1, 上限] 之间真实变化（Slalom 30 倍跨度、DLC 80 倍），
+可以画一条"w 随余量变化"的图支撑 Proposed 的自适应机制。
+
+### 32.4 兼容性
+
+- 旧算例的 `D` 仍是 25 行，读的时候用 `D.shape[0]` / `size(D,1)` 判断。
+- 已重跑三个代表性 Proposed 算例（`sw200_c`、`p_w10_80`、`x3t_q40nc`），
+  结果与改动前**逐位相同**（ey 0.743 / 0.870 / 5.10°）。
+- 其余算例未重跑，不影响出图（图只用 1–25 行）。

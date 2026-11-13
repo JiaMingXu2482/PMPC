@@ -85,7 +85,7 @@ Slalom 的 20 Hz 对 1–2 Hz 的绕桩曲线够用，但看瞬态细节（如 M
 
 | 字段 | 尺寸 | 说明 |
 |---|---|---|
-| `D` | (25, n) | `pmpc_log`，100 Hz 控制器日志 |
+| `D` | (27, n) | `pmpc_log`，100 Hz 控制器日志 |
 | `t` | (n,) | 时间 [s] |
 | `Icmd` | struct | 四角电流指令（Simulink `To Workspace`，含 `time`/`signals`） |
 
@@ -112,6 +112,12 @@ Slalom 的 20 Hz 对 1–2 Hz 的绕桩曲线够用，但看瞬态细节（如 M
 | 23 | `deltaMd_max` 本拍 Md 增量上限 | N·m |
 | 24 | `QP_OK`（1=主 QP 成功） | – |
 | 25 | `candidate_used`（1=用备用候选计划） | – |
+| 26 | `w_stab` 本拍稳定性松弛权重（Proposed 动态） | – |
+| 27 | `w_LTR` 本拍 LTR 松弛权重（Proposed 动态） | – |
+
+> 第 26/27 行是 2026-11-12 新增的。MPC/ZENG 是固定值（等于 `slack_w`，
+> ZENG 还要乘 `rho`），Proposed 是按力界余量在线算出来的动态权重。
+> 旧算例的 `D` 只有 25 行，读的时候用 `D.shape[0]` 判断。
 
 > 注意：`D` 里的 `LTR`（第 5 行）是控制器用四轮垂向载荷自算的，
 > 与 `_sig.mat` 里 CarSim 的 `LTR` 通道定义相同但不完全等价（采样率、滤波不同）。
