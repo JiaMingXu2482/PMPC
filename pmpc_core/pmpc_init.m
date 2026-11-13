@@ -373,6 +373,16 @@ Reftraj(:,7) = station;
 assert(all(isfinite(Reftraj(:))) && all(diff(station)>0), ...
     '参考轨迹包含无效数据或非递增弧长');
 
+%% 6b. 时延补偿只属于 Proposed（controller 3）
+% tau_d 是预测模型里"力矩命令 -> 实际力矩"的一阶时间常数：
+%   tau_d = 1e-4  -> 认为阻尼力瞬时建立（不建模时延，无补偿）
+%   tau_d >> 0    -> 预测模型知道力要慢慢建立，控制器会提前给力（补偿）
+% MPC 和 ZENG 不应该有这个能力，否则它们也在偷偷补偿，对比就不公平。
+% 各工况 case 里给 Proposed 的 tau_d 保留；这里把 MPC/ZENG 统一压到 1e-4。
+if M.controller~=3
+    M.tau_d = 1e-4;
+end
+
 %% 7. 道路共享参数
 Road.width = 3.5;                % 道路/车道宽度 [m]
 
