@@ -157,7 +157,11 @@ switch maneuver
         % ZENG/Proposed 用 mu=0.4 重整定值 0.2e4。
         M.slack_w = 0.2e4*ones(4,1);
         if M.controller==1
-            M.slack_w = 1e4*ones(4,1);
+            % MPC 基线整定（2026-11-12，减振器力 x3）：松弛权重 1e4 -> 5e4。
+            % 1e4 时 75 km/h 只跑偏 1.62 m（x1 时是 9.07 m，x3 把 MPC 救回来了）；
+            % 5e4 时 75 km/h 达 3.22 m、方向盘饱和 720°，恢复"基线失效"的对照。
+            % 60 km/h 不受影响（约束不激活），70 km/h ey 0.632->0.625 但 SW 220->398。
+            M.slack_w = 5e4*ones(4,1);
         end
         if M.controller==2
             M.Q_norm(6) = 10;          % ZENG DLC 整定：epsi 权重 20 -> 10

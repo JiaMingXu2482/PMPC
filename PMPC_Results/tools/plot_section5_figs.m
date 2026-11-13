@@ -308,7 +308,7 @@ ax = d1.ax;
 xr = linspace(25,200,600);
 plot(ax, xr, dlcPath(xr), '-.', 'Color', cfg.col.REF, 'LineWidth', 1.0, ...
      'DisplayName','Reference');
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.Yo, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
@@ -339,7 +339,7 @@ plot(ax, [-6 6], rad2deg([rmax rmax]), '--', 'Color', cfg.col.BND, ...
      'LineWidth',0.9,'HandleVisibility','off');
 plot(ax, [-6 6], -rad2deg([rmax rmax]), '--', 'Color', cfg.col.BND, ...
      'LineWidth',0.9,'HandleVisibility','off');
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     b = d.C.Beta; r = d.C.AVz;
@@ -364,7 +364,7 @@ end
 function d3 = dlcMz(cfg)
 d3 = newFig(cfg,'half'); ax = d3.ax;
 mu = 0.4;
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1}); d.group='DLC'; d.stem=cases{k,1};
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
@@ -378,7 +378,7 @@ end
 
 function d4 = dlcVx(cfg)
 d4 = newFig(cfg,'half'); ax = d4.ax;
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.Vx, cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
@@ -392,33 +392,21 @@ end
 
 function d5 = dlcEy(cfg)
 d5 = newFig(cfg,'half'); ax = d5.ax;
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.D(1,:), cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
 end
 plot(ax, [30 195], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(d5,'X (m)','e_y (m)',[30 195],[-10.2 2.2]);
-putLegend(d5, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'southwest');
-% zoom window on the region where B and C differ by ~0.1 m
-ax2 = axes('Parent',d5.f,'Units','normalized', ...
-           'Position',[0.50 0.60 0.46 0.30],'Box','on','FontSize',cfg.fsz-1);
-hold(ax2,'on'); grid(ax2,'on');
-for k = 1:size(cases,1)
-    d = loadCase(cfg,'DLC',cases{k,1});
-    s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
-    plot(ax2, s, d.D(1,:), cfg.ls.(cases{k,2}), 'Color', ...
-         cfg.col.(cases{k,2}), 'LineWidth',1.0);
-end
-plot(ax2,[120 195],[0 0],'k-','LineWidth',0.4);
-xlim(ax2,[120 195]); ylim(ax2,[-1.2 1.2]); set(ax2,'YTick',[-1 0 1]);
+finishXY(d5,'X (m)','e_y (m)',[30 195],[-2 2]);
+putLegend(d5, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1);
 saveFig(d5,'fig_dlc_ey');
 end
 
 function d6 = dlcEpsi(cfg)
 d6 = newFig(cfg,'half'); ax = d6.ax;
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
@@ -433,7 +421,7 @@ end
 % ================================================================ FishHook
 function f1 = fhLtr(cfg)
 f1 = newFig(cfg,'half'); ax = f1.ax;
-cases = {'fh_c3_c','C'; 'fh_c3_nc','D'; 'fh_c1','A'; 'fin190_passive','PAS'};
+cases = {'x3t_q40','C'; 'x3t_q40nc','D'; 'x3m_q15','A'; 'p1a_190','PAS'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});
     tv = d.tv; y = d.C.LTR;
@@ -452,7 +440,7 @@ for y = [1 -1]
     plot(ax, [0 5], [y y], ':', 'Color','k','LineWidth',0.8, ...
          'HandleVisibility','off');
 end
-d0 = loadCase(cfg,'FH','fh_c1');
+d0 = loadCase(cfg,'FH','x3m_q15');
 [~, i1] = max(abs(d0.C.Steer_SW));
 t1 = d0.tv(i1);
 j = find(sign(d0.C.Steer_SW(i1:end)) ~= sign(d0.C.Steer_SW(i1)), 1);
@@ -462,32 +450,32 @@ for tr = [t1, d0.tv(i1+j-1)]
 end
 finishXY(f1,'time (s)','LTR (-)',[0 5],[-1.08 1.08]);
 set(f1.ax,'YTick',[-1 -0.8 0 0.8 1],'YTickLabel',{'-1','-0.8','0','0.8','1'});
-putLegend(f1, {cfg.nm.A,cfg.nm.C,cfg.nm.D,'Passive'}, 1);
+putLegend(f1, {cfg.nm.A,cfg.nm.C,cfg.nm.D,'Passive'}, 1, 'southwest');
 saveFig(f1,'fig_fh_ltr');
 end
 
 function f2 = fhRoll(cfg)
 f2 = newFig(cfg,'half'); ax = f2.ax;
-cases = {'fh_c3_c','C'; 'fh_c3_nc','D'; 'fh_c1','A'; 'fin190_passive','PAS'};
+cases = {'x3t_q40','C'; 'x3t_q40nc','D'; 'x3m_q15','A'; 'p1a_190','PAS'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});
     plotLine(ax, d.tv, d.C.Roll, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
 plot(ax, [0 5], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
 finishXY(f2,'time (s)','\phi (deg)',[0 5],[-10 12]);
-putLegend(f2, {cfg.nm.A,cfg.nm.C,cfg.nm.D,'Passive'}, 1, 'southwest');
+putLegend(f2, {cfg.nm.A,cfg.nm.C,cfg.nm.D,'Passive'}, 1, 'northwest');
 saveFig(f2,'fig_fh_roll');
 end
 
 function f3 = fhMd(cfg)
 f3 = newFig(cfg,'half'); ax = f3.ax;
-cases = {'fh_c1','A'; 'fh_c3_c','C'};
+cases = {'x3m_q15','A'; 'x3t_q40','C'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});
     plotLine(ax, d.t, d.D(6,:)/1000, cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
 end
 plot(ax, [0 5], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(f3,'time (s)','M_d (kN·m)',[0 5],[-3.2 2.4]);
+finishXY(f3,'time (s)','M_d (kN·m)',[0 5],[-5.5 5.5]);
 putLegend(f3, {cfg.nm.A,cfg.nm.C}, 1);
 saveFig(f3,'fig_fh_md');
 end
@@ -495,21 +483,21 @@ end
 % ================================================================== Slalom
 function s1 = slEy(cfg)
 s1 = newFig(cfg,'half'); ax = s1.ax;
-cases = {'sv_c3c_90','C'; 'sv_c3nc_90','D'; 'sv_c1_90','A'};
+cases = {'d3_td200','C'; 'd3_sla_nc','D'; 'd3_sla_mpc','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.D(1,:), cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
 plot(ax, [30 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(s1,'X (m)','e_y (m)',[30 200],[-1.9 1.9]);
+finishXY(s1,'X (m)','e_y (m)',[30 200],[-1.2 1.2]);
 putLegend(s1, {cfg.nm.A,cfg.nm.C,cfg.nm.D}, 1);
 saveFig(s1,'fig_sl_ey');
 end
 
 function s2 = slMz(cfg)
 s2 = newFig(cfg,'half'); ax = s2.ax;
-cases = {'sv_c3c_90','C'; 'sv_c3nc_90','D'; 'sv_c1_90','A'};
+cases = {'d3_td200','C'; 'd3_sla_nc','D'; 'd3_sla_mpc','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1}); d.group='SL'; d.stem=cases{k,1};
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
@@ -523,7 +511,7 @@ end
 
 function s3 = slLtr(cfg)
 s3 = newFig(cfg,'half'); ax = s3.ax;
-cases = {'sv_c3c_90','C'; 'sv_c3nc_90','D'; 'sv_c1_90','A'};
+cases = {'d3_td200','C'; 'd3_sla_nc','D'; 'd3_sla_mpc','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1});
     plotLine(ax, d.tv, d.C.LTR, cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
@@ -540,7 +528,7 @@ end
 
 function s4 = slMd(cfg)
 s4 = newFig(cfg,'half'); ax = s4.ax;
-cases = {'sv_c3c_90','C'; 'sv_c3nc_90','D'};
+cases = {'d3_td200','C'; 'd3_sla_nc','D'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1});
     plotLine(ax, d.t, d.D(6,:), cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
@@ -557,7 +545,7 @@ switch axle
     case 'rear',  ia = [11 13]; it = [15 17]; nm = {'LR','RR'};
 end
 s5 = newFig(cfg,'half'); ax = s5.ax;
-d = loadCase(cfg,'SL','sv_c3c_90');
+d = loadCase(cfg,'SL','d3_td200');
 c1 = [0.70 0.13 0.13]; c2 = [0.85 0.42 0.40];
 cols = {c1, c2}; mks = {'o','s'};
 for k = 1:2
@@ -584,21 +572,21 @@ end
 % ---------------------------------------------------- additional panels ---
 function t = dlcSw(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.tv, 'linear','extrap');
     plotLine(ax, s, d.C.Steer_SW, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
 end
 plot(ax, [30 195], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(t,'X (m)','\delta_{sw} (deg)',[30 195],[-760 760]);
+finishXY(t,'X (m)','\delta_{sw} (deg)',[30 195],[-320 800]);
 putLegend(t, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1);
 saveFig(t,'fig_dlc_sw');
 end
 
 function t = dlcYaw(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'v6_c3c_75','C'; 'v6_c2_75','B'; 'v6_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.AVz, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
@@ -611,7 +599,7 @@ end
 
 function t = fhRollRate(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'fh_c3_c','C'; 'fh_c3_nc','D'; 'fh_c1','A'};
+cases = {'x3t_q40','C'; 'x3t_q40nc','D'; 'x3m_q15','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});
     plotLine(ax, d.t, rad2deg(d.D(4,:)), cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
@@ -624,7 +612,7 @@ end
 
 function t = fhMz(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'fh_c3_c','C'; 'fh_c3_nc','D'; 'fh_c1','A'};
+cases = {'x3t_q40','C'; 'x3t_q40nc','D'; 'x3m_q15','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});
     plotLine(ax, d.t, d.D(18,:)/1000, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
@@ -637,7 +625,7 @@ end
 
 function t = fhVx(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'fh_c3_c','C'; 'fh_c3_nc','D'; 'fh_c1','A'};
+cases = {'x3t_q40','C'; 'x3t_q40nc','D'; 'x3m_q15','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});
     plotLine(ax, d.tv, d.C.Vx, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
@@ -649,7 +637,7 @@ end
 
 function t = fhSw(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-d = loadCase(cfg,'FH','fh_c3_c');
+d = loadCase(cfg,'FH','x3t_q40');
 plot(ax, d.tv, d.C.Steer_SW, 'k-', 'LineWidth',1.0);
 plot(ax, [0 5], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
 finishXY(t,'time (s)','\delta_{sw} (deg)',[0 5],[-380 380]);
@@ -658,7 +646,7 @@ end
 
 function t = slEpsi(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'sv_c3c_90','C'; 'sv_c3nc_90','D'; 'sv_c1_90','A'};
+cases = {'d3_td200','C'; 'd3_sla_nc','D'; 'd3_sla_mpc','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
@@ -672,7 +660,7 @@ end
 
 function t = slSw(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'sv_c3c_90','C'; 'sv_c3nc_90','D'; 'sv_c1_90','A'};
+cases = {'d3_td200','C'; 'd3_sla_nc','D'; 'd3_sla_mpc','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.Steer_SW, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
