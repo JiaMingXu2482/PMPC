@@ -151,7 +151,10 @@ switch maneuver
     case 1                       % DLC（60/70/75 km/h 对比，原 tanh 路径）
         Road.mu = 0.4;           % CarSim DLC 路面 friction map：Mu = 0.4 Test Pad
         % DLC 专用权重
-        M.Q_norm  = [0; 0; 10; 0; 100; 20; 0];
+        % ey 权重 100 -> 50（2026-11-12，减振器力 x3）：80 km/h 已超附着极限，
+        % 死追 ey 会把方向盘打满然后滑出去；降到 50 后 MPC/ZENG/Proposed
+        % 的 80 km/h 结果分别为 8.27 / 2.46 / 0.87 m。
+        M.Q_norm  = [0; 0; 10; 0; 50; 20; 0];
         M.R_norm  = [100; 200; 0.1];   % 60 km/h: R1=30; 80 km/h 建议改回 10
         % MPC 保持原始固定权重 1e4（mu=0.4、75 km/h 以上会失效）；
         % ZENG/Proposed 用 mu=0.4 重整定值 0.2e4。
@@ -168,8 +171,13 @@ switch maneuver
             M.rho_I0 = 1.0;            % ZENG DLC 整定：rho 起始阈值 0.7 -> 1.0
         end
         if M.controller==3
-            M.Q_norm(6) = 5;           % Proposed DLC 整定：epsi 权重 20 -> 5
+            M.Q_norm(6) = 10;          % Proposed DLC 整定：epsi 权重 20 -> 10
             M.Wb = 10;                 % Proposed DLC 整定：DB gamma 罚 100 -> 10
+            % 松弛上限（2026-11-12，x3 后重扫）：默认 2e3 -> 1e3。
+            % 80 km/h 的 ey 从 2.077 降到 0.870（方向盘从 720 饱和降到 278），
+            % 70/75 只退化 1.7-4%（未饱和区，约束过硬反而保守）。
+            M.w1_max = 0.1e4;
+            M.w2_max = 0.1e4;
         end
         % carsim 标准DLC路径拟合公式
         X = (0:0.5:200)';

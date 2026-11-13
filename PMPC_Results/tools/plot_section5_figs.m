@@ -48,25 +48,25 @@ end
 
 % ====================================================================== cfg
 function cfg = config()
-c.A = [ 44 160  44]/255;      % #2CA02C
-c.B = [ 31 119 180]/255;      % #1F77B4
-c.C = [214  39  40]/255;      % #D62728
+c.A = [0 1 0];                % pure green
+c.B = [0 0 1];                % pure blue
+c.C = [1 0 0];                % pure red
 c.D = [140  86  75]/255;      % #8C564B
-c.PAS = [127 127 127]/255;    % #7F7F7F
+c.PAS = [148  103 189]/255;   % #9467BD (visible against grey grid)
 c.REF = [0 0 0];
 c.BND = [0.45 0.45 0.45];
 
-ls.A = '--';  mk.A = 'o';
-ls.B = '-.';  mk.B = 's';
+ls.A = '--';  mk.A = 'none';
+ls.B = '-.';  mk.B = 'none';
 ls.C = '-';   mk.C = 'none';
-ls.D = ':';   mk.D = '^';
-ls.PAS = ':'; mk.PAS = 'none';
+ls.D = ':';   mk.D = 'none';
+ls.PAS = '--'; mk.PAS = 'none';
 
 cfg.col = c; cfg.ls = ls; cfg.mk = mk;
 cfg.nm = struct('A','Controller A','B','Controller B', ...
                 'C','Controller C','D','Controller D','PAS','Passive');
 cfg.fsz = 6.5;        % tick font size [pt]
-cfg.lsz = 6;          % legend font size [pt]
+cfg.lsz = 5.0;        % legend font size [pt]
 cfg.lw  = 1.0;        % main line width
 cfg.lwB = 0.6;        % bound line width
 % vehicle parameters of this batch (pmpc_init.m / prepare_step.m)
@@ -82,9 +82,14 @@ end
 % ================================================================== helpers
 function h = newFig(cfg, kind)
 if strcmpi(kind,'full'), wh = cfg.full; else, wh = cfg.half; end
-h.f = figure('Units','centimeters','Position',[2 2 wh(1) wh(2)], ...
+h.size = wh;                      % final print size [cm]
+h.f = figure('Units','centimeters','Position',[2 2 3*wh(1) 3*wh(2)], ...
              'Color','w','Visible','off');
-pos = [0.245 0.215 0.735 0.695];
+if strcmpi(kind,'full')
+    pos = [0.155 0.17 0.83 0.70];
+else
+    pos = [0.275 0.215 0.705 0.695];
+end
 h.ax = axes('Parent',h.f,'Units','normalized','Position',pos,'Box','on');
 hold(h.ax,'on'); grid(h.ax,'on');
 set(h.ax,'FontSize',cfg.fsz,'TickDir','in','LineWidth',0.5, ...
@@ -94,14 +99,41 @@ h.cfg = cfg;
 end
 
 function saveFig(h, name)
-cfg = h.cfg;
-set(h.ax,'FontSize',cfg.fsz);
-f = h.f;
+cfg = h.cfg; f = h.f;
+pos = get(f,'Position');          % 3x editing position
+scaleFig(f, 3);                   % 3x fonts/lines for the editable .fig
 savefig(f, fullfile(cfg.out, [name '.fig']));
+scaleFig(f, 1/3);                 % back to final point sizes
+set(f,'Units','centimeters','Position',[pos(1) pos(2) pos(3)/3 pos(4)/3]);
 exportgraphics(f, fullfile(cfg.out, [name '.pdf']), 'ContentType','vector');
+set(f,'Units','centimeters','Position',pos);
 exportgraphics(f, fullfile(cfg.out, [name '.png']), 'Resolution',300);
 close(f);
 fprintf('saved %s.fig/.pdf/.png\n', name);
+end
+
+function scaleFig(f, s)
+% Scale fonts, line widths and legend tokens so that the 3x .fig looks
+% exactly like the 1x PDF, only larger.
+axs = findobj(f,'Type','axes');
+for a = axs.'
+    set(a,'FontSize',get(a,'FontSize')*s);
+    set(a,'LineWidth',get(a,'LineWidth')*s);
+end
+txt = findobj(f,'Type','text');
+for t = txt.'
+    set(t,'FontSize',get(t,'FontSize')*s);
+end
+ln = findobj(f,'Type','line');
+for l = ln.'
+    set(l,'LineWidth',get(l,'LineWidth')*s);
+end
+lg = findobj(f,'Type','legend');
+for g = lg.'
+    set(g,'FontSize',get(g,'FontSize')*s);
+    its = get(g,'ItemTokenSize');
+    set(g,'ItemTokenSize',its*s);
+end
 end
 
 function p = plotLine(ax, x, y, cfg, key, lw, lab, isBound)
@@ -116,15 +148,8 @@ if isBound
              'HandleVisibility','off');
     return
 end
-if strcmp(cfg.mk.(key),'none')
-    p = plot(ax, x, y, cfg.ls.(key), 'Color', c, 'LineWidth', lw);
-else
-    n = numel(x);
-    p = plot(ax, x, y, cfg.ls.(key), 'Color', c, 'LineWidth', lw, ...
-             'Marker', cfg.mk.(key), 'MarkerSize', 2.8, ...
-             'MarkerIndices', 1:max(1,round(n/32)):n, ...
-             'MarkerFaceColor','none','MarkerEdgeColor',c);
-end
+p = plot(ax, x, y, cfg.ls.(key), 'Color', c, 'LineWidth', lw, ...
+         'Marker', 'none');
 if nargin >= 7 && ~isempty(lab), set(p,'DisplayName',lab); end
 end
 
@@ -156,11 +181,11 @@ end
 if strcmpi(loc,'auto')
     loc = bestCorner(ax, handles, numel(idx), ncols);
 end
-fs = cfg.lsz; if ncols == 1, fs = cfg.lsz - 0.5; end
+fs = cfg.lsz;
 lg = legend(ax, handles(idx), labels(idx), 'Location', loc, ...
             'NumColumns', ncols, 'Box','on', 'FontSize', fs, ...
             'Interpreter','none');
-set(lg,'Color','w','ItemTokenSize',[9 7],'LineWidth',0.4);
+set(lg,'Color','w','ItemTokenSize',[13 8],'LineWidth',0.4);
 end
 
 function loc = bestCorner(ax, handles, n, ncols)
@@ -207,7 +232,6 @@ xlabel(ax, xlab); ylabel(ax, ylab);
 if nargin >= 4 && ~isempty(xl), xlim(ax, xl); end
 if nargin >= 5 && ~isempty(yl), ylim(ax, yl); end
 set(ax,'Layer','top');
-windowMarkers(ax, 14);
 end
 
 % --------------------------------------------------------------- data load
@@ -306,9 +330,9 @@ function d1 = dlcXY(cfg)
 d1 = newFig(cfg,'full');
 ax = d1.ax;
 xr = linspace(25,200,600);
-plot(ax, xr, dlcPath(xr), '-.', 'Color', cfg.col.REF, 'LineWidth', 1.0, ...
+plot(ax, xr, dlcPath(xr), '-.', 'Color', cfg.col.REF, 'LineWidth', 1.3, ...
      'DisplayName','Reference');
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.Yo, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
@@ -320,7 +344,7 @@ saveFig(d1,'fig_dlc_xy');
 end
 
 function d2 = dlcBetaR(cfg)
-d2 = newFig(cfg,'full'); ax = d2.ax;
+d2 = newFig(cfg,'half'); ax = d2.ax;
 mu = 0.4; vx = 75/3.6; V = cfg.veh;
 rmax = mu*V.g/vx;
 fzr = V.m*V.g*V.lf/(V.lf+V.lr);
@@ -339,20 +363,11 @@ plot(ax, [-6 6], rad2deg([rmax rmax]), '--', 'Color', cfg.col.BND, ...
      'LineWidth',0.9,'HandleVisibility','off');
 plot(ax, [-6 6], -rad2deg([rmax rmax]), '--', 'Color', cfg.col.BND, ...
      'LineWidth',0.9,'HandleVisibility','off');
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     b = d.C.Beta; r = d.C.AVz;
     plotLine(ax, b, r, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
-    n = numel(b);
-    for fr = [0.22 0.62]
-        i = max(2, round(fr*n));
-        quiver(ax, b(i), r(i), b(i+2)-b(i), r(i+2)-r(i), 0, ...
-               'Color', cfg.col.(cases{k,2}), 'MaxHeadSize', 6, ...
-               'HandleVisibility','off');
-    end
-    plot(ax, b(1), r(1), 'p', 'Color','k','MarkerFaceColor','k', ...
-         'MarkerSize',4,'HandleVisibility','off');
 end
 plot(ax, [0 0], [-18 18], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
 plot(ax, [-6 6], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
@@ -364,21 +379,21 @@ end
 function d3 = dlcMz(cfg)
 d3 = newFig(cfg,'half'); ax = d3.ax;
 mu = 0.4;
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1}); d.group='DLC'; d.stem=cases{k,1};
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
-    plotLine(ax, s, d.D(18,:), cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
+    plotLine(ax, s, d.D(18,:)/1000, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
 plot(ax, [30 195], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(d3,'X (m)','M_z (N·m)',[30 195],[-2600 2600]);
+finishXY(d3,'X (m)','M_z (kN·m)',[30 195],[-2.6 2.6]);
 putLegend(d3, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1);
 saveFig(d3,'fig_dlc_mz');
 end
 
 function d4 = dlcVx(cfg)
 d4 = newFig(cfg,'half'); ax = d4.ax;
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.Vx, cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
@@ -392,21 +407,21 @@ end
 
 function d5 = dlcEy(cfg)
 d5 = newFig(cfg,'half'); ax = d5.ax;
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.D(1,:), cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
 end
 plot(ax, [30 195], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(d5,'X (m)','e_y (m)',[30 195],[-2 2]);
+finishXY(d5,'X (m)','e_y (m)',[30 195],[-4 4]);
 putLegend(d5, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1);
 saveFig(d5,'fig_dlc_ey');
 end
 
 function d6 = dlcEpsi(cfg)
 d6 = newFig(cfg,'half'); ax = d6.ax;
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
@@ -421,16 +436,15 @@ end
 % ================================================================ FishHook
 function f1 = fhLtr(cfg)
 f1 = newFig(cfg,'half'); ax = f1.ax;
-cases = {'x3t_q40','C'; 'x3t_q40nc','D'; 'x3m_q15','A'; 'p1a_190','PAS'};
+cases = {'x3t_q40','C'; 'x3t_q40nc','D'; 'x3m_q15','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});
-    tv = d.tv; y = d.C.LTR;
-    if strcmp(cases{k,2},'PAS')
-        i = find(abs(y) > 0.995, 1);
-        if ~isempty(i), tv = tv(1:i+2); y = y(1:i+2); end
-    end
-    plotLine(ax, tv, y, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
+    plotLine(ax, d.tv, d.C.LTR, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
+% passive: full record up to rollover, drawn on top so it stays visible
+dP = loadCase(cfg,'FH','p1a_190');
+plot(ax, dP.tv, dP.C.LTR, ':', 'Color', cfg.col.PAS, 'LineWidth', 1.7, ...
+     'DisplayName','Passive', 'ZData', 9*ones(size(dP.tv)));
 plot(ax, [0 5], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
 for y = [0.8 -0.8]
     plot(ax, [0 5], [y y], '--', 'Color','k','LineWidth',0.8, ...
@@ -450,7 +464,7 @@ for tr = [t1, d0.tv(i1+j-1)]
 end
 finishXY(f1,'time (s)','LTR (-)',[0 5],[-1.08 1.08]);
 set(f1.ax,'YTick',[-1 -0.8 0 0.8 1],'YTickLabel',{'-1','-0.8','0','0.8','1'});
-putLegend(f1, {cfg.nm.A,cfg.nm.C,cfg.nm.D,'Passive'}, 1, 'southwest');
+putLegend(f1, {cfg.nm.A,cfg.nm.C,cfg.nm.D,'Passive'}, 1, 'northwest');
 saveFig(f1,'fig_fh_ltr');
 end
 
@@ -501,10 +515,10 @@ cases = {'d3_td200','C'; 'd3_sla_nc','D'; 'd3_sla_mpc','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1}); d.group='SL'; d.stem=cases{k,1};
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
-    plotLine(ax, s, d.D(18,:), cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
+    plotLine(ax, s, d.D(18,:)/1000, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
 plot(ax, [30 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(s2,'X (m)','M_z (N·m)',[30 200],[-6500 6500]);
+finishXY(s2,'X (m)','M_z (kN·m)',[30 200],[-6.5 6.5]);
 putLegend(s2, {cfg.nm.A,cfg.nm.C,cfg.nm.D}, 1);
 saveFig(s2,'fig_sl_mz');
 end
@@ -531,10 +545,10 @@ s4 = newFig(cfg,'half'); ax = s4.ax;
 cases = {'d3_td200','C'; 'd3_sla_nc','D'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1});
-    plotLine(ax, d.t, d.D(6,:), cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
+    plotLine(ax, d.t, d.D(6,:)/1000, cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
 end
 plot(ax, [1.5 3.6], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(s4,'time (s)','M_d^a (N·m)',[1.5 3.6],[-3200 3400]);
+finishXY(s4,'time (s)','M_d (kN·m)',[1.5 3.6],[-5.5 5.5]);
 putLegend(s4, {cfg.nm.C,cfg.nm.D}, 1);
 saveFig(s4,'fig_sl_md');
 end
@@ -546,22 +560,20 @@ switch axle
 end
 s5 = newFig(cfg,'half'); ax = s5.ax;
 d = loadCase(cfg,'SL','d3_td200');
-c1 = [0.70 0.13 0.13]; c2 = [0.85 0.42 0.40];
-cols = {c1, c2}; mks = {'o','s'};
-for k = 1:2
-    p = plot(ax, d.t, d.D(it(k),:), '--', 'Color', cols{k}, 'LineWidth',0.8, ...
-             'DisplayName', [nm{k} ' Command']);
-    plot(ax, d.t, d.D(ia(k),:), '-', 'Color', cols{k}, 'LineWidth',1.1, ...
-         'Marker', mks{k}, 'MarkerSize',3, ...
-         'MarkerIndices', 1:max(1,round(numel(d.t)/20)):numel(d.t), ...
-         'MarkerFaceColor','none','MarkerEdgeColor',cols{k}, ...
-         'DisplayName',[nm{k} ' Actual']);
-    set(p,'DisplayName',[nm{k} ' Command']);
+redL = [1 0 0]; redR = [0.55 0 0];
+% left wheel: pure red; right wheel: dark red; solid actual, dashed command
+lab = {[nm{1} ' act.'],[nm{1} ' cmd'], ...
+       [nm{2} ' act.'],[nm{2} ' cmd']};
+rows = [ia(1), it(1), ia(2), it(2)];
+cols = {redL, redL, redR, redR};
+sty  = {'-','--','-','--'};
+for k = 1:4
+    plot(ax, d.t, d.D(rows(k),:), sty{k}, 'Color', cols{k}, ...
+         'LineWidth', 1.0, 'Marker','none', 'DisplayName',lab{k});
 end
 plot(ax, [1.5 3.6], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
 finishXY(s5,'time (s)','F_d (N)',[1.5 3.6],[-2400 3100]);
-putLegend(s5, {[nm{1} ' Command'],[nm{1} ' Actual'], ...
-               [nm{2} ' Command'],[nm{2} ' Actual']}, 1, 'northwest');
+putLegend(s5, {lab{1},lab{2},lab{3},lab{4}}, 1, 'northwest');
 if strcmp(axle,'front')
     saveFig(s5,'fig_sl_fdf');
 else
@@ -572,7 +584,7 @@ end
 % ---------------------------------------------------- additional panels ---
 function t = dlcSw(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     s = interp1(d.tv, d.C.Xo, d.tv, 'linear','extrap');
@@ -586,7 +598,7 @@ end
 
 function t = dlcYaw(cfg)
 t = newFig(cfg,'half'); ax = t.ax;
-cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3_c1_75','A'};
+cases = {'x3_c3c_75','C'; 'x3_c2_75','B'; 'x3m75_s5e4','A'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.AVz, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
