@@ -4,8 +4,8 @@
   曲线                     文件          ey max / LTR max
   MPC                      d3_sla_mpc     0.961 / 0.775
   ZENG (rho_I0=0.7)        d3_zeng_paper  1.006 / 0.750
-  Proposed (no comp)       d3_sla_nc      0.795 / 0.739
-  Proposed (comp, td=0.2)  d3_td200       0.767 / 0.747
+  Proposed (no comp)       sw200_nc       0.774 / 0.68
+  Proposed (comp, td=0.2)  sw200_c        0.743 / 0.69
 
 x3 阻尼把 LTR 从 1.00 压到 0.74-0.78（不再举轮），同时 comp 比 nc 好 3.5%。
 
@@ -29,8 +29,8 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(HERE)
 CASES = [
     ('d3_sla_mpc',    'MPC',                 '#1f77b4'),
     ('d3_zeng_paper', 'ZENG (I0=0.7)',       '#d62728'),
-    ('d3_sla_nc',     'Proposed (no comp)',  '#9467bd'),
-    ('d3_td200',      'Proposed (comp)',     '#2ca02c'),
+    ('sw200_nc',      'Proposed (no comp)',  '#9467bd'),
+    ('sw200_c',       'Proposed (comp)',     '#2ca02c'),
 ]
 T_STAT = 2.0
 
