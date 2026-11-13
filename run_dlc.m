@@ -46,6 +46,14 @@ for k = 1:numel(lines)
     end
 end
 assert(n > 0, 'Run_all.par 中找不到 SV_VXS');
+% 初始位置：CarSim 默认 SV_XO=30（车从 X=30 m 起步），改成 0 让 Xo 从原点起步，
+% 便于和解析参考路径（X 从 0 开始）直接对齐画图。SV_YO/SV_YAW 保持 0 不变。
+for k = 1:numel(lines)
+    if startsWith(strtrim(lines{k}),'SV_XO ')
+        lines{k} = sprintf('SV_XO 0');
+    end
+end
+
 fid = fopen(parfile,'w'); fprintf(fid,'%s\n',lines{:}); fclose(fid);
 
 addpath(fullfile(root,'pmpc_core'),'-begin');

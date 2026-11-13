@@ -99,6 +99,16 @@ if isfield(opts,'mu') && isfinite(opts.mu)
     fprintf('mu %.2f applied to %d MU_ROAD_CONSTANT lines\n', opts.mu, nmu);
 end
 
+% 初始位置：CarSim 默认 SV_XO=30（车从 X=30 m 起步），改成 0 让 Xo 从原点起步，
+% 便于和解析参考路径（X 从 0 开始）直接对齐画图。SV_YO/SV_YAW 保持 0 不变。
+x0 = 0;
+if isfield(opts,'x0') && isfinite(opts.x0), x0 = opts.x0; end
+for k = 1:numel(lines)
+    if startsWith(strtrim(lines{k}),'SV_XO ')
+        lines{k} = sprintf('SV_XO %g', x0);
+    end
+end
+
 % 转向预备段：把 STEER_SW_TABLE 整体后移 prep 秒，并在最前面插入 0° 保持点。
 % 已加过（存在 t>0 且角度为 0 的点）则跳过，保证重复调用幂等。
 if opts.steer_prep > 0

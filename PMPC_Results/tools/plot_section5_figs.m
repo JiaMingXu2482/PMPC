@@ -74,7 +74,7 @@ cfg.dir = struct('DLC','DLC_mu0.4_interp', ...
                  'FH','FishHook_80_mu0.9_cargo170_newplant', ...
                  'SL','Slalom_mu0.85_interp');
 % figure sizes [cm]: full column / half column
-cfg.full = [8.89 3.85]; cfg.half = [4.40 3.55];
+cfg.full = [8.89 4.20]; cfg.half = [4.416 3.744];
 end
 
 % ================================================================== helpers
@@ -94,10 +94,10 @@ patch(bg,[0 1 1 0],[0 0 1 1],'w','EdgeColor','none');
 uistack(bg,'bottom');
 if strcmpi(kind,'full')
     % axes box 77 x 30 mm inside an 88.9 x 38.5 mm canvas
-    pos = [9/88.9, 8/38.5, 77/88.9, 30/38.5];
+    pos = [0.9/8.89, 1.0/4.20, 7.7/8.89, 3.0/4.20];
 else
     % axes box 35 x 27 mm inside a 44.0 x 35.5 mm canvas
-    pos = [8/44.0, 8/35.5, 35/44.0, 27/35.5];
+    pos = [0.864/4.416, 0.96/3.744, 3.36/4.416, 2.592/3.744];
 end
 h.ax = axes('Parent',h.f,'Units','normalized','Position',pos,'Box','on');
 hold(h.ax,'on'); grid(h.ax,'on');
@@ -112,7 +112,7 @@ function h = newFigSize(cfg, w, hgt)
 h = newFig(cfg,'full');
 h.size = [w hgt];
 set(h.f,'Units','centimeters','Position',[2 2 w hgt]);
-set(h.ax,'Position',[9/88.9, 8/40.5, 77/88.9, 32/40.5]);
+set(h.ax,'Position',[0.9/8.89, 1.0/4.40, 7.7/8.89, 3.2/4.40]);
 end
 
 function saveFig(h, name)
@@ -670,7 +670,7 @@ saveFig(t,'fig_sl_sw');
 end
 
 function t = fhXY(cfg)
-t = newFigSize(cfg, 8.89, 4.05); ax = t.ax;
+t = newFigSize(cfg, 8.89, 4.40); ax = t.ax;
 cases = {'p1a_190','PAS'; 'x3m_q15','A'; 'x3t_q40nc','C'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'FH',cases{k,1});

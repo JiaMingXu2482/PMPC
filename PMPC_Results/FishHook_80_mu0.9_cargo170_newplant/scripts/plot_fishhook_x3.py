@@ -6,7 +6,7 @@ SH_MODE=2、SH_I=1.0 时跑出。
 
   曲线                     文件            roll max / LTR max
   Passive (1 A)            p1a_190         79.65 deg @4.18 s / 1.00  （翻车）
-  MPC (Q_norm(3)=15)       x3m_q15          5.75 deg / 1.00
+  MPC (Q_norm(3)=15)       x3m_q15          5.36 deg / 0.95
   Proposed (Q_norm(3)=40)  x3t_q40nc        5.10 deg / 0.81
 
 输出：fishhook_190_x3.pdf（只出 PDF）
@@ -113,7 +113,7 @@ def main():
                      arrowprops=dict(arrowstyle='->', color='#7f7f7f', lw=0.8))
 
     fig.suptitle('FishHook 80 km/h, $\\mu$=0.9, cargo 190 kg, damper force $\\times$3\n'
-                 'Passive (1 A) rolls over; MPC LTR = 1.00; Proposed LTR = 0.81',
+                 'Passive (1 A) rolls over; MPC LTR = 0.95; Proposed LTR = 0.81',
                  fontsize=11)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, 'fishhook_190_x3.pdf'), bbox_inches='tight')
