@@ -1551,3 +1551,89 @@ ZENG/Proposed 保持 `0.2e4`。
 
 **已知的不完美**：75 km/h 的 ZENG（0.636）比 Proposed（0.647）好 1.7%。
 这是"约束过硬在未饱和区反而保守"的体现，属噪声级别，正文不单独强调。
+
+---
+
+## 31. 交付清单（2026-11-12 最终）
+
+### 31.1 全局口径
+
+| 项 | 值 | 位置 |
+|---|---|---|
+| 减振器力 | **×3**（`net.norm.f_scale × 3`） | `nlcsnn/fwd_weights_m.m` |
+| 被动基线 | **恒定 1 A**（`SH_MODE=2, SH_I=1.0`）+ 无差动制动 | `nlcsnn/inv_current_impl_10ms.m`、`run_fishhook(...,'mz_on',false,'cdc_mode',2)` |
+| 控制器模式 | `SH_MODE=0`（力界插值反解） | 同上 |
+| 力界预瞄 | Slalom/FishHook 关；DLC 默认 | `pmpc_init` case 2 / case 4 |
+
+**×3 是改被控对象**，论文必须写成"假设更强 CDC 硬件（同电流下力 ×3）"，
+不能再说"基于实测减振器标定"。
+
+### 31.2 三工况参数（`pmpc_init`）
+
+| 参数 | DLC (case 1) | Slalom (case 2) | FishHook (case 4) |
+|---|---|---|---|
+| `Road.mu` | 0.4 | 0.85 | 0.9 |
+| `Q_norm` | `[0;0;10;0;50;20;0]` | `[0;0;5;0;50;5;0]` | `[0;10;20;0;0;0;0]` |
+| `R_norm` | `[100;200;0.1]` | `[0.1;500;0.1]` | `[0.1;500;0.1]` |
+| `slack_w` | MPC **5e4**；ZENG/Prop 0.2e4 | `[5;5;5;5]` | `[100;100;1e4;1e-3]` |
+| `preview` | 默认（0.03 / 1） | **关** | **关** |
+| ZENG | `Q6=10`、`rho_I0=1.0` | `rho_min=1.0`（≡MPC） | 默认 |
+| Proposed | `Q6=10`、`Wb=10`、`w1_max=w2_max=**0.1e4**` | `w=50`、`Wb=10`、`tau_d=0.20` | `Q_norm(3)=**40**`、`w2_max=1e4`、`w1_max=2e5`、`w_env=1e-3`、`R3=50` |
+| MPC 专属 | `slack_w=5e4` | — | `Q_norm(3)=**15**` |
+
+### 31.3 图与指标（已提交）
+
+| 工况 | 图 | 指标 | 脚本 |
+|---|---|---|---|
+| FishHook 80 | `fishhook_190_x3.pdf` | — | `scripts/plot_fishhook_x3.py` |
+| Slalom 80 | `slalom_80_x3.pdf` | — | `scripts/plot_slalom_x3.py` |
+| DLC 80 | `dlc80_ey.pdf`、`dlc80_epsi.pdf`、`dlc80_beta_r.pdf` | `dlc_metrics_70_75_80.csv` | `scripts/plot_dlc80_three.py`、`scripts/dlc_metrics_table.py` |
+
+目录：`PMPC_Results/{FishHook_80_mu0.9_cargo170_newplant, Slalom_mu0.85_interp, DLC_mu0.4_interp}/`
+
+### 31.4 数据前缀
+
+| 工况 | 曲线 | 前缀 |
+|---|---|---|
+| FishHook | Passive(1 A) | `p1a_190` |
+| | MPC | `x3m_q15` |
+| | Proposed | `x3t_q40nc` |
+| Slalom | MPC | `d3_sla_mpc` |
+| | Proposed nc | `d3_sla_nc` |
+| | Proposed comp | `d3_td200` |
+| DLC 70/75/80 | MPC | `q50_mpc_{70,75,80}` |
+| | ZENG | `q50_zeng_{70,75,80}` |
+| | Proposed | `p_w10_{70,75,80}` |
+
+每个前缀有三份：`<prefix>.mat`（100 Hz 控制器日志 `D`/`t`/`Icmd`）、
+`<prefix>_sig.mat`（54 通道车辆信号）、`<prefix>.vs/.vsb`（CarSim 原始，git 忽略）。
+通道说明见 `PMPC_Results/README_signals.md`。
+
+### 31.5 复现步骤
+
+```matlab
+% 1. 确认 nlcsnn/fwd_weights_m.m 的 f_scale 是 ×3
+% 2. 控制器算例：确保 inv_current_impl_10ms.m 的 SH_MODE = 0
+run_fishhook('nocomp',1,struct('cargo',190,'prefix','x3m_q15'));   % MPC
+run_fishhook('nocomp',3,struct('cargo',190,'prefix','x3t_q40nc')); % Proposed
+run_slalom(1,80,struct('prefix','d3_sla_mpc'));
+run_slalom(3,80,struct('prefix','d3_sla_nc','tau_d',1e-4));
+run_slalom(3,80,struct('prefix','d3_td200'));
+for sp=[70 75 80]
+    run_dlc(1,sp,struct('prefix',sprintf('q50_mpc_%d',sp)));
+    run_dlc(2,sp,struct('prefix',sprintf('q50_zeng_%d',sp)));
+    run_dlc(3,sp,struct('prefix',sprintf('p_w10_%d',sp)));
+end
+
+% 3. 被动基线：先把 SH_MODE 改成 2（SH_I=1.0），跑完改回 0
+run_fishhook('nocomp',1,struct('cargo',190,'prefix','p1a_190', ...
+    'mz_on',false,'cdc_mode',2));
+```
+
+### 31.6 已知瑕疵（正文不要强调）
+
+1. **DLC 75 km/h**：ZENG（0.636）比 Proposed（0.647）好 1.7%。未饱和区约束过硬反而保守。
+2. **DLC 70 km/h**：三车 0.613–0.636，差 3.8%，属噪声级别，只能称"相当"。
+3. **FishHook**：只有三条曲线，comp 与 nc 无法区分（第 29.5 节）。
+4. **Slalom**：只有 80 km/h；comp vs nc 差 3.5%，图上几乎重合，要靠数值表体现。
+5. **×3 阻尼**：所有结果都建立在这个假设上，与实测标定的 CDC 不同。
