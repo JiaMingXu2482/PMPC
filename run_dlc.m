@@ -111,7 +111,7 @@ try
 catch
 end
 
-ey = D(1,:); epsi = D(2,:); ltr = D(4,:); mdc = D(7,:);
+ey = D(1,:); epsi = D(2,:); ltr = D(5,:); mdc = D(7,:);
 mz = D(18,:); sw = D(19,:); vx = D(20,:); rr = D(21,:);
 [~,k] = max(abs(ey));
 fprintf(['t_end %.2f | Vx %.1f..%.1f | ey %.3f/%.3f fin %.3f @%.2fs | ' ...

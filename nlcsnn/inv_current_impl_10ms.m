@@ -28,7 +28,8 @@ function I_cmd = inv_current_impl_10ms(Fd_N, t, Temp_C, cmpD, cmpRD, cid, F_at0,
 MAX_I = 1.6;
 NC = 4;
 % 0 = 力界线性插值（默认）；2 = SH 全硬（恒 0 A，用于开关 CDC 对照）。
-SH_MODE = 0;
+SH_MODE = 0;    % 0=力界插值（默认）；2=固定电流基线（值见 SH_I）
+SH_I    = 1.0;  % SH_MODE==2 时的恒定电流 [A]
 % 电流每 10 ms 最大变化 [A]。插值在低速度时力跨度很小，逆解对力极敏感，
 % 不加限幅会在 0/1.6 A 间跳变。1.6 等价于不限幅。
 MAX_DI = 1.6;   % 1.6 = 不限幅（实车电流 0-1.6 A 阶跃 <10 ms）
@@ -44,7 +45,7 @@ tick = floor(t / 0.01 + 1e-9);
 if tick ~= last_ticks(cid)
     last_ticks(cid) = tick;
     if SH_MODE == 2
-        I_holds(cid) = 0;            % SH 对照：恒 0 A（全硬）
+        I_holds(cid) = SH_I;         % 固定电流基线（SH_I=0 即全硬）
     else
         den = F_at16 - F_at0;
         if isfinite(Fd_N) && isfinite(F_at0) && isfinite(F_at16) && abs(den) > 1e-6

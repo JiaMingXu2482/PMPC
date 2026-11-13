@@ -1,0 +1,9 @@
+try
+    run_fishhook('nocomp',1,struct('cargo',190,'prefix','w1_mpc'));
+    run_fishhook('nocomp',3,struct('cargo',190,'prefix','w1_nc'));
+    run_fishhook('comp25',3,struct('cargo',190,'prefix','w1_c'));
+catch ME
+    fprintf('FAILED: %s\n', ME.message);
+    for k=1:numel(ME.cause), fprintf('  cause %d: %s\n', k, ME.cause{k}.message); end
+end
+diary off;

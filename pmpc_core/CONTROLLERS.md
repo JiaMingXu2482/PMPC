@@ -1323,3 +1323,149 @@ mu 不是杠杆：LTR 仍为 1.00，区分度也没了。
   赋值**之前**覆盖 `Road.mu`（否则控制器内部仍用工况默认 mu）。
 - `run_fishhook` 新增 `opts.mu`：同时改 CarSim 展开 par 的两处 `MU_ROAD_CONSTANT`。
 - 扫描记录：`fp_*`（被动，SH_MODE=2 临时）、`fc110_*`、`fm08_*`、`fq3_*`。
+
+---
+
+## 29. FishHook 定稿（减振器力 ×3，2026-11-12）
+
+### 29.1 为什么改成 ×3
+
+第 28 节的结论是 FishHook 上"Proposed>MPC + LTR<0.8"不可兼得。
+把减振器力整体放大 3 倍（`nlcsnn/fwd_weights_m.m` 的 `net.norm.f_scale ×3`）
+后，执行器权限变大，Proposed 的侧倾权重才真正起作用。
+
+**注意：这是改被控对象**，论文里必须写成"假设更强 CDC 硬件（同电流下力 ×3）"，
+不能再说"基于实测减振器标定"。
+
+### 29.2 被动基线的定义变了
+
+×3 后 0 A 的被动车**不再翻车**（10.79°），因为放大 3 倍的被动阻尼把侧倾能量吸掉了。
+所以被动基线改成**恒定 1 A**（中等阻尼）：
+
+```matlab
+% nlcsnn/inv_current_impl_10ms.m
+SH_MODE = 2;   % 0=力界插值（控制器用）；2=固定电流基线
+SH_I    = 1.0; % 固定电流 [A]
+```
+
+跑被动基线时设 `SH_MODE=2, SH_I=1.0`，跑控制器时设 `SH_MODE=0`。
+（`run_fishhook(...,'mz_on',false,'cdc_mode',2)` 负责关掉差动制动。）
+
+### 29.3 定稿参数（`pmpc_init` case 4）
+
+```matlab
+M.Q_norm  = [0; 10; 20; 0; 0; 0; 0];   % 基线
+if M.controller==1, M.Q_norm(3) = 15; end   % MPC：LTR 刚好到 1.00
+if M.controller==3, M.Q_norm(3) = 40; end   % Proposed：LTR 0.81
+```
+
+### 29.4 结果
+
+| 曲线 | 文件 | roll max | LTR max | Md 实测 max | Mz max |
+|---|---|---:|---:|---:|---:|
+| **Passive（1 A）** | `p1a_190` | **79.65° @4.18 s** | 1.00 | 6389 | 0 |
+| **MPC** | `x3m_q15` | 5.75° | **1.00** | 3891 | 8057 |
+| **Proposed** | `x3t_q40nc` | **5.10°** | **0.81** | 4536 | 8011 |
+
+图：`fishhook_190_x3.pdf`（脚本 `scripts/plot_fishhook_x3.py`），四面板：
+侧倾角 / LTR / Md 实际+指令 / Mz。
+
+### 29.5 为什么只有三条曲线
+
+comp 与 nc 在 FishHook 上无法区分（第 25 节 + 本节）：
+
+| 配置 | roll | LTR | Md max |
+|---|---:|---:|---:|
+| nc（Q3=20） | 5.27 | 0.85 | 5491 |
+| comp（Q3=20） | 5.37 | 0.91 | **4078（−26%）** |
+| nc（Q3=40） | 5.10 | 0.81 | 4573 |
+| comp（Q3=40） | 5.12 | 0.81 | 4460（−2.5%） |
+
+`tau_d` 只在 Md 贴力界饱和时起作用；而 LTR<0.8 恰恰要求把 Md 从饱和区拉出来。
+**"LTR<0.8" 与 "comp/nc 可区分" 在 FishHook 上互斥**，所以 comp 的展示交给
+Slalom（−3.5%）和 DLC 80 km/h（−7.2%）。
+
+### 29.6 可复现性
+
+- 控制器两条：`SH_MODE=0` + 29.3 的 Q3 覆盖 + `f_scale×3`，可直接重跑。
+- 被动一条：需先设 `SH_MODE=2, SH_I=1.0`，跑完改回 `SH_MODE=0`。
+- 扫描记录：`x3p_*`（被动）、`x3m_*`（MPC 整定）、`x3t_*`（Proposed 整定）、
+  `x3nc_base`、`x3c_td*`、`x3_150*`。
+
+---
+
+## 30. 三工况最终状态（减振器力 ×3，2026-11-12 收口）
+
+### 30.1 全局口径
+
+- **减振器力整体 ×3**：`nlcsnn/fwd_weights_m.m` 的 `net.norm.f_scale ×3`。
+  论文必须写成"假设更强 CDC 硬件（同电流下力 ×3）"，不能再说"基于实测标定"。
+- **被动基线 = 恒定 1 A**（`inv_current_impl_10ms.m` 的 `SH_MODE=2, SH_I=1.0`）
+  + 差动制动关闭（`mz_on=false`）。跑控制器时 `SH_MODE=0`。
+- 力界预瞄：Slalom/FishHook 关闭，DLC 用默认（`L=0.03, α=1`）。
+
+### 30.2 各工况定稿
+
+| 工况 | 曲线 | 图 | 状态 |
+|---|---|---|---|
+| **FishHook** 80 km/h, mu=0.9, cargo 190 | Passive(1 A) / MPC / Proposed | `fishhook_190_x3.pdf` | ✅ 已出图 |
+| **Slalom** 80 km/h, mu=0.85, A=1.2 | MPC / Proposed nc / Proposed comp | `slalom_80_x3.pdf` | ✅ 已出图 |
+| **DLC** 60/70/75 km/h, mu=0.4 | MPC / ZENG / Proposed(comp) | — | ⏳ **数据已备，图由后续 agent 出** |
+
+### 30.3 FishHook（第 29 节）
+
+| 曲线 | roll | LTR | Md max |
+|---|---:|---:|---:|
+| Passive（1 A） | **79.65° @4.18 s（翻）** | 1.00 | 6389 |
+| MPC（`Q_norm(3)=15`） | 5.75° | **1.00** | 3891 |
+| Proposed（`Q_norm(3)=40`） | **5.10°** | **0.81** | 4536 |
+
+comp 与 nc 在 FishHook 上无法区分（第 29.5 节），故只画一条 Proposed。
+
+### 30.4 Slalom（只保留 80 km/h）
+
+`pmpc_init` case 2：`tau_d = 0.20`（×3 后重扫的最优值，原 0.15）。
+
+| 曲线 | 文件 | ey max | ey RMS | SW max | Mz max | Md max | **LTR max** |
+|---|---|---:|---:|---:|---:|---:|---:|
+| MPC | `d3_sla_mpc` | 0.961 | 0.546 | 257.9° | 4697 | 5024 | 0.775 |
+| Proposed nc | `d3_sla_nc` | 0.795 | 0.481 | 162.7° | 2283 | 4996 | **0.739** |
+| **Proposed comp** | `d3_td200` | **0.767** | **0.480** | 163.3° | **2088** | 5232 | 0.747 |
+
+- **LTR 全部 < 0.8**（×1 时是 1.00，×3 后不再举轮）
+- **comp vs nc：ey max −3.5%、ey RMS −0.2%、Mz −8.6%**
+- comp vs MPC：ey max −20.2%、SW −36.7%、Mz −55.5%
+
+注意：nc 与 comp 在图上几乎重合（差 0.028 m），差异要靠数值表体现。
+
+### 30.5 DLC（数据已备，不出图）
+
+×3 下 12 个算例已跑完，前缀 `x3_c{1,2,3nc,3c}_{60,70,75}`：
+
+| 速度 | MPC ey/RMS | ZENG | Proposed nc | Proposed comp |
+|---:|---|---|---|---|
+| 60 | 0.567 / 0.172 | 0.536 / 0.163 | **0.508 / 0.160** | 0.508 / 0.160 |
+| 70 | 0.632 / 0.283 | 0.617 / 0.221 | **0.608 / 0.219** | 0.608 / 0.219 |
+| 75 | **1.617 / 0.682** | 0.641 / 0.281 | **0.625 / 0.271** | 0.625 / 0.271 |
+
+- DLC 里 comp 与 nc **完全重合**（第 23 节的结论在 ×3 下仍成立），主图用三控制器。
+- ×3 让 75 km/h 的 MPC 从 9.07 m 缩到 1.62 m，"MPC 完全失效"的戏剧性减弱。
+- 80 km/h 也跑过（`x3_c*_80`）：四车全部饱和 720°，comp 比 nc 好 7.2%
+  （5.014 vs 5.405），可作为"极限工况"备选，但四个都失效，不建议进主图。
+
+### 30.6 可复现性
+
+| 项 | 需要 |
+|---|---|
+| 控制器算例 | `f_scale×3` + `pmpc_init` 的 case 参数 + `SH_MODE=0` |
+| 被动基线 | 额外设 `SH_MODE=2, SH_I=1.0`（跑完改回 0） |
+| Slalom | case 2 `tau_d=0.20`；nc 由 `run_slalom(...,'tau_d',1e-4)` 覆盖 |
+| FishHook | case 4 `Q_norm(3)=15`（MPC）/ `40`（Proposed） |
+
+### 30.7 文件
+
+- FishHook：`fishhook_190_x3.pdf`、`scripts/plot_fishhook_x3.py`
+- Slalom：`slalom_80_x3.pdf`、`scripts/plot_slalom_x3.py`
+- 信号：`p1a_190_sig.mat`、`x3m_q15_sig.mat`、`x3t_q40nc_sig.mat`、
+  `d3_sla_mpc_sig.mat`、`d3_sla_nc_sig.mat`、`d3_td200_sig.mat`
+  （54 通道，见 `PMPC_Results/README_signals.md`）

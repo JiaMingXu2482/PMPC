@@ -76,6 +76,17 @@ hit = find(startsWith(strtrim(lines),'M_PL '),1);
 assert(~isempty(hit), 'Run_all.par 中找不到 M_PL');
 lines{hit} = sprintf('M_PL %g',opts.cargo);
 
+% 车顶货箱质心高度 H_CG_PL [mm]（opt.h_pl 以 m 给出）。降低它可减小侧翻倾向。
+if isfield(opts,'h_pl') && isfinite(opts.h_pl)
+    nh = 0;
+    for k = 1:numel(lines)
+        if startsWith(strtrim(lines{k}),'H_CG_PL ')
+            lines{k} = sprintf('H_CG_PL %g', opts.h_pl*1000); nh = nh + 1;
+        end
+    end
+    fprintf('H_CG_PL %.2f m applied to %d line(s)\n', opts.h_pl, nh);
+end
+
 % 路面附着：改 CarSim 展开 par 的 MU_ROAD_CONSTANT（两处：road + friction map）。
 % 控制器内部的 Road.mu 在 pmpc_init 之后同步覆盖，保证模型与路面一致。
 nmu = 0;

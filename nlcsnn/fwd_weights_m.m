@@ -137,7 +137,12 @@ net.head_b = [-0.057566981762647629];
 net.norm = struct();
 net.norm.x_ref = 279.13400268554688;
 net.norm.x_scale = 63.970001220703125;
-net.norm.f_scale = 7664.259765625;
+% 减振器力整体放大系数（实验用）：1 = 实测标定的 CDC_FWD_V22_E0；
+% >1 = 假设"更强的 CDC 硬件"（同电流下力更大）。
+% 正模型 fwd_mf_impl 与力界 force_bounds_impl_10ms 共用 f_scale，
+% 所以只改这一处就能让"实测力 / 候选力 / 反解"三者保持一致。
+% 写成字面量乘积，避免 codegen 把 net 判成非常量。
+net.norm.f_scale = 7664.259765625 * 3;   % DAMP_SCALE = 3
 net.norm.v_scale = 1000;
 net.norm.a_scale = 50000;
 net.norm.i_scale = 1.6000000000000001;
