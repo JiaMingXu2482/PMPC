@@ -84,7 +84,7 @@ function h = newFig(cfg, kind)
 if strcmpi(kind,'full'), wh = cfg.full; else, wh = cfg.half; end
 h.f = figure('Units','centimeters','Position',[2 2 wh(1) wh(2)], ...
              'Color','w','Visible','off');
-pos = [0.205 0.215 0.775 0.695];
+pos = [0.245 0.215 0.735 0.695];
 h.ax = axes('Parent',h.f,'Units','normalized','Position',pos,'Box','on');
 hold(h.ax,'on'); grid(h.ax,'on');
 set(h.ax,'FontSize',cfg.fsz,'TickDir','in','LineWidth',0.5, ...
@@ -559,9 +559,9 @@ for k = 1:2
     set(p,'DisplayName',[nm{k} ' Command']);
 end
 plot(ax, [1.5 3.6], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(s5,'time (s)','F_d (N)',[1.5 3.6],[-1000 1900]);
+finishXY(s5,'time (s)','F_d (N)',[1.5 3.6],[-2400 3100]);
 putLegend(s5, {[nm{1} ' Command'],[nm{1} ' Actual'], ...
-               [nm{2} ' Command'],[nm{2} ' Actual']}, 1);
+               [nm{2} ' Command'],[nm{2} ' Actual']}, 1, 'northwest');
 if strcmp(axle,'front')
     saveFig(s5,'fig_sl_fdf');
 else
@@ -618,7 +618,7 @@ for k = 1:size(cases,1)
     plotLine(ax, d.t, d.D(18,:)/1000, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
 end
 plot(ax, [0 5], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(t,'time (s)','M_z (kN·m)',[0 5],[-10.5 8]);
+finishXY(t,'time (s)','M_z (kN·m)',[0 5],[-11 9]);
 putLegend(t, {cfg.nm.A,cfg.nm.C,cfg.nm.D}, 1);
 saveFig(t,'fig_fh_mz');
 end
