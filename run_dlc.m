@@ -20,7 +20,7 @@ root = fileparts(mfilename('fullpath'));
 if isempty(root), root = pwd; end
 
 if nargin < 3 || isempty(opts), opts = struct(); end
-if ~isfield(opts,'stopTime'), opts.stopTime = 10; end
+if ~isfield(opts,'stopTime'), opts.stopTime = 15; end
 if ~isfield(opts,'outdir')
     opts.outdir = fullfile(root,'PMPC_Results','DLC_mu0.4_interp');
 end
@@ -51,6 +51,20 @@ assert(n > 0, 'Run_all.par 中找不到 SV_VXS');
 for k = 1:numel(lines)
     if startsWith(strtrim(lines{k}),'SV_XO ')
         lines{k} = sprintf('SV_XO 0');
+    end
+end
+
+% 仿真终止：CarSim 的 TSTOP/SSTOP 决定物理终止，Simulink 的 StopTime 只是上限。
+% 为了让三个速度都跑满 200 m（画图对齐），把 TSTOP 放宽、SSTOP 设成目标里程，
+% Simulink StopTime 给足（CarSim 到里程会自己停）。
+tstop = 20; sstop = 200;
+if isfield(opts,'tstop') && isfinite(opts.tstop), tstop = opts.tstop; end
+if isfield(opts,'sstop') && isfinite(opts.sstop), sstop = opts.sstop; end
+for k = 1:numel(lines)
+    if startsWith(strtrim(lines{k}),'TSTOP ')
+        lines{k} = sprintf('TSTOP %g', tstop);
+    elseif startsWith(strtrim(lines{k}),'SSTOP ')
+        lines{k} = sprintf('SSTOP %g', sstop);
     end
 end
 
