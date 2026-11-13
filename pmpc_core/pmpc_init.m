@@ -195,12 +195,8 @@ switch maneuver
         % 见 nlcsnn/force_bounds_impl_10ms.m），三种控制器统一关闭。
         M.preview_L = 0;
         M.preview_alpha = 0;
-        if M.controller==2
-            % ZENG 的 rho 下限：Slalom 下 rho<1 会让 ZENG 比 MPC 差
-            % （80 km/h ey 1.041/0.982 vs MPC 0.960）；1.0 时 ZENG ≡ MPC，
-            % 满足“ZENG 不能比 MPC 差”。
-            M.rho_min = 1.0;
-        end
+        % ZENG 用论文原值 rho_I0=0.7 / rho_dI=0.3（全局默认），
+        % 不加 rho_min 钳位（2026-11-12 决定：保持文献原样）。
         if M.controller==3
             % Proposed 的松弛上限：默认 1e4 比 MPC 的 5 硬 2000 倍，
             % 会为满足约束牺牲路径（80 km/h ey 1.762 m）；50 时降到 0.846 m。

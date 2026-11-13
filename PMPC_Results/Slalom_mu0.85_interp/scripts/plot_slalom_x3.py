@@ -2,9 +2,10 @@
 """Slalom 80 km/h / mu=0.85 / A=1.2 —— 减振器力 x3 后的定稿三曲线。
 
   曲线                     文件          ey max / LTR max
-  MPC                      d3_sla_mpc    0.961 / 0.78
-  Proposed (no comp)       d3_sla_nc     0.795 / 0.74
-  Proposed (comp, td=0.2)  d3_td200      0.767 / 0.76
+  MPC                      d3_sla_mpc     0.961 / 0.775
+  ZENG (rho_I0=0.7)        d3_zeng_paper  1.006 / 0.750
+  Proposed (no comp)       d3_sla_nc      0.795 / 0.739
+  Proposed (comp, td=0.2)  d3_td200       0.767 / 0.747
 
 x3 阻尼把 LTR 从 1.00 压到 0.74-0.78（不再举轮），同时 comp 比 nc 好 3.5%。
 
@@ -26,9 +27,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(HERE)
 
 CASES = [
-    ('d3_sla_mpc', 'MPC',                  '#1f77b4'),
-    ('d3_sla_nc',  'Proposed (no comp)',   '#9467bd'),
-    ('d3_td200',   'Proposed (comp)',      '#2ca02c'),
+    ('d3_sla_mpc',    'MPC',                 '#1f77b4'),
+    ('d3_zeng_paper', 'ZENG (I0=0.7)',       '#d62728'),
+    ('d3_sla_nc',     'Proposed (no comp)',  '#9467bd'),
+    ('d3_td200',      'Proposed (comp)',     '#2ca02c'),
 ]
 T_STAT = 2.0
 
@@ -119,7 +121,7 @@ def main():
     ax_xy.set_aspect('equal', adjustable='datalim')
 
     fig.suptitle('Slalom 80 km/h, $\\mu$=0.85, A=1.2 m, damper force $\\times$3\n'
-                 'LTR 0.74-0.78 (no wheel lift); comp beats no-comp by 3.5%',
+                 'LTR 0.74-0.78 (no wheel lift); ZENG uses the paper rho_I0=0.7',
                  fontsize=11)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, 'slalom_80_x3.pdf'), bbox_inches='tight')
