@@ -30,25 +30,9 @@ D=[0,cd/V.m,1/V.m;0,V.lf*cd/V.Iz,-V.lr/V.Iz;0,0,0; ...
     0,0,0;-v,0,0];
 
 % 增加实际 Md 状态，用 tau_d 描述力矩命令到实际力矩的一阶响应。
-% tau_d->0 表示阻尼力瞬时建立（no-comp 基准）；取下限避免 1/tau_d 发散。
-% 时变时滞（M.tau_d_mode=2）：由四角压缩速度幅值决定，标定自力阶跃响应
-% 的 t10-90（50/100/200/400 mm/s -> 17/19/22/22 ms）。分段线性、末段饱和。
-% M.tau_d_mode=1（默认）用常数 M.tau_d。
-if isfield(M,'tau_d_mode') && M.tau_d_mode==2
-    vmag=1000*mean(abs(c.vd));            % [mm/s]
-    if vmag<=50
-        tau_d=0.017;
-    elseif vmag<=100
-        tau_d=0.017+0.002*(vmag-50)/50;
-    elseif vmag<=200
-        tau_d=0.019+0.003*(vmag-100)/100;
-    else
-        tau_d=0.022;
-    end
-else
-    tau_d=M.tau_d;
-end
-tau_d=max(tau_d,1e-4);
+% mode=1/mode=2 的选择与查表都在 tau_d_effective.m 里；这里只负责把它放进 ZOH
+% （A(7,7)/B(7,3)）。日志里没有这个值，见 tau_d_effective.m 头注释。
+tau_d=tau_d_effective(M,c.vd);
 A=[A,B(:,3);zeros(1,6),-1/tau_d];
 B(:,3)=0; B=[B;0,0,1/tau_d]; D=[D;zeros(1,3)];
 
@@ -71,6 +55,8 @@ for j=1:N
 end
 
 % 预测状态=y+Y*DeltaU；绝对输入序列=Ut+AI*DeltaU。
+% 输出结构必须与 pmpc_bus 里的 prediction 模板字段一致（Y/y/AI/Ut/valid），
+% 不要在这里加字段：多一个字段 Simulink 总线的结构对不上，编译直接报错。
 p=struct('Y',Y,'y',y,'AI',kron(tril(ones(K)),eye(3)), ...
     'Ut',repmat(c.zeta(8:10),K,1));
 end

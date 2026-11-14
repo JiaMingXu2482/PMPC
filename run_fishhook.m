@@ -158,6 +158,7 @@ fclose(fid);
 
 addpath(fullfile(root,'pmpc_core'),'-begin');
 addpath(fullfile(root,'nlcsnn'),'-begin');
+addpath(fullfile(root,'tools'),'-begin');   % vs_read：读 CarSim .vs/.vsb 复算 tau_d
 
 % 清函数缓存；必要时清编译缓存，避免 MATLAB Function 使用旧代码。
 clear functions;
@@ -236,9 +237,37 @@ for ext = {'.vs','.vsb'}
     end
 end
 L = out.pmpc_log; D = squeeze(L.Data);
+% 定向：行=通道、列=时间。logVec 在 Stateflow 里锁死 [27 1]，所以行数恒为 27。
 if size(D,1) ~= 27, D = D.'; end
 t = L.Time;
-save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t');
+% tau_d 序列：用【这次运行自己的口径】(opts 覆盖后的 P.M.tau_d / tau_d_mode)
+% 加上【这次运行实测的四角压缩速度】CmpRD_*（.vs，mm/s，= 1000*vd），
+% 调控制器自己的 tau_d_effective.m 复算，落到 .mat 的 tau_dtrace。
+% 不是拿固定写死的表套所有 run（那正是上一轮 0.017/0.017 假数据的来源）。
+tau_d_mode  = P.M.tau_d_mode;
+tau_d_const = P.M.tau_d;
+tau_dtrace  = nan(1,numel(t));
+vd_ctrl     = nan(1,numel(t));
+try
+    vsf = fullfile(opts.outdir,[opts.prefix '.vs']);
+    if isfile(vsf)
+        [vnames, VM] = vs_read(vsf);
+        want = {'CmpRD_L1','CmpRD_L2','CmpRD_R1','CmpRD_R2','T_Record'};
+        jc = zeros(1,numel(want));
+        for k = 1:numel(want), jc(k) = find(strcmp(vnames, want{k}), 1); end
+        if all(jc > 0)
+            vmag = mean(abs(VM(:,jc(1:4))), 2);          % [mm/s]
+            tt   = VM(:,jc(5));
+            vmag_c = interp1(tt, vmag, t, 'linear', 'extrap');
+            vd_ctrl = vmag_c / 1000;                     % 等价于 mean(abs(vd)) [m/s]
+            tau_dtrace = arrayfun(@(x) tau_d_effective(P.M, repmat(x,4,1)), vd_ctrl);
+        end
+    end
+catch err
+    warning('pmpc:tauDfailed','tau_d 复算失败：%s', err.message);
+end
+save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t','tau_dtrace', ...
+     'tau_d_mode','tau_d_const','vd_ctrl');
 % 若模型带 Icmd_log（pmpc_fishhook_log），一并保存四角电流。
 try
     Icmd = out.pmpc_Icmd;
