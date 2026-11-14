@@ -5,8 +5,10 @@
 基线**不控减振器**，四角恒 `M.cdc_fixed_I = 1.0 A`；没有 Md 状态/控制量，所以没有 `tau_d` 时滞模型。
 `logVec` 25 行，6–9（Md）与 14–17（Fdes）恒 NaN。
 
-所有数据都是 `run_baseline` 落盘：`D` 25×N、`t`、`Icmd`（timeseries，四角电流），
-与 `run_dlc.m` 的落盘格式一致。
+所有数据都是 `run_baseline` 落盘：`D` 25×N、`t`、`Icmd`（四角电流，
+`SaveFormat = Structure With Time`——必须和 `run_dlc.m` / `pmpc_mil` 的 `Icmd_log`
+同格式，否则存成 MATLAB timeseries，scipy 读出来是一个键名 `None` 的垃圾对象）。
+`Icmd.signals.values` 是 N×4，四角各一列。
 
 ## 算例
 
