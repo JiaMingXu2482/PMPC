@@ -27,6 +27,10 @@
 
 ### Baseline —— 独立实现，不走 `pmpc_core`
 
+**论文的基线就是这一套，没有第二套。** `pmpc_core` 里曾经有过一个
+`M.baseline` 开关（把 Md/LTR 数值上关掉），2026-11-14 已从代码里删除：
+同一个仓库放两套"基线"只会让人搞不清论文写的是哪套。
+
 目录 `baseline_mpc/`，模型 `pmpc_base.slx`（`build_pmpc_base` 生成）。
 
 | 项 | 值 |
@@ -61,10 +65,30 @@
 | 状态 / 控制量 | 同 noComp |
 | 减振器 | 控制器给电流，`SH_MODE = 0` |
 | LTR 约束 | 有 |
-| 时滞建模 | **有**：`tau_d` 取标定值（见 §3） |
-| `tau_d_mode` | `1`（常数，默认）或 `2`（时变，需主 agent 确认） |
+| 时滞建模 | **有** |
+| `tau_d_mode` | **`2`（时变）** ← 2026-11-14 决定 |
 
-入口：`run_dlc(3,speed)` / `run_slalom(3,speed)` / `run_fishhook('comp25',3,opts)`
+`tau_d_mode = 2` 时 `M.tau_d` 被忽略，改由 `build_prediction.m` 按四角压缩速度幅值
+`vmag = 1000*mean(abs(c.vd))` 查表：
+
+| 压缩速度 `vmag` [mm/s] | `tau_d` [s] |
+|---|---|
+| ≤ 50 | 0.017 |
+| 50 → 100 | 0.017 → 0.019（线性） |
+| 100 → 200 | 0.019 → 0.022（线性） |
+| ≥ 200 | 0.022（饱和） |
+
+标定来源：减振器力阶跃响应的 `t10-90`（50/100/200/400 mm/s → 17/19/22/22 ms）。
+
+> **注意**：这些值（17–22 ms）比原先扫出来的常数最优值小一个量级
+> （Slalom `tau_d=0.20`、FishHook `0.025`）。常数最优值是把其它滞后
+> 一起吸收进去的**等效**补偿量，时变值只代表执行器本身。切到 mode=2
+> 后 Slalom 的 `ey` 预计会从 0.767 回到 0.78 量级——要如实记录，不要
+> 拿旧 comp 数字对比。
+
+入口：`run_dlc(3,speed,struct('tau_d_mode',2))` /
+`run_slalom(3,speed,struct('tau_d_mode',2))` /
+`run_fishhook('comp25',3,struct('tau_d_mode',2))`
 
 ---
 
@@ -103,7 +127,8 @@ tau_mz=0.2   tau_md=0.1
 | `rho_I0` / `rho_dI` | `0.7` / `0.3`（ZENG 论文原值） |
 | Proposed `w1_max` / `w2_max` | `200` |
 | Proposed `Wb` | `10` |
-| Proposed `tau_d` | **`0.20`**（comp） / `1e-4`（noComp 由 `run_slalom` 覆盖） |
+| Proposed `tau_d` | 常数口径 `0.20`（仅供参考）/ noComp `1e-4` |
+| Proposed `tau_d_mode` | **`2`**（comp，时变）/ `1`（noComp） |
 
 ### FishHook（mu=0.9，cargo 170 kg）
 
@@ -116,7 +141,8 @@ tau_mz=0.2   tau_md=0.1
 | `slack_w` | `[100;100;1e4;1e-3]` |
 | Proposed `w1_max` / `w2_max` | `2e5` / `1e4` |
 | Proposed `w_env` | `1e-3` |
-| `tau_d` / `preview_L` / `preview_alpha` | noComp：`1e-4` / `0` / `0`；comp25：**`0.025`** / `0.025` / `1` |
+| `tau_d` / `preview_L` / `preview_alpha` | noComp：`1e-4` / `0` / `0`；comp25：`0.025` / `0.025` / `1` |
+| `tau_d_mode` | comp：**`2`**（时变，`tau_d` 被忽略）；noComp：`1` |
 
 ### U-turn / J-turn（mu=0.85）
 
@@ -154,7 +180,7 @@ PMPC_Results/<场景目录>/<前缀><工况>_<车速>.mat
 2. 提交前 `git status` 必须干净（除了 `*.vs` / `*.vsb` / `slprj/` 这些 gitignore 的）
 3. **不要 `git merge` 别人的分支**，不要 `git rebase`，不要 `git push`
 4. 每次提交聚焦一件事，message 说清"改了什么 + 为什么"
-5. `simfile_dlc.sim` / `simfile_slalom.sim` / `simfile.sim` **不要提交**——它们指向各自 worktree 的 CarSim 数据集，提交会互相覆盖
+| `simfile_dlc.sim` / `simfile_slalom.sim` / `simfile.sim` **不要提交**——它们指向各自 worktree 的 CarSim 数据集，提交会互相覆盖。三个都已在 `.gitignore` 里（`simfile.sim` + `simfile_*.sim`）。
 
 ---
 
@@ -229,10 +255,11 @@ ISSUES: <没有就写 none>
 
 ---
 
-## 9. 待决事项
+## 9. 待决事项 / 已定事项
 
-| # | 问题 | 状态 |
+| # | 事项 | 结论 |
 |---|---|---|
-| 1 | **Baseline 有两套实现**：`baseline_mpc/`（独立 4 状态）vs `pmpc_core` 里的 `M.baseline` 开关（7 状态数值禁用）。论文用哪套？ | ❓ 待定 |
-| 2 | `ctrl-comp` 用常数 `tau_d` 还是 `tau_d_mode=2` 时变 | ❓ 待定 |
-| 3 | `ControllerA` / `ControllerC` 的会话 cwd 指向 `Code\Jturn`（= MAIN），需重建会话 | ❓ 待办 |
+| 1 | Baseline 用哪套实现 | ✅ 定：`baseline_mpc/`（4 状态 / 2 控制量）。`pmpc_core` 里的 `M.baseline` 已删除 |
+| 2 | `ctrl-comp` 用常数 `tau_d` 还是时变 | ✅ 定：`tau_d_mode = 2` 时变 |
+| 3 | `ControllerA` / `ControllerC` 会话 cwd 指向 `Code\Jturn`（= MAIN） | ⏳ 待重建会话 |
+| 4 | `baseline_mpc/` 只在 `ctrl-baseline` 有，`MAIN` 的是未跟踪副本 | ⏳ 待定：是否合回 `jturn-current` |
