@@ -364,25 +364,34 @@ margin=[-max(residual(6*K+4*N+1:6*K+10*N));-max(residual(6*K+(1:4*N)))];
 % LTR 的自适应被道路约束劫持。拆开后 w_LTR 只看 LTR 行、w_env 只看道路行。
 m_LTR=-max(residual(6*K+4*N+1:6*K+6*N));
 m_env=-max(residual(6*K+6*N+1:6*K+10*N));
+% 消融开关 M.margin_mode：1=预测时域最紧值（默认）；2=只看第 1 个节点。
+% 两者都用同一个候选计划，唯一差别是"要不要看未来 Np 步"。
+if isfield(P.M,'margin_mode') && P.M.margin_mode==2
+    margin=[-max(residual(6*K+4*N+1:6*K+4*N+2));-max(residual(6*K+(1:4)))];
+    m_LTR=-max(residual(6*K+4*N+1:6*K+4*N+2));
+    m_env=-max(residual(6*K+6*N+1:6*K+6*N+4));
+end
 F=max(.5*candidate'*H(1:nd,1:nd)*candidate+f(1:nd)'*candidate+e'*Q*e,0) ...
     +Wb*gamma+rho_g*gamma^2;
 % 松弛权重：MPC 固定；ZENG 固定但稳定性松弛乘 rho；Proposed 按余量在线。
 if P.M.controller==3
     w2=P.M.w2_max;
     if margin(2)>0
-        w2=min(max(P.M.w2_gain*F/margin(2),1),P.M.w2_max);
+        w2=min(max(F/margin(2),1),P.M.w2_max);
     end
     slack=max(-margin(2),0);
     S=F+w2*slack+rho_g*slack^2;
+    % 增益 g 固定为 1（2026-11-13 消融：g=3 与 g=1 在三个工况的 ey/roll
+    % 差异均 <0.5%，因为权重长期贴上限，g 只改变贴上限的时刻，不改变结果）。
     % LTR 松弛权重只看 LTR 余量
     w1=P.M.w1_max;
     if m_LTR>0
-        w1=min(max(P.M.w1_gain*S/m_LTR,1),P.M.w1_max);
+        w1=min(max(S/m_LTR,1),P.M.w1_max);
     end
     % 道路包络松弛权重只看道路余量（可被 M.w_env 常数覆盖）
     we=P.M.w1_max;
     if m_env>0
-        we=min(max(P.M.w1_gain*S/m_env,1),P.M.w1_max);
+        we=min(max(S/m_env,1),P.M.w1_max);
     end
     wr=w2; wa=w2; wl=w1;
     if isfield(P.M,'w_env') && isfinite(P.M.w_env), we=P.M.w_env; end
@@ -402,7 +411,9 @@ else
 end
 f(nd+(1:4))=[wr;wa;wl;we];
 lbQ=[-duLimit;0;0;0;0;0]; ubQ=[duLimit;Inf;Inf;Inf;Inf;1];
-if P.M.controller~=3
+% gamma_on=false 时把 DB 缩放钉成 1（消融用：验证 gamma 缩放本身有没有贡献）。
+gamma_on = ~(isfield(P.M,'gamma_on') && ~P.M.gamma_on);
+if P.M.controller~=3 || ~gamma_on
     % MPC/ZENG 不做 DB 激活量缩放，等价于 gamma=1。
     lbQ(end)=1; ubQ(end)=1;
 end

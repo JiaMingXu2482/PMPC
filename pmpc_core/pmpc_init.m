@@ -135,9 +135,10 @@ M.rho_I0 = 0.7;                       % ZENG rho 起始阈值（论文 0.7）
 M.rho_dI = 0.3;                       % ZENG rho 过渡宽度（论文 0.3）
 M.Wb = 100;                           % Proposed: DB 激活量 gamma 的线性罚
 M.w2_max = 2e3;                       % Proposed: 稳定性松弛权重上限（整定）
-M.w2_gain = 3;                        % Proposed: 稳定性松弛权重增益
 M.w1_max = 2e3;                       % Proposed: 道路/侧倾松弛权重上限（整定）
-M.w1_gain = 3;                        % Proposed: 道路/侧倾松弛权重增益
+% 增益 g 已固定为 1（写死在 pmpc_step 里），不再单独整定。
+% 余量取法（消融用）：1=预测时域内最紧约束（默认）；2=只看第 1 个预测节点。
+M.margin_mode = 1;
 
 %% 5. 参考轨迹
 % 仅决定使用哪条参考路径，不改变 PMPC 算法。

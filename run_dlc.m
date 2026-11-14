@@ -10,7 +10,7 @@ function out = run_dlc(ctrl, speed, opts)
 %   .outdir    结果目录，默认 PMPC_Results/DLC_mu0.4_interp
 %   .prefix    结果文件名前缀，默认 sprintf('dlc_c%d_%g',ctrl,speed)
 %   .Q_norm / .R_norm / .slack_w / .rho_I0 / .rho_dI / .Wb /
-%   .w1_max / .w2_max / .w1_gain / .w2_gain   覆盖 pmpc_init 默认值
+%   .w1_max / .w2_max   覆盖 pmpc_init 默认值（增益 g 固定为 1）
 %
 % 依赖：pmpc_mil.slx、simfile_dlc.sim（指向 Run_4d669775-...）、
 %       CarSim 2019 GUI/license 已启动。
@@ -96,7 +96,8 @@ set_param(mdl,'StopTime',sprintf('%g',opts.stopTime));
 
 [P,R,s0,m0] = pmpc_init(1,ctrl);
 for f = {'Q_norm','R_norm','slack_w','rho_I0','rho_dI','Wb', ...
-         'w1_max','w2_max','w1_gain','w2_gain','tau_d','tau_lead'}
+         'w1_max','w2_max','margin_mode','tau_d','tau_lead', ...
+         'gamma_on'}
     if isfield(opts,f{1}), P.M.(f{1}) = opts.(f{1}); end
 end
 
