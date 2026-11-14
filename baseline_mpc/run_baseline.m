@@ -65,14 +65,27 @@ if isfield(opts,'cargo') && isfinite(opts.cargo)
 end
 fid = fopen(parfile, 'w'); fprintf(fid, '%s\n', lines{:}); fclose(fid);
 
+% ---- 预测时域：必须和 pmpc_core/pmpc_init 对齐，否则三方对比里混进“预瞄更长” ----
+% Proposed 的 DLC/Slalom 权重是在 Ts=0.1 / Np=10 / Nc=5（1.0 s 预测窗）下整定的，
+% 基线要是用 0.05/12/6（0.6 s），差异就分不清是算法不同还是看得更远。
+% FishHook 两边本来都是 0.05/12/6，保持不变。
+switch man
+    case {1, 2}, horizon = struct('Ts',0.10, 'Np',10, 'Nc',5);   % DLC / Slalom
+    case 4,      horizon = struct('Ts',0.05, 'Np',12, 'Nc',6);   % FishHook
+    otherwise,   error('run_baseline:horizon', '未定义工况 %d 的时域', man);
+end
+if isfield(opts,'horizon') && ~isempty(opts.horizon)
+    horizon = opts.horizon;   % 显式覆盖（复现旧数据时才用）
+end
+
 % ---- 工作区 ----
-horizon = struct('Ts',0.05,'Np',12,'Nc',6);
 % InitFcn 只传 here，其余从基础工作区的 base_* 读，先写进去
 assignin('base','base_maneuver', man);
 assignin('base','base_horizon',  horizon);
 assignin('base','base_opts',     opts);
 assignin('base','base_vtarget',  speed);
 pmpc_base_setup(here, man, horizon, opts);
+params = evalin('base', 'params');   % 仅用于落盘记录，控制拍内不用
 
 % ---- 模型 ----
 if bdIsLoaded(mdl), close_system(mdl, 0); end
@@ -99,6 +112,33 @@ for ext = {'.vs','.vsb'}
         copyfile(src, fullfile(opts.outdir,[opts.prefix ext{1}]));
     end
 end
+
+% ---- 生效参数存盘 <prefix>_params.mat ----
+% 三方对比时最容易被问的就是“这一跑到底用的什么”下游只能看 .mat，不能靠回忆。
+% 字段与 nocmp 分支的 <prefix>_params.mat 对齐（maneuver / speed / horizon /
+% 权重 / cdc_fixed_I / 时间戳），多存几个用于定位的标签。
+meta = struct();
+meta.prefix      = opts.prefix;
+meta.maneuver    = lower(scenario);
+meta.maneuver_id = man;
+meta.speed       = speed;                       % km/h，写进 CarSim SV_VXS 的那个
+meta.horizon     = [params.M.Ts, params.M.Np, params.M.Nc];
+meta.Ts_exec     = params.M.Ts_exec;
+meta.Q_norm      = params.M.Q_norm(:);
+meta.R_norm      = params.M.R_norm(:);
+meta.slack_w     = params.M.slack_w(:);
+meta.cdc_fixed_I = params.M.cdc_fixed_I;
+meta.nx          = numel(params.M.Q_norm);
+meta.nu          = numel(params.M.R_norm);
+meta.n_slack     = numel(params.M.slack_w);
+meta.mu          = params.road.mu;
+meta.stopTime    = opts.stopTime;
+meta.t_end       = t(end);
+meta.simfile     = simfile;
+meta.model       = mdl;
+if isfield(opts,'cargo') && isfinite(opts.cargo), meta.cargo = opts.cargo; end
+meta.timestamp   = char(datetime('now','Format','yyyy-MM-dd HH:mm:ss'));
+save(fullfile(opts.outdir,[opts.prefix '_params.mat']), 'meta');
 
 % ---- 摘要 ----
 ey = D(1,:); phi = D(3,:); sw = D(19,:); vx = D(20,:);
