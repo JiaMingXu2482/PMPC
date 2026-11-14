@@ -19,6 +19,10 @@ function build_pmpc_base(mdl)
 % 减振器：控制器给固定电流 M.cdc_fixed_I（四角相同），经正模型（nlcsnn，1000 Hz）
 % 换算成阻尼力 Fa 再送进 CarSim。逆模型被常数电流取代——这正是基线本意。
 %
+% 纵向：v_target[km/h] -> /3.6 -> Sum(+,-) <- meas.Vx -> PID(PI 0.2/0.005)
+%   -> lon_arbitrate(u_lon,Tb) -> [throttle; p_brake] -> CarSim Mux 第 10/11 路。
+% 与 pmpc_mil 的 MPC_Controller 内那一段逐块一致，lon_arbitrate.m 共用 pmpc_core/。
+%
 % InitFcn 调 pmpc_base_setup（在工作区放 params/Reftraj/state0/meas0/bus）。
 
 if nargin < 1 || isempty(mdl), mdl = 'pmpc_base'; end
@@ -32,6 +36,8 @@ end
 new_system(mdl);
 open_system(mdl);
 addpath(here);
+% lon_arbitrate.m 用 pmpc_core/ 里那一份（只读引用，不复制）
+addpath(fullfile(root,'pmpc_core'), '-begin');
 
 % 与 pmpc_mil 同一套求解器设置：CarSim S-Function 自己算，Simulink 侧 1 ms 定步长
 set_param(mdl, 'Solver', 'ode1', 'FixedStep', '0.001', 'StopTime', '15');
@@ -116,10 +122,47 @@ add_block('simulink/Signal Routing/Demux', [mdl '/DemuxIcmd'], ...
     'Outputs', '4', 'Position', [300 160 305 220]);
 add_block('simulink/Signal Routing/Mux', [mdl '/CarSimIn'], ...
     'Inputs', '11', 'DisplayOption', 'bar', 'Position', [520 300 525 400]);
-add_block('simulink/Sources/Constant', [mdl '/zero_throttle'], ...
-    'Value', '0', 'Position', [420 430 450 450]);
-add_block('simulink/Sources/Constant', [mdl '/zero_brake'], ...
-    'Value', '0', 'Position', [420 470 450 490]);
+
+%% 纵向速度环（与 pmpc_mil 的 MPC_Controller 内那一段逐块一致）
+% v_target[km/h] /3.6 -> Sum(+,-) <- Vx -> PID(PI,0.2/0.005,±1,反算抗饱和)
+%   -> lon_arbitrate(u_lon,Tb) -> [throttle; p_brake] -> CarSim Mux 第 10/11 路
+% lon_arbitrate.m 直接用 pmpc_core/ 里那份（addpath 引用，不复制）。
+% 采样时间全部显式 0.01：pmpc_mil 靠外层的 100 Hz 子系统继承，
+% 这里的模型根层是 CarSim 的 1 ms，不写死就会按 1 kHz 跑：
+% lon_arbitrate 的 DT 和 PID 的 I 都是按 10 ms 定的。
+add_block('simulink/Sources/Constant', [mdl '/v_target'], ...
+    'Value', 'base_vtarget', 'Position', [180 520 200 550]);
+add_block('simulink/Math Operations/Gain', [mdl '/GainVref'], ...
+    'Gain', '1/3.6', 'Position', [230 525 260 545]);
+add_block('simulink/Signal Routing/Bus Selector', [mdl '/BusSelVx'], ...
+    'OutputSignals', 'Vx', 'Position', [180 570 200 600]);
+add_block('simulink/Math Operations/Sum', [mdl '/SumV'], ...
+    'Inputs', '|+-', 'Position', [290 545 310 575]);
+add_block('slpidlib/PID Controller', [mdl '/PID'], ...
+    'Controller', 'PI', ...
+    'Form', 'Parallel', ...
+    'TimeDomain', 'Discrete-time', ...
+    'SampleTime', '0.01', ...
+    'IntegratorMethod', 'Forward Euler', ...
+    'P', '0.2', 'I', '0.005', 'D', '0', 'N', '100', ...
+    'UseFilter', 'on', ...
+    'LimitOutput', 'on', ...
+    'UpperSaturationLimit', '1', ...
+    'LowerSaturationLimit', '-1', ...
+    'AntiWindupMode', 'back-calculation', ...
+    'TrackingMode', 'on', 'Kt', '1', 'Kb', '1', ...
+    'InitialConditionForIntegrator', '0', ...
+    'Position', [340 540 380 580]);
+add_block('simulink/User-Defined Functions/MATLAB Function', ...
+    [mdl '/LonArb'], 'Position', [420 520 490 600]);
+lonChart = sfroot().find('-isa','Stateflow.EMChart','Path',[mdl '/LonArb']);
+lonChart.Script = sprintf([ ...
+'function [throttle,p_brake,u_applied] = fcn(u_lon,Tb) %%#codegen\n' ...
+'[throttle,p_brake,u_applied] = lon_arbitrate(u_lon,Tb);\n' ...
+'end\n']);
+lock_sample_time([mdl '/LonArb'], '0.01');
+add_block('simulink/Discrete/Unit Delay', [mdl '/Unit Delay Uapp'], ...
+    'SampleTime', '0.01', 'Position', [400 620 430 650]);
 
 %% 输出记录 / 空置输出
 add_block('simulink/Sinks/To Workspace', [mdl '/To Workspace'], ...
@@ -163,8 +206,20 @@ for k = 1:4
     add_line(mdl, sprintf('DemuxTb/%d',k), sprintf('CarSimIn/%d',k), 'autorouting','on');
 end
 add_line(mdl, 'Baseline MPC/1',  'CarSimIn/9',     'autorouting','on');
-add_line(mdl, 'zero_throttle/1', 'CarSimIn/10',    'autorouting','on');
-add_line(mdl, 'zero_brake/1',    'CarSimIn/11',    'autorouting','on');
+
+%% 连线 —— 纵向速度环
+add_line(mdl, 'v_target/1',   'GainVref/1',        'autorouting','on');
+add_line(mdl, 'GainVref/1',   'SumV/1',            'autorouting','on');
+add_line(mdl, 'BusSelVx/1',   'SumV/2',            'autorouting','on');
+add_line(mdl, 'Estimator/1',  'BusSelVx/1',        'autorouting','on');
+add_line(mdl, 'SumV/1',       'PID/1',             'autorouting','on');
+add_line(mdl, 'PID/1',        'LonArb/1',          'autorouting','on');
+add_line(mdl, 'Baseline MPC/3','LonArb/2',         'autorouting','on');
+add_line(mdl, 'LonArb/1',     'CarSimIn/10',       'autorouting','on');
+add_line(mdl, 'LonArb/2',     'CarSimIn/11',       'autorouting','on');
+add_line(mdl, 'LonArb/3',     'Unit Delay Uapp/1', 'autorouting','on');
+add_line(mdl, 'Unit Delay Uapp/1', 'PID/2',         'autorouting','on');
+
 add_line(mdl, 'CarSimIn/1',      'CarSim/1',       'autorouting','on');
 
 %% InitFcn

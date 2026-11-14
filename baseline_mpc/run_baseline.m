@@ -42,6 +42,10 @@ end
 if ~isfolder(opts.outdir), mkdir(opts.outdir); end
 
 addpath(here, '-begin');
+% lon_arbitrate 在 pmpc_core/（与 nc/cp 共用同一份代码，只读引用）
+if isfolder(fullfile(root,'pmpc_core'))
+    addpath(fullfile(root,'pmpc_core'), '-begin');
+end
 clear functions;
 clear pmpc_base_init pmpc_base_bus pmpc_base_prepare pmpc_base_predict pmpc_base_step
 

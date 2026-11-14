@@ -37,6 +37,10 @@ if nargin < 4 || isempty(opts)
 end
 
 addpath(here, '-begin');
+% 纵向仲裁与协调控制器共用 pmpc_core/lon_arbitrate.m（只读引用，不要复制）
+if isfolder(fullfile(fileparts(here),'pmpc_core'))
+    addpath(fullfile(fileparts(here),'pmpc_core'), '-begin');
+end
 
 [params, Reftraj, state0, meas0] = pmpc_base_init(maneuver, horizon, opts);
 [mb, sb, pb] = pmpc_base_bus(meas0, state0);
