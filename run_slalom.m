@@ -121,6 +121,7 @@ L = out.pmpc_log; D = squeeze(L.Data);
 if size(D,1) ~= 27, D = D.'; end
 t = L.Time;
 save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t');
+save_run_params(opts.outdir, opts.prefix, P, ctrl, speed, 2);   % 2=Slalom
 try
     Icmd = out.pmpc_Icmd;
     save(fullfile(opts.outdir,[opts.prefix '.mat']),'Icmd','-append');

@@ -239,6 +239,7 @@ L = out.pmpc_log; D = squeeze(L.Data);
 if size(D,1) ~= 27, D = D.'; end
 t = L.Time;
 save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t');
+save_run_params(opts.outdir, opts.prefix, P, ctrl, opts.vtarget, 4);   % 4=FishHook
 % 若模型带 Icmd_log（pmpc_fishhook_log），一并保存四角电流。
 try
     Icmd = out.pmpc_Icmd;
