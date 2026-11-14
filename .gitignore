@@ -39,3 +39,4 @@ Desktop.ini
 # CarSim 原始结果（体积大，用 .mat + 图代替）
 *.vs
 *.vsb
+session_archive/

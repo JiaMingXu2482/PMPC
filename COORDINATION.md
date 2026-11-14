@@ -225,16 +225,55 @@ PMPC_Results/<场景目录>/<前缀><工况>_<车速>.mat
 - 新进程先跑 `worker_boot('<worktree 绝对路径>')`（补 `init_valve2` 的 `Ki`/`Kp`/`D_init`）
 - **禁止 `sleep` 等待**。长任务用：启动 → 秒回 → 反复短轮询
 
-  ```bash
-  cd "D:/OneDrive - mail.scut.edu.cn/Thesis/Code/Controller/Proposed_Comp" && \
-    nohup matlab -batch "worker_boot(pwd); run_slalom(3,80)" > /tmp/cp_sla80.log 2>&1 &
-  echo "started pid=$!"
+  **本机实测（2026-11-14）：`nohup ... &` 在这个环境里不工作**——
+  进程会被连同进程组一起回收，日志文件都不创建。必须写成 `.bat` 再用
+  `cmd //c "start /b /min <绝对路径>.bat"` 拉起。
+
+  ```bat
+  @echo off
+  cd /d "D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Controller\Proposed_Comp"
+  matlab -batch "worker_boot(pwd); run_slalom(3,80); disp('DONE');" > C:\Users\user\AppData\Local\Temp\cp_sla80.log 2>&1
+  echo EXIT=%ERRORLEVEL% >> C:\Users\user\AppData\Local\Temp\cp_sla80.log
   ```
 
-  然后每次 `tail -20 /tmp/cp_sla80.log` 轮询，不要在一次调用里 sleep 循环。
+  ```bash
+  cmd //c "start /b /min C:\\Users\\user\\AppData\\Local\\Temp\\myjob.bat"
+  ```
+
+  然后每次 `tail -20` 那个 log 轮询，不要在一次调用里 sleep 循环。
 - `-batch` 要 checkout 许可证；用户开着 MATLAB 桌面时可能抢不到，失败先看许可证而不是代码
 - 改 `.slx` 只能 `load_system` / `set_param` / `save_system` 脚本化，不要文本编辑
 - `.slx.autosave` 是崩溃残留，不要提交
+
+---
+
+## 7b. 三路并行（2026-11-14 实测可行）
+
+三个 agent 可以同时跑 Simulink+CarSim 联仿，已验证：三个 `matlab -batch`
+进程同时启动，各自 `run_baseline` / `run_dlc`，全部 `EXIT=0`、`t_end 3.00`、
+`QP 100.0%`。
+
+能并行的原因（都已核实）：
+
+| 项 | 状态 |
+|---|---|
+| CarSim 许可 | `MSCLIC_SSQ.dat` 是 `permanent uncounted` + `HOSTID=ANY`，不限席位 |
+| MATLAB 许可 | 三个 `-batch` 同时跑没问题 |
+| CarSim 数据集 | `Run_bl_*` / `Run_nc_*` / `Run_cp_*` 三个独立目录，`Run_all.par` md5 各不相同 |
+| 求解器 | `Solver_SF/CarSim S-Function`（Solver in Process），每个 MATLAB 进程一份 |
+| 输出 | `Results\Run_xxx\LastRun.*` 各写各的 |
+| `slprj/` | 每个 worktree 一份 |
+
+**前提：cwd 必须对。** 三个 worktree 共用 `Controller\MAIN\.git`，
+pi-web 按仓库归组，在 UI 里选 `Baseline` 会被映射回 `MAIN` 项目。
+新建会话时要先在该目录用 CLI 起一个会话，pi-web 才能列出正确 cwd 的条目。
+
+残余影响：
+
+- 三个 `simfile*.sim` 的 `GUI_REFRESH_V` 是同一个值，CarSim GUI 的动画/曲线会
+  在三个仿真间跳。**只是显示，不影响存盘数据。** 并行时别盯 GUI 即可。
+- 本机 12 逻辑核，三个仿真 + MATLAB 桌面 + CarSim GUI 同时跑，单个仿真会变慢。
+- 三个 worktree 都在 OneDrive 目录下，编译 `slprj/` 时会有同步开销。
 
 ---
 
