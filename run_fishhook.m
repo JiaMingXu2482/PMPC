@@ -63,12 +63,13 @@ end
 simfile = fullfile(root,'simfile.sim');
 assert(isfile(simfile), '缺少 simfile.sim：%s', simfile);
 txt = fileread(simfile);
-assert(contains(txt,'Run_81631180-fa65-4272-a318-93dc477b6e33'), ...
-    'simfile.sim 未指向 FH80_cargo_MPC（Run_81631180-...），请先在 CarSim 里 Send to Simulink。');
+assert(~isempty(cs_dataset_name(simfile)), ...
+    'simfile.sim 里找不到 Run_<dataset> 名，请检查 simfile。');
 
 % 车顶 payload 质量写进 CarSim 展开后的 Run_all.par（M_PL）。
-resdir = fullfile('D:\Program Files\CarSim2019.0\CarSim2019.0_Data\Results', ...
-                  'Run_81631180-fa65-4272-a318-93dc477b6e33');
+% dataset 目录从 simfile 里推导（每个 worktree 指向自己的副本，
+% 避免并发时互相改写 Run_all.par 的 SV_VXS/TSTOP/SSTOP）。
+resdir = fullfile('D:\Program Files\CarSim2019.0\CarSim2019.0_Data\Results', cs_dataset_name(simfile));
 parfile = fullfile(resdir,'Run_all.par');
 assert(isfile(parfile), '缺少 Run_all.par：%s', parfile);
 lines = regexp(fileread(parfile),'\r?\n','split');
@@ -200,7 +201,7 @@ P.M.tau_d         = cfg.tau_d;
 P.M.preview_L     = cfg.preview_L;
 P.M.preview_alpha = cfg.preview_alpha;
 for f = {'tau_d','preview_L','preview_alpha','tau_lead','cdc_mode', ...
-         'w1_max','w2_max','margin_mode','R_norm','Q_norm','slack_w','w_env','Wb', ...
+         'w1_max','w2_max','margin_mode','tau_d_mode','R_norm','Q_norm','slack_w','w_env','Wb', ...
          'afs_on','mz_on','w_prev_alloc'}
     if isfield(opts,f{1}), P.M.(f{1}) = opts.(f{1}); end
 end

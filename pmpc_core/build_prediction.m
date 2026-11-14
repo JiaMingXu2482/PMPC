@@ -31,7 +31,24 @@ D=[0,cd/V.m,1/V.m;0,V.lf*cd/V.Iz,-V.lr/V.Iz;0,0,0; ...
 
 % 增加实际 Md 状态，用 tau_d 描述力矩命令到实际力矩的一阶响应。
 % tau_d->0 表示阻尼力瞬时建立（no-comp 基准）；取下限避免 1/tau_d 发散。
-tau_d=max(M.tau_d,1e-4);
+% 时变时滞（M.tau_d_mode=2）：由四角压缩速度幅值决定，标定自力阶跃响应
+% 的 t10-90（50/100/200/400 mm/s -> 17/19/22/22 ms）。分段线性、末段饱和。
+% M.tau_d_mode=1（默认）用常数 M.tau_d。
+if isfield(M,'tau_d_mode') && M.tau_d_mode==2
+    vmag=1000*mean(abs(c.vd));            % [mm/s]
+    if vmag<=50
+        tau_d=0.017;
+    elseif vmag<=100
+        tau_d=0.017+0.002*(vmag-50)/50;
+    elseif vmag<=200
+        tau_d=0.019+0.003*(vmag-100)/100;
+    else
+        tau_d=0.022;
+    end
+else
+    tau_d=M.tau_d;
+end
+tau_d=max(tau_d,1e-4);
 A=[A,B(:,3);zeros(1,6),-1/tau_d];
 B(:,3)=0; B=[B;0,0,1/tau_d]; D=[D;zeros(1,3)];
 

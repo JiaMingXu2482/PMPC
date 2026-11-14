@@ -30,12 +30,13 @@ end
 
 simfile = fullfile(root,'simfile_slalom.sim');
 assert(isfile(simfile), '缺少 simfile_slalom.sim：%s', simfile);
-assert(contains(fileread(simfile),'Run_fb630ab5'), ...
-    'simfile_slalom.sim 未指向 Slalom 数据集（Run_fb630ab5-...）');
+assert(~isempty(cs_dataset_name(simfile)), ...
+    'simfile_slalom.sim 里找不到 Run_<dataset> 名，请检查 simfile。');
 
 % 改 CarSim 展开 par 的初始车速 SV_VXS。
-resdir = fullfile('D:\Program Files\CarSim2019.0\CarSim2019.0_Data\Results', ...
-                  'Run_fb630ab5-84ec-4ba0-953f-264cba8ad32c');
+% dataset 目录从 simfile 里推导（每个 worktree 指向自己的副本，
+% 避免并发时互相改写 Run_all.par 的 SV_VXS/TSTOP/SSTOP）。
+resdir = fullfile('D:\Program Files\CarSim2019.0\CarSim2019.0_Data\Results', cs_dataset_name(simfile));
 parfile = fullfile(resdir,'Run_all.par');
 assert(isfile(parfile), '缺少 Run_all.par：%s', parfile);
 lines = regexp(fileread(parfile),'\r?\n','split');
@@ -88,8 +89,8 @@ set_param(mdl,'StopTime',sprintf('%g',opts.stopTime));
 
 [P,R,s0,m0] = pmpc_init(2,ctrl);
 for f = {'Q_norm','R_norm','slack_w','rho_I0','rho_dI','Wb', ...
-         'w1_max','w2_max','margin_mode','rho_min','tau_d', ...
-         'preview_L','preview_alpha'}
+         'w1_max','w2_max','margin_mode','tau_d_mode','rho_min','tau_d','cdc_mode', ...
+         'preview_L','preview_alpha','w1_gain','w2_gain'}
     if isfield(opts,f{1}), P.M.(f{1}) = opts.(f{1}); end
 end
 

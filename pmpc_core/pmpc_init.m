@@ -139,6 +139,8 @@ M.w1_max = 2e3;                       % Proposed: 道路/侧倾松弛权重上�
 % 增益 g 已固定为 1（写死在 pmpc_step 里），不再单独整定。
 % 余量取法（消融用）：1=预测时域内最紧约束（默认）；2=只看第 1 个预测节点。
 M.margin_mode = 1;
+% CDC 时滞模型：1=常数 M.tau_d；2=按压缩速度时变（标定自力阶跃 t10-90）。
+M.tau_d_mode = 1;
 
 %% 5. 参考轨迹
 % 仅决定使用哪条参考路径，不改变 PMPC 算法。
@@ -337,6 +339,12 @@ switch maneuver
     otherwise
         error('maneuver 只能为 1(DLC)、2(Slalom)、3(U-turn) 或 4(FishHook)');
 end
+
+%% 4b. 基线控制器不在这里实现
+% 论文的下界基线是 baseline_mpc/ 里独立的 4 状态 / 2 控制量实现
+% （pmpc_base.slx），不走本文件的任何分支。曾在 pmpc_core 里加过
+% M.baseline 开关（数值上把 Md/LTR 关掉），2026-11-14 弃用：
+% 同一个仓库里放两套"基线"只会让人搞不清论文写的是哪套。
 
 %% 6. 参考轨迹数据处理
 % 通用路径格式：[index, X, Y, heading, curvature, 0, station, 0, 0]

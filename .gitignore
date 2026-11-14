@@ -18,7 +18,9 @@ codegen/
 *_backup_*.slx
 
 # CarSim 句柄文件（每次 Send to Simulink 重新生成）
+# 每个 worktree 指向各自的 Run_<前缀>_<工况> 数据集，提交会互相覆盖。
 simfile.sim
+simfile_*.sim
 
 # 临时诊断产物
 **/dbg_*.mat
