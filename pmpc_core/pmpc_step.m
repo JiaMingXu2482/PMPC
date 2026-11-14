@@ -366,10 +366,29 @@ m_LTR=-max(residual(6*K+4*N+1:6*K+6*N));
 m_env=-max(residual(6*K+6*N+1:6*K+10*N));
 % 消融开关 M.margin_mode：1=预测时域最紧值（默认）；2=只看第 1 个节点。
 % 两者都用同一个候选计划，唯一差别是"要不要看未来 Np 步"。
+% 消融开关 M.w_fixed：true 时把四个松弛权重全部钉在 w_max（等价于常数权重），
+% 用来判断 Proposed 的优势来自"自适应"还是"上限取值本身"。
+if isfield(P.M,'w_fixed') && P.M.w_fixed
+    margin=-ones(2,1); m_LTR=-1; m_env=-1;
+end
 if isfield(P.M,'margin_mode') && P.M.margin_mode==2
     margin=[-max(residual(6*K+4*N+1:6*K+4*N+2));-max(residual(6*K+(1:4)))];
     m_LTR=-max(residual(6*K+4*N+1:6*K+4*N+2));
     m_env=-max(residual(6*K+6*N+1:6*K+6*N+4));
+elseif isfield(P.M,'margin_mode') && P.M.margin_mode==3
+    % 严格消融：余量完全取自【当前实测状态】(k=0, du=0)，
+    % 既不看预测时域，也不用候选计划。约束行在 k=0 的残差为
+    %   stability: (Hsh*x0 - Gsh)/eps
+    %   LTR      : (Hr*x0 + Or*u0 - Gr)/eps
+    %   road     : (Henv*x0 - Genv - kapNode(1)*gkap)/eps
+    x0=c.zeta(1:7); u0=c.zeta(8:10);
+    r_stab=[(c.Hsh(1:2,:)*x0-c.Gsh(1:2))/EPS_R_REF; ...
+            (c.Hsh(3:4,:)*x0-c.Gsh(3:4))/EPS_A_REF];
+    r_ltr=(c.Hr*x0+c.Or*u0-c.Gr)/EPS_LTR_REF;
+    r_env=(c.Henv*x0-c.Genv-c.kapNode(1)*c.gkap)/EPS_E_REF;
+    margin=[-max(r_ltr);-max(r_stab)];
+    m_LTR=-max(r_ltr);
+    m_env=-max(r_env);
 end
 F=max(.5*candidate'*H(1:nd,1:nd)*candidate+f(1:nd)'*candidate+e'*Q*e,0) ...
     +Wb*gamma+rho_g*gamma^2;

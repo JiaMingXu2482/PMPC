@@ -27,6 +27,13 @@ function I_cmd = inv_current_impl_10ms(Fd_N, t, Temp_C, cmpD, cmpRD, cid, F_at0,
 
 MAX_I = 1.6;
 NC = 4;
+% 逆解实现（消融用）：1 = 力界端点线性插值（默认，与力界一致）；
+% 2 = 逆 NN（inv_nn_impl_10ms，与力界不一致，仅作对照）。
+INV_MODE = 1;   % 1=力界插值（默认）；2=逆 NN（消融）
+if INV_MODE==2
+    I_cmd = inv_nn_impl_10ms(Fd_N,t,Temp_C,cmpD,cmpRD,cid);
+    return
+end
 % 0 = 力界线性插值（默认）；2 = SH 全硬（恒 0 A，用于开关 CDC 对照）。
 SH_MODE = 0;    % 0=力界插值（默认）；2=固定电流基线（值见 SH_I）
 SH_I    = 1.0;  % SH_MODE==2 时的恒定电流 [A]
