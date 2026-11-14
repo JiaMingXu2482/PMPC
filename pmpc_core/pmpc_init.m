@@ -195,8 +195,8 @@ switch maneuver
         % 见 nlcsnn/force_bounds_impl_10ms.m），三种控制器统一关闭。
         M.preview_L = 0;
         M.preview_alpha = 0;
-        % ZENG 用论文原值 rho_I0=0.7 / rho_dI=0.3（全局默认），
-        % 不加 rho_min 钳位（2026-11-12 决定：保持文献原样）。
+        % ZENG 用论文原值 rho_I0=0.7 / rho_dI=0.3（全局默认），rho 只乘
+        % 横摆松弛权重，不加任何钳位（2026-11-13 按文献原样）。
         if M.controller==3
             % Proposed 的松弛上限（2026-11-12，x3 后重扫 80 km/h ey）：
             %   50 -> 0.795   200 -> 0.774   500 -> 1.742   1000 -> 2.363

@@ -332,16 +332,16 @@ end
 function d1 = dlcXY(cfg)
 d1 = newFig(cfg,'half',2);
 ax = d1.ax;
-xr = linspace(25,200,600);
-plot(ax, xr-30, dlcPath(xr), '-.', 'Color', cfg.col.REF, 'LineWidth', 1.3, ...
+xr = linspace(0,200,600);
+plot(ax, xr, dlcPath(xr), '-.', 'Color', cfg.col.REF, 'LineWidth', 1.3, ...
      'DisplayName','Reference');
 cases = {'q50_mpc_80','A'; 'q50_zeng_80','B'; 'p_w10_80','C'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
-    plotLine(ax, d.C.Xo-30, d.C.Yo, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
+    plotLine(ax, d.C.Xo, d.C.Yo, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
-finishXY(d1,'X [m]','Y [m]',[0 180],[-10 7]);
-set(d1.ax,'XTick',[-5 45 95 145]);
+finishXY(d1,'X [m]','Y [m]',[0 200],[-10 7]);
+set(d1.ax,'XTick',[0 50 100 150 200]);
 putLegend(d1, {cfg.nm.A,cfg.nm.B,cfg.nm.C,'Reference'}, 1, 'southwest');
 saveFig(d1,'fig_dlc_xy');
 end
@@ -388,8 +388,8 @@ for k = 1:size(cases,1)
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.D(18,:)/1000, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
-plot(ax, [0 165], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(d3,'X [m]','M_z [kN·m]',[0 165],[-3 3]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(d3,'X [m]','M_z [kN·m]',[0 200],[-3 3]);
 putLegend(d3, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'southwest');
 saveFig(d3,'fig_dlc_mz');
 end
@@ -399,11 +399,11 @@ d4 = newFig(cfg,'half',1.5); ax = d4.ax;
 cases = {'q50_mpc_80','A'; 'q50_zeng_80','B'; 'p_w10_80','C'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
-    plotLine(ax, d.C.Xo-30, d.C.Vx, cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
+    plotLine(ax, d.C.Xo, d.C.Vx, cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
 end
-plot(ax, [0 165], [80 80], '-.', 'Color', cfg.col.REF, 'LineWidth',0.9, ...
+plot(ax, [0 200], [80 80], '-.', 'Color', cfg.col.REF, 'LineWidth',0.9, ...
      'DisplayName','Reference');
-finishXY(d4,'X [m]','V_x [km/h]',[0 165],[70 83]);
+finishXY(d4,'X [m]','V_x [km/h]',[0 200],[70 83]);
 putLegend(d4, {cfg.nm.A,cfg.nm.B,cfg.nm.C,'Reference'}, 1, 'southwest');
 saveFig(d4,'fig_dlc_vx');
 end
@@ -416,8 +416,8 @@ for k = 1:size(cases,1)
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.D(1,:), cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
 end
-plot(ax, [0 165], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(d5,'X [m]','e_y [m]',[0 165],[-10 4]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(d5,'X [m]','e_y [m]',[0 200],[-10 4]);
 putLegend(d5, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'southwest');
 saveFig(d5,'fig_dlc_ey');
 end
@@ -430,8 +430,8 @@ for k = 1:size(cases,1)
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, rad2deg(d.D(2,:)), cfg, cases{k,2}, 1.0, cfg.nm.(cases{k,2}));
 end
-plot(ax, [0 165], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(d6,'X [m]','e_\psi [deg]',[0 165],[-20 12]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(d6,'X [m]','e_\psi [deg]',[0 200],[-20 12]);
 putLegend(d6, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'southwest');
 saveFig(d6,'fig_dlc_epsi');
 end
@@ -507,8 +507,8 @@ for k = 1:size(cases,1)
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.D(1,:), cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
-plot(ax, [30 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(s1,'X [m]','e_y [m]',[30 200],[-1.2 1.5]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(s1,'X [m]','e_y [m]',[0 200],[-1.2 1.5]);
 putLegend(s1, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'northeast');
 saveFig(s1,'fig_sl_ey');
 end
@@ -521,8 +521,8 @@ for k = 1:size(cases,1)
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.D(18,:)/1000, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
-plot(ax, [30 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(s2,'X [m]','M_z [kN·m]',[30 200],[-6 8]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(s2,'X [m]','M_z [kN·m]',[0 200],[-6 8]);
 putLegend(s2, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'northeast');
 saveFig(s2,'fig_sl_mz');
 end
@@ -598,11 +598,11 @@ t = newFig(cfg,'half'); ax = t.ax;
 cases = {'q50_mpc_80','A'; 'q50_zeng_80','B'; 'p_w10_80','C'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
-    s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap') - 30;
+    s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, d.C.Steer_SW, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
 end
-plot(ax, [0 165], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(t,'X [m]','\delta_{sw} [deg]',[0 165],[-800 900]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(t,'X [m]','\delta_{sw} [deg]',[0 200],[-800 900]);
 putLegend(t, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'southwest');
 saveFig(t,'fig_dlc_sw');
 end
@@ -612,10 +612,10 @@ t = newFig(cfg,'half'); ax = t.ax;
 cases = {'q50_mpc_80','A'; 'q50_zeng_80','B'; 'p_w10_80','C'};
 for k = 1:size(cases,1)
     d = loadCase(cfg,'DLC',cases{k,1});
-    plotLine(ax, d.C.Xo-30, d.C.AVz, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
+    plotLine(ax, d.C.Xo, d.C.AVz, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
 end
-plot(ax, [0 165], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(t,'X [m]','r [deg/s]',[0 165],[-25 20]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(t,'X [m]','r [deg/s]',[0 200],[-25 20]);
 putLegend(t, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'southwest');
 saveFig(t,'fig_dlc_yaw');
 end
@@ -650,8 +650,8 @@ for k = 1:size(cases,1)
     s = interp1(d.tv, d.C.Xo, d.t, 'linear','extrap');
     plotLine(ax, s, rad2deg(d.D(2,:)), cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
 end
-plot(ax, [30 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(t,'X [m]','e_\psi [deg]',[30 200],[-7 10]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(t,'X [m]','e_\psi [deg]',[0 200],[-7 10]);
 putLegend(t, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'northeast');
 saveFig(t,'fig_sl_epsi');
 end
@@ -663,8 +663,8 @@ for k = 1:size(cases,1)
     d = loadCase(cfg,'SL',cases{k,1});
     plotLine(ax, d.C.Xo, d.C.Steer_SW, cfg, cases{k,2}, 0.8, cfg.nm.(cases{k,2}));
 end
-plot(ax, [30 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
-finishXY(t,'X [m]','\delta_{sw} [deg]',[30 200],[-350 550]);
+plot(ax, [0 200], [0 0], 'k-', 'LineWidth',0.4,'HandleVisibility','off');
+finishXY(t,'X [m]','\delta_{sw} [deg]',[0 200],[-350 550]);
 putLegend(t, {cfg.nm.A,cfg.nm.B,cfg.nm.C}, 1, 'northwest');
 saveFig(t,'fig_sl_sw');
 end
@@ -677,13 +677,13 @@ for k = 1:size(cases,1)
     if strcmp(cases{k,2},'PAS')
         i = find(abs(d.C.Roll) > 10, 1);
         if isempty(i), i = numel(d.tv); end
-        x = d.C.Xo(1:i) - 30; y = d.C.Yo(1:i);
+        x = d.C.Xo(1:i); y = d.C.Yo(1:i);
     else
-        x = d.C.Xo - 30; y = d.C.Yo;
+        x = d.C.Xo; y = d.C.Yo;
     end
     plotLine(ax, x, y, cfg, cases{k,2}, cfg.lw, cfg.nm.(cases{k,2}));
 end
-finishXY(t,'X [m]','Y [m]',[0 145],[-30 15]);
+finishXY(t,'X [m]','Y [m]',[0 150],[-30 15]);
 putLegend(t, {cfg.nm.A,cfg.nm.C,'Passive'}, 1, 'northwest');
 saveFig(t,'fig_fh_xy');
 end

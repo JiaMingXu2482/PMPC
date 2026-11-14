@@ -359,6 +359,11 @@ gamma=min(max(gamma,0),1);
 residual=A*[candidate;0;0;0;0;gamma]-b;
 % margin(1) 为道路/侧倾最小余量，margin(2) 为稳定性最小余量。
 margin=[-max(residual(6*K+4*N+1:6*K+10*N));-max(residual(6*K+(1:4*N)))];
+% 2026-11-13：把 LTR 与道路包络的余量拆开。原来 margin(1) 取两者联合最紧值，
+% 鱼钩工况下道路包络恒不可行（车偏离参考线 10 m 以上），把 w_LTR 顶到上限，
+% LTR 的自适应被道路约束劫持。拆开后 w_LTR 只看 LTR 行、w_env 只看道路行。
+m_LTR=-max(residual(6*K+4*N+1:6*K+6*N));
+m_env=-max(residual(6*K+6*N+1:6*K+10*N));
 F=max(.5*candidate'*H(1:nd,1:nd)*candidate+f(1:nd)'*candidate+e'*Q*e,0) ...
     +Wb*gamma+rho_g*gamma^2;
 % 松弛权重：MPC 固定；ZENG 固定但稳定性松弛乘 rho；Proposed 按余量在线。
@@ -367,14 +372,19 @@ if P.M.controller==3
     if margin(2)>0
         w2=min(max(P.M.w2_gain*F/margin(2),1),P.M.w2_max);
     end
+    slack=max(-margin(2),0);
+    S=F+w2*slack+rho_g*slack^2;
+    % LTR 松弛权重只看 LTR 余量
     w1=P.M.w1_max;
-    if margin(1)>0
-        slack=max(-margin(2),0);
-        w1=min(max(P.M.w1_gain*(F+w2*slack+rho_g*slack^2)/margin(1),1),P.M.w1_max);
+    if m_LTR>0
+        w1=min(max(P.M.w1_gain*S/m_LTR,1),P.M.w1_max);
     end
-    wr=w2; wa=w2; wl=w1; we=w1;
-    % 道路松弛权重可单独覆盖：鱼钩工况车辆横向偏离参考线 10 m 以上，
-    % 道路约束始终不可行，用 w1 惩罚会把执行器浪费在无法满足的道路约束上。
+    % 道路包络松弛权重只看道路余量（可被 M.w_env 常数覆盖）
+    we=P.M.w1_max;
+    if m_env>0
+        we=min(max(P.M.w1_gain*S/m_env,1),P.M.w1_max);
+    end
+    wr=w2; wa=w2; wl=w1;
     if isfield(P.M,'w_env') && isfinite(P.M.w_env), we=P.M.w_env; end
 else
     wr=P.M.slack_w(1); wa=P.M.slack_w(2);
@@ -383,20 +393,11 @@ else
         rho_z=func_ZengRho(c.v,P.vehicle.mu,c.delta, ...
             atan2(c.zeta(1),max(c.v,0.5)),c.zeta(2),P.vehicle.g, ...
             P.M.rho_I0,P.M.rho_dI);
-        % rho 下限：rho=0 表示稳定性松弛权重归零（约束免费），rho=1 表示
-        % 与 MPC 同权重。Slalom 实测 rho<1 会让 ZENG 比 MPC 差
-        % （80 km/h ey 1.041/0.982 vs MPC 0.960），因此用 rho_min=1.0
-        % 把调度钳到“不放松”，此时 ZENG 与 MPC 逐点等价。
-        if isfield(P.M,'rho_min') && isfinite(P.M.rho_min)
-            rho_z=max(rho_z,P.M.rho_min);
-        end
-        % Zeng 2025: rho 乘在稳定性松弛权重上。
-        % 2026-11-11: 原文献没有侧倾自由度，FishHook 下 rho 对 yaw/alpha
-        % 松弛无效（这两个约束从不激活）。这里把 rho 也乘到 LTR 松弛上，
-        % 让稳定域调度覆盖侧翻约束。
+        % Zeng 2025 Eq.(14)：rho 只乘在【横摆】松弛权重上。
+        % rho 来自横向稳定域指标 I_ind = max(I_beta, I_r)，与侧倾/道路无关，
+        % 因此 w_alpha / w_LTR / w_env 都不乘 rho（2026-11-13 修正：
+        % 之前把 rho 也乘到 w_alpha 和 w_LTR 上是本项目的扩展，无文献依据）。
         wr=wr*rho_z;
-        wa=wa*rho_z;
-        wl=wl*rho_z;
     end
 end
 f(nd+(1:4))=[wr;wa;wl;we];
