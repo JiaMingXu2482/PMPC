@@ -97,6 +97,7 @@ end
 set_param(mdl,'StopTime',sprintf('%g',opts.stopTime));
 
 [P,R,s0,m0] = pmpc_init(1,ctrl);
+tau_d_default = P.M.tau_d;   % pmpc_init 的 case 默认值（下面 opts 还没覆盖）
 for f = {'Q_norm','R_norm','slack_w','rho_I0','rho_dI','Wb', ...
          'w1_max','w2_max','margin_mode','tau_d_mode','w_fixed','tau_d','tau_lead', ...
          'gamma_on','cdc_mode'}
@@ -158,6 +159,9 @@ catch err
 end
 save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t','tau_dtrace', ...
      'tau_d_mode','tau_d_const','vd_ctrl');
+% 口径快照：本算例真正生效的参数（含 SH_MODE 与 horizon），与 .mat 同前缀。
+cp_write_params(opts.outdir, opts.prefix, 'DLC', speed, P, ...
+    struct('mu',P.road.mu,'stopTime',opts.stopTime,'tau_d_default',tau_d_default));
 try
     Icmd = out.pmpc_Icmd;
     save(fullfile(opts.outdir,[opts.prefix '.mat']),'Icmd','-append');

@@ -3,45 +3,88 @@
 控制器：`pmpc_core`，7 状态 `[vy, r, phi, p, ey, epsi, Md]` / 3 控制量 `[delta, Mz, Md_cmd]`，
 CDC 电流由控制器给（`nlcsnn/inv_current_impl_10ms.m` 的 `SH_MODE = 0`）。
 **补偿时滞**：`tau_d_mode = 2`（时变，`M.tau_d` 被忽略），查表在 `pmpc_core/tau_d_effective.m`。
+每个算例都显式传 `tau_d_mode = 2`：`pmpc_init` 的 case 默认是 `mode = 1`，
+不显式传就会落回常数口径（DLC 0.01 / Slalom 0.20 / FishHook 0.025）。
 
-复现本文所有数字：
+复现本文所有数字（矩阵表 / 口径对照 / 反辨识）：
 
 ```
 matlab -batch "addpath('tools'); cp_case_metrics; taud_backid"
 ```
 
----
-
-## 1. 结果表
-
-`Md_avg` / `Mz_avg` 为 `mean(abs())`；`QP%` = `D(24,:)>0.5` 的比例；
-`epsi_max` 由 rad 换算成 deg；`生效 tau_d` 取 `.mat` 里的 `tau_dtrace`
-（`run_*.m` 用 `tau_d_effective.m` 按本算例实测 `vd` 逐拍复算）。
-
-| 算例 | T [s] | ey_max [m] | ey_rms [m] | epsi_max [deg] | LTR_max | SW_max [deg] | Mz_avg [N·m] | Mz_max [N·m] | Md_avg [N·m] | Md_max [N·m] | Icmd 范围 [A] | 生效 tau_d [s] | QP% |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `cp_dlc_mode1` — DLC 70, µ0.4, 3 s | 3.00 | 0.0016 | 0.0002 | 0.03 | 0.018 | 5.8 | 3 | 80 | 25 | 164 | 0.00–1.60 | 0.0100 | 100.0 |
-| `cp_dlc_mode2` — DLC 70, µ0.4, 3 s | 3.00 | 0.0016 | 0.0002 | 0.03 | 0.018 | 5.8 | 3 | 80 | 26 | 163 | 0.00–1.60 | 0.0170 | 100.0 |
-| `cp_sla_mode1` — Slalom 80, µ0.85, 8 s | 8.00 | 0.7433 | 0.4433 | 3.44 | 0.688 | 181.4 | 1939 | 5190 | 1622 | 5260 | 0.00–1.60 | 0.2000 | 100.0 |
-| `cp_sla_mode2` — Slalom 80, µ0.85, 8 s | 8.00 | 0.7724 | 0.4618 | 3.70 | 0.680 | 209.9 | 2133 | 5183 | 1513 | 5141 | 0.00–1.60 | 0.0170–0.0200 | 100.0 |
-
-### 备注
-
-- 两条 DLC 是 **3 s 冒烟窗口**：70 km/h 下变道在 X≈61 m（t≈3.1 s）才开始，
-  窗内 `ey` 1.6 mm、`LTR` 0.018，属于直行前段。只证明链路通，不进性能对比。
-  这两个算例的 `Md` 峰值只有 ~164 N·m，减振器基本没被激励（见 §3 的反辨识限制）。
-- 两条 Slalom 是同一算例、只差 `tau_d_mode`（1 常数 0.20 / 2 时变），
-  8 s 只跑到 ~178 m（80 km/h），CarSim 的 `SSTOP=200` 未被触发，
-  是 Simulink StopTime 截的；三方对比必须统一 stopTime。
-- 参数全取 `pmpc_init` case 2 默认值，未调任何权重：
-  `Q_norm=[0 0 5 0 50 5 0]`、`R_norm=[0.1 500 0.1]`、`slack_w=[5 5 5 5]`、
-  `w1_max=w2_max=200`、`Wb=10`、`preview_L=preview_alpha=0`。
+单个算例的口径快照在同目录的 `<prefix>_params.mat` 里（字段见 §4）。
 
 ---
 
-## 2. tau_d 口径与反辨识
+## 1. 统一测试矩阵（2026-11-14）
 
-### 2.1 A 方案复盘：那次"验证"是无效的
+参数一律取 `pmpc_init` 的 case 默认值，未调任何权重；每个算例显式 `tau_d_mode=2`。
+
+| 算例 | T [s] | ey_max [m] | ey_rms [m] | epsi_max [deg] | LTR_max | SW_max [deg] | Mz_avg [N·m] | Mz_max [N·m] | Md_avg [N·m] | Md_max [N·m] | Icmd 范围 [A] | Vx 范围 [km/h] | 生效 tau_d [s] | QP% |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `cp_dlc_70` — DLC 70, µ0.4 | 10.63 | 0.6363 | 0.2026 | 6.81 | 0.325 | 69.1 | 674 | 2166 | 359 | 2409 | 0.00–1.60 | 66.7–70.0 | 0.01700–0.01744 | 100.0 |
+| `cp_dlc_75` — DLC 75, µ0.4 | 9.94 | 0.6484 | 0.2305 | 7.03 | 0.330 | 122.4 | 856 | 2124 | 369 | 2324 | 0.00–1.60 | 71.6–75.0 | 0.01700–0.01744 | 100.0 |
+| `cp_dlc_80` — DLC 80, µ0.4 | 9.32 | 0.8661 | 0.3033 | 7.90 | 0.330 | 276.0 | 847 | 2045 | 370 | 2390 | 0.00–1.60 | 76.4–80.0 | 0.01700–0.01799 | 100.0 |
+| `cp_sla_80` — Slalom 80, µ0.85 | 8.00 | 0.7724 | 0.4618 | 3.70 | 0.680 | 209.9 | 2133 | 5183 | 1513 | 5141 | 0.00–1.60 | 69.6–80.0 | 0.01700–0.02003 | 100.0 |
+| `cp_fh_80` — FishHook 80, µ0.9, cargo 170 | 7.99 | 14.8400 | 6.0272 | 52.48 | 0.799 | 0.0 | 4509 | 7786 | 614 | 4369 | 0.00–1.60 | 58.8–80.0 | 0.01700–0.01964 | 100.0 |
+
+命令：
+
+```matlab
+run_dlc(3,70,struct('stopTime',15,'prefix','cp_dlc_70','tau_d_mode',2))   % 75 / 80 同理
+run_slalom(3,80,struct('stopTime',8,'prefix','cp_sla_80','tau_d_mode',2))
+run_fishhook('comp25',3,struct('stopTime',8,'prefix','cp_fh_80','cargo',170,'tau_d_mode',2))
+```
+
+### 口径说明（读表前必看）
+
+- **QP%**：`D(24) = 1` 收敛、`0` 未收敛、`-1` 表示**本拍没跑 QP**
+  （`pmpc_step` 在无效测量 / 无参考路径时提前返回，留 `-1` 当哨兵）。
+  分母只数 `D(24) >= 0` 的帧，**不把 `-1` 算失败**：
+  `QP% = 100*sum(D(24)>0.5)/sum(D(24)>=0)`。
+  本次五个算例被跳过的帧数全是 0（70/75/80 km/h DLC 各 1064/995/933 帧，
+  Slalom 801 帧，FishHook 800 帧），所以 QP% 与旧口径数值一致。
+- **Vx 范围**必须一起看：基线那支没有纵向速度环，历史上有 DLC 掉到 0.6 km/h 的算例。
+  本文五个算例的 Vx 下界与目标车速的差距分别是 −3.3 / −3.4 / −3.6 / −10.4 / −21.2 km/h，
+  都是机动过程中的正常掉速（不是车速失控）；三方对比时先对齐这一列，再谈 `ey`。
+- **DLC 的 T 只有 9–11 s，不是 15 s**：`run_dlc` 把 CarSim 的 `SSTOP` 设成 200 m，
+  到里程就停（70 km/h 走完 200 m 约 10.3 s）。也就是说三个车速比的是**同一段 200 m**，
+  不是同一时长。
+- **FishHook 的 SW_max = 0**：该工况 `afs_on=false` 且 `steer_ext=true`（CarSim 转向机器人
+  给方向盘），`D(19)` 只记 AFS 增量，所以恒为 0。不要拿它和 DLC/Slalom 的 SW 比。
+- FishHook 的 `ey_max=14.84 m`、`epsi_max=52.5°` 是工况本身（鱼钩后大侧倾、大偏航），
+  量级天然和其它工况不同，**跨工况不要比 ey**；`LTR_max=0.799` 贴着约束 0.8，说明
+  LTR 约束在该工况起作用。
+
+---
+
+## 2. 时滞口径对照（不进对比矩阵）
+
+同一算例只差 `tau_d_mode`，用来看"时变口径 vs 常数口径"的差别，以及留档两条 3 s 自检。
+
+| 算例 | T [s] | ey_max [m] | ey_rms [m] | epsi_max [deg] | LTR_max | SW_max [deg] | Mz_avg [N·m] | Mz_max [N·m] | Md_avg [N·m] | Md_max [N·m] | Icmd 范围 [A] | Vx 范围 [km/h] | 生效 tau_d [s] | QP% |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `cp_sla_mode1` — Slalom 80, 常数口径 | 8.00 | 0.7433 | 0.4433 | 3.44 | 0.688 | 181.4 | 1939 | 5190 | 1622 | 5260 | 0.00–1.60 | 71.0–80.0 | 0.2000 | 100.0 |
+| `cp_sla_mode2` — Slalom 80, 时变口径 | 8.00 | 0.7724 | 0.4618 | 3.70 | 0.680 | 209.9 | 2133 | 5183 | 1513 | 5141 | 0.00–1.60 | 69.6–80.0 | 0.01700–0.02003 | 100.0 |
+| `cp_dlc_mode1` — DLC 70, **3 s 自检，不用于对比** | 3.00 | 0.0016 | 0.0002 | 0.03 | 0.018 | 5.8 | 3 | 80 | 25 | 164 | 0.00–1.60 | 68.4–70.0 | 0.0100 | 100.0 |
+| `cp_dlc_mode2` — DLC 70, **3 s 自检，不用于对比** | 3.00 | 0.0016 | 0.0002 | 0.03 | 0.018 | 5.8 | 3 | 80 | 26 | 163 | 0.00–1.60 | 68.4–70.0 | 0.0170 | 100.0 |
+
+- `cp_sla_mode1/2` 是同一算例的唯一差别（0.20 常数 vs 17–22 ms 时变）：
+  `ey_max` 0.7433 → 0.7724（时变口径差 3.9%）、`SW_max` 181° → 210°。
+  与 COORDINATION.md 的预期（"切到 mode=2 后 Slalom 的 ey 会从 0.767 回到 0.78 量级"）方向一致。
+- `cp_dlc_mode1/2` 是 **3 s 自检**：70 km/h 下变道在 X≈61 m（t≈3.1 s）才开始，
+  窗内 `ey` 只有 1.6 mm，只证明链路通，**不用于对比**。
+- 更早的 `cp_verify` / `cp_verify8` / `cp_verify8_td1` / `cp_verify_td1`
+  同样是 **3 s / 8 s 自检，不用于对比**，前缀混乱且被 `cp_dlc_mode*` 取代，**已删除**
+  （见 commit `bdd8cac`）。
+
+---
+
+## 3. tau_d 口径与反辨识
+
+> 本节用 `cp_sla_mode1` / `cp_sla_mode2` 两个 8 s 算例（§2），与 §1 的矩阵无依赖关系。
+
+### 3.1 A 方案复盘：那次"验证"是无效的
 
 上一轮想"从磁盘侧证 tau_d"，做法是写一个分析脚本，把
 `vmag = 1000*mean(abs(vd))` 的代换表（0.017 / 0.019 / 0.022）**硬编码在脚本里**，
@@ -54,7 +97,7 @@ matlab -batch "addpath('tools'); cp_case_metrics; taud_backid"
 这不是验证，是**用结论生成证据**：脚本里预置了想看到的数值，输出当然和它一致。
 真正的口径信息（这次跑的是 0.20 还是 1e-4）根本没进过数据。
 
-### 2.2 C 方案定性：这是口径记录，不是验证
+### 3.2 C 方案定性：这是口径记录，不是验证
 
 现行做法（本轮提交的代码）：`run_dlc / run_slalom / run_fishhook` 在存盘时，
 用**这次运行自己的口径**（`opts` 覆盖之后的 `P.M.tau_d` 与 `P.M.tau_d_mode`）
@@ -77,7 +120,7 @@ mode 2 记 0.0170–0.0200，就是它给出的信息。
 另外 `pmpc_step` 的 `logVec` 是 Stateflow 数据对象，尺寸锁死 `[27 1]`，
 加不了第 28 列（试过，编译直接报错）。
 
-### 2.3 真正该做的：用 logVec 反辨识执行器时间常数
+### 3.3 真正该做的：用 logVec 反辨识执行器时间常数
 
 `D` 里本来就有反辨识需要的两个量（1-based 行号）：
 
@@ -132,21 +175,31 @@ Slalom 这类减振器被真正激励的算例。
 
 ---
 
-## 3. 文件
+## 4. 文件
 
 ```
 PMPC_Results/
-  CP_RESULTS.md                                  ← 本文件
-  DLC_mu0.4_interp/cp_dlc_mode1.mat              ← D,t,Icmd,tau_dtrace,...
-  DLC_mu0.4_interp/cp_dlc_mode2.mat
-  Slalom_mu0.85_interp/cp_sla_mode1.mat
-  Slalom_mu0.85_interp/cp_sla_mode2.mat
+  CP_RESULTS.md
+  DLC_mu0.4_interp/cp_dlc_70.mat  + cp_dlc_70_params.mat
+  DLC_mu0.4_interp/cp_dlc_75.mat  + cp_dlc_75_params.mat
+  DLC_mu0.4_interp/cp_dlc_80.mat  + cp_dlc_80_params.mat
+  Slalom_mu0.85_interp/cp_sla_80.mat + cp_sla_80_params.mat
+  FishHook_80_mu0.9_cargo170_newplant/cp_fh_80.mat + cp_fh_80_params.mat
+  DLC_mu0.4_interp/cp_dlc_mode1.mat / cp_dlc_mode2.mat        ← §2 3 s 自检
+  Slalom_mu0.85_interp/cp_sla_mode1.mat / cp_sla_mode2.mat    ← §2 口径对照
 tools/
-  taud_backid.m        ← §2.3 的反辨识（公式、适用条件、噪声地板写在头注释）
-  cp_case_metrics.m    ← §1 的表（逐算例打印，与本文数字一致）
+  cp_case_metrics.m    ← §1/§2 的表（逐算例打印，与本文数字一致）
+  taud_backid.m        ← §3 的反辨识（公式、适用条件、噪声地板写在头注释）
+  cp_write_params.m    ← 写 <prefix>_params.mat（run_*.m 调用）
   vs_read.m            ← 读 CarSim .vs/.vsb（给 run_*.m 复算 tau_dtrace 用）
 pmpc_core/
   tau_d_effective.m    ← mode1/mode2 的唯一口径来源（build_prediction 与 run_*.m 共用）
 ```
 
-`D` 为 27×N 诊断日志，行序见 `pmpc_core/pmpc_step.m` 头注释。
+`.mat` 内：`D`（27×N 诊断日志，行序见 `pmpc_core/pmpc_step.m` 头注释）、`t`、`Icmd`
+（四角 1 kHz 电流）、`tau_dtrace` / `tau_d_mode` / `tau_d_const` / `vd_ctrl`。
+
+`_params.mat` 内（由 `tools/cp_write_params.m` 写）：`maneuver`、`speed`、
+`horizon = [Ts Np Nc]`、`tau_d`、`tau_d_mode`、`tau_d_const`、`tau_d_default`、
+`controller`、`Q_norm`、`R_norm`、`slack_w`、`SH_MODE`、`timestamp`，
+以及各工况补充的 `mu` / `stopTime` / `variant` / `cargo`。

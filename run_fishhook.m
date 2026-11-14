@@ -198,6 +198,7 @@ h = struct('Ts',0.05,'Np',12,'Nc',6);
 muOpt = [];
 if isfield(opts,'mu') && isfinite(opts.mu), muOpt = opts.mu; end
 [P,R,s0,m0] = pmpc_init(4,ctrl,h,muOpt);
+tau_d_default = P.M.tau_d;   % pmpc_init 的 case 默认值（下面 opts 还没覆盖）
 P.M.tau_d         = cfg.tau_d;
 P.M.preview_L     = cfg.preview_L;
 P.M.preview_alpha = cfg.preview_alpha;
@@ -268,6 +269,10 @@ catch err
 end
 save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t','tau_dtrace', ...
      'tau_d_mode','tau_d_const','vd_ctrl');
+% 口径快照：本算例真正生效的参数（含 SH_MODE 与 horizon），与 .mat 同前缀。
+cp_write_params(opts.outdir, opts.prefix, 'FishHook', opts.vtarget, P, ...
+    struct('mu',P.road.mu,'stopTime',opts.stopTime,'variant',variant, ...
+           'cargo',opts.cargo,'tau_d_default',tau_d_default));
 % 若模型带 Icmd_log（pmpc_fishhook_log），一并保存四角电流。
 try
     Icmd = out.pmpc_Icmd;
