@@ -88,6 +88,11 @@ L = out.pmpc_log;  D = squeeze(L.Data);
 if size(D,1) ~= 25, D = D.'; end
 t = L.Time;
 save(fullfile(opts.outdir,[opts.prefix '.mat']), 'D', 't');
+try
+    Icmd = out.pmpc_Icmd;
+    save(fullfile(opts.outdir,[opts.prefix '.mat']),'Icmd','-append');
+catch
+end
 for ext = {'.vs','.vsb'}
     src = fullfile(resdir, ['LastRun' ext{1}]);
     if isfile(src)
