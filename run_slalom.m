@@ -87,9 +87,11 @@ for k = 1:numel(allb)
 end
 set_param(mdl,'StopTime',sprintf('%g',opts.stopTime));
 
-[P,R,s0,m0] = pmpc_init(2,ctrl);
+hz = [];
+if isfield(opts,'horizon') && ~isempty(opts.horizon), hz = opts.horizon; end
+[P,R,s0,m0] = pmpc_init(2,ctrl,hz);
 for f = {'Q_norm','R_norm','slack_w','rho_I0','rho_dI','Wb', ...
-         'w1_max','w2_max','margin_mode','tau_d_mode','rho_min','tau_d','cdc_mode', ...
+         'w1_max','w2_max','margin_mode','tau_d_mode','tau_lead_eff','rho_min','tau_d','cdc_mode', ...
          'preview_L','preview_alpha','w1_gain','w2_gain'}
     if isfield(opts,f{1}), P.M.(f{1}) = opts.(f{1}); end
 end
