@@ -183,12 +183,38 @@ Or=k*kg*[-Cf*cos(delta)/V.m,0,0];
 Gr=[.8;.8]-k*kg*(offsetPred(1)*cos(delta)+offsetPred(2))/V.m*[1;-1];
 
 %%
+% 四角时滞与聚合（M.tau_d_mode = 3 加权 / 4 主导角）
+% 每个角先按"当前电流 -> 目标电流"和本角压缩速度查辨识表，
+% 再按该角对侧倾力矩的贡献 |Bd_i|*|目标力-当前力| 聚合。
+% 目标力用上一拍下发的 damper_prev：预测是在定 u 之前建的，
+% 拿不到本拍目标，只能用上一拍方向做代理。
+tauCorners = zeros(4,1); wCorners = zeros(4,1);
+for i = 1:4
+    den = hi(i) - lo(i);
+    if den < 1
+        InowI = 0.8; InextI = 0.8;
+    else
+        InowI  = min(max(1.6*(Fd(i)            - lo(i))/den, 0), 1.6);
+        InextI = min(max(1.6*(state.damper_prev(i) - lo(i))/den, 0), 1.6);
+    end
+    tauCorners(i) = tau_d_lookup(InowI, InextI, 1000*meas.vd(i));
+    wCorners(i)   = abs(Bd(i)) * abs(state.damper_prev(i) - Fd(i));
+end
+tauW = sum(wCorners);
+if tauW < 1e-6
+    tauEff = mean(tauCorners);            % 四角都没打算动：退化取均值
+else
+    tauEff = sum(wCorners.*tauCorners)/tauW;
+end
+[~,tauDom] = max(wCorners);
+tauDomV = tauCorners(tauDom);
+
 c=struct('zeta',zeta,'ey',ey,'Cf',Cf,'Cr',Cr,'offset',offsetPred,'v',vx,'delta',delta, ...
     'Fyf',sum(Fy([1,3])), ...
     'delta_d',delta_d,'kap',kap,'kapNode',kapNode,'yr',yr,'Fz',Fz,'Fd',Fd,'Flo',lo,'Fhi',hi, ...
     'vd',meas.vd(:), ...
     'brakeMax',brakeMax,'umin',umin,'umax',umax,'duMax',duMax, ...
-    'MdloPlan',MdloPlan,'MdhiPlan',MdhiPlan, ...
+    'MdloPlan',MdloPlan,'MdhiPlan',MdhiPlan,'tau_d_eff',tauEff,'tau_d_dom',tauDomV, ...
     'Hsh',Hsh,'Gsh',Gsh,'Hr',[Hr;-Hr],'Gr',Gr,'Or',[Or;-Or], ...
     'Henv',Henv,'Genv',Genv,'gkap',[af^2;rear^2;-af^2;-rear^2]/2, ...
     'Xlocal',Xlocal,'Ylocal',Ylocal);
