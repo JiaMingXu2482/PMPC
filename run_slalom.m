@@ -131,29 +131,37 @@ tau_d_mode  = P.M.tau_d_mode;
 tau_d_const = P.M.tau_d;
 tau_dtrace  = nan(1,numel(t));
 vd_ctrl     = nan(1,numel(t));
-try
-    vsf = fullfile(opts.outdir,[opts.prefix '.vs']);
-    if isfile(vsf)
-        [vnames, VM] = vs_read(vsf);
-        want = {'CmpRD_L1','CmpRD_L2','CmpRD_R1','CmpRD_R2','T_Record'};
-        jc = zeros(1,numel(want));
-        for k = 1:numel(want), jc(k) = find(strcmp(vnames, want{k}), 1); end
-        if all(jc > 0)
-            vmag = mean(abs(VM(:,jc(1:4))), 2);          % [mm/s]
-            tt   = VM(:,jc(5));
-            vmag_c = interp1(tt, vmag, t, 'linear', 'extrap');
-            vd_ctrl = vmag_c / 1000;                     % 等价于 mean(abs(vd)) [m/s]
-            tau_dtrace = arrayfun(@(x) tau_d_effective(P.M, repmat(x,4,1)), vd_ctrl);
+tau_dtrace_note = '';
+if tau_d_mode >= 3
+    % mode 3/4：tau 由 prepare_step 按四角查辨识表聚合，只进仿真内部的预测矩阵，
+    % 不进日志。这里刻意不复算 —— tau_d_effective 在 mode>=3 会走 else 分支
+    % 返回 M.tau_d，与仿真里真正用的聚合值不是同一个数，写进 tau_dtrace 就是假数据。
+    tau_dtrace_note = 'mode>=3: computed inside prepare_step, not logged';
+else
+    try
+        vsf = fullfile(opts.outdir,[opts.prefix '.vs']);
+        if isfile(vsf)
+            [vnames, VM] = vs_read(vsf);
+            want = {'CmpRD_L1','CmpRD_L2','CmpRD_R1','CmpRD_R2','T_Record'};
+            jc = zeros(1,numel(want));
+            for jj = 1:numel(want), jc(jj) = find(strcmp(vnames, want{jj}), 1); end
+            if all(jc > 0)
+                vmag = mean(abs(VM(:,jc(1:4))), 2);          % [mm/s]
+                tt   = VM(:,jc(5));
+                vmag_c = interp1(tt, vmag, t, 'linear', 'extrap');
+                vd_ctrl = vmag_c / 1000;                     % 等价于 mean(abs(vd)) [m/s]
+                tau_dtrace = arrayfun(@(x) tau_d_effective(P.M, repmat(x,4,1)), vd_ctrl);
+            end
         end
+    catch err
+        warning('pmpc:tauDfailed','tau_d 复算失败：%s', err.message);
     end
-catch err
-    warning('pmpc:tauDfailed','tau_d 复算失败：%s', err.message);
 end
 save(fullfile(opts.outdir,[opts.prefix '.mat']),'D','t','tau_dtrace', ...
-     'tau_d_mode','tau_d_const','vd_ctrl');
+     'tau_d_mode','tau_d_const','vd_ctrl','tau_dtrace_note');
 % 口径快照：本算例真正生效的参数（含 SH_MODE 与 horizon），与 .mat 同前缀。
 cp_write_params(opts.outdir, opts.prefix, 'Slalom', speed, P, ...
-    struct('mu',P.road.mu,'stopTime',opts.stopTime,'tau_d_default',tau_d_default));
+    struct('mu',P.road.mu,'stopTime',opts.stopTime,'tau_d_default',tau_d_default,'tau_dtrace_note',tau_dtrace_note));
 try
     Icmd = out.pmpc_Icmd;
     save(fullfile(opts.outdir,[opts.prefix '.mat']),'Icmd','-append');

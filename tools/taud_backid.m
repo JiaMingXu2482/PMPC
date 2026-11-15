@@ -41,7 +41,7 @@ function out = taud_backid(files, varargin)
 % <= 20 ms，分辨不出更细；因此 mode2 的 17-22 ms 标定量级是对的；mode1 的
 % 0.20 s 不是执行器滞后，而是把预瞄、力界、离散化误差一起吸收的等效补偿量。
 %
-% 见 PMPC_Results/CP_RESULTS.md 的「tau_d 口径记录与反辨识」一节（§3.3）。
+% 见 PMPC_Results/CP_RESULTS.md 的「tau_d 口径记录与反辨识」一节（§4.3）。
 
 if nargin < 1 || isempty(files)
     root = fileparts(fileparts(mfilename('fullpath')));   % -> worktree 根
