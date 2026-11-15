@@ -30,9 +30,14 @@ D=[0,cd/V.m,1/V.m;0,V.lf*cd/V.Iz,-V.lr/V.Iz;0,0,0; ...
     0,0,0;-v,0,0];
 
 % 增加实际 Md 状态，用 tau_d 描述力矩命令到实际力矩的一阶响应。
-% mode=1/mode=2 的选择与查表都在 tau_d_effective.m 里；这里只负责把它放进 ZOH
-% （A(7,7)/B(7,3)）。日志里没有这个值，见 tau_d_effective.m 头注释。
-tau_d=tau_d_effective(M,c.vd);
+% tau_d 由 tau_d_effective.m 统一给出（mode 1 常数 / 2 旧速度表 / 3,4 辨识表聚合）。
+% mode 3/4 的聚合值在 prepare_step 里按四角算好放进 c，这里只取用。
+if isfield(M,'tau_d_mode') && (M.tau_d_mode==3 || M.tau_d_mode==4)
+    if M.tau_d_mode==3, tau_d = c.tau_d_eff; else, tau_d = c.tau_d_dom; end
+    tau_d = max(tau_d, 1e-4);
+else
+    tau_d = tau_d_effective(M, c.vd);
+end
 A=[A,B(:,3);zeros(1,6),-1/tau_d];
 B(:,3)=0; B=[B;0,0,1/tau_d]; D=[D;zeros(1,3)];
 
