@@ -81,7 +81,10 @@ switch maneuver
     case 1                       % DLC
         Road.mu  = 0.4;
         M.Q_norm = [0; 0; 10; 0; 50; 20];
-        M.R_norm = [100; 200];
+        % R_norm(1): dDelta 的代价。100 时 DLC 80 会把方向盘打到 720° 机械极限
+        % （ey 也跑到 2.0 m）；300 时 SW_max 228°、ey 0.875。LTR 在这三个算例里
+        % 只有 0.34，从来没顶到 0.8，所以调 slack 对 SW 完全无效，只能动这里。
+        M.R_norm = [300; 200];
         M.slack_w= 0.2e4*ones(4,1);
         X = (0:0.5:200)';
         Y = 3.556/2*(1+tanh(4/27.852*(X-80.059))) ...
@@ -92,7 +95,11 @@ switch maneuver
         Road.mu  = 0.85;
         M.Q_norm = [0; 0; 5; 0; 50; 5];
         M.R_norm = [0.1; 500];
-        M.slack_w= [5; 5; 5; 5];
+        % slack_w = [r; alpha; LTR; env]。LTR 项原来只有 5："|LTR|<=0.8" 的松弛
+        % 太便宜，约束形同虚设，实测 LTR 冲到 1.000（内侧轮离地）。
+        % 扫到 1e3 时 LTR_max 0.828、ey 反而从 0.894 降到 0.834；1e4 与 1e3 结果
+        % 完全一致（约束已等效为硬约束），所以取最小的 1e3。
+        M.slack_w= [5; 5; 1e3; 5];
         A  = 1.2; k = 0.18; Lr = 20; Lo = 40;
         P  = 2*pi*A/k;
         Lx = Lr + 3*P + Lo;
