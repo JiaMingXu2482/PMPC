@@ -2,85 +2,123 @@
 
 控制器：`pmpc_core`，7 状态 `[vy, r, phi, p, ey, epsi, Md]` / 3 控制量 `[delta, Mz, Md_cmd]`，
 CDC 电流由控制器给（`nlcsnn/inv_current_impl_10ms.m` 的 `SH_MODE = 0`）。
-**补偿时滞**：`tau_d_mode = 2`（时变，`M.tau_d` 被忽略），查表在 `pmpc_core/tau_d_effective.m`。
-每个算例都显式传 `tau_d_mode = 2`：`pmpc_init` 的 case 默认是 `mode = 1`，
-不显式传就会落回常数口径（DLC 0.01 / Slalom 0.20 / FishHook 0.025）。
 
-复现本文所有数字（矩阵表 / 口径对照 / 反辨识）：
+## 主对照口径：`tau_d_mode = 1`（固定 tau）
+
+2026-11-14 决定：**comp 的主对照改用固定 tau，不再用时变表。**
+
+| 工况 | `tau_d` [s] | 来源 | 其它补偿项 |
+|---|---|---|---|
+| DLC 70 / 75 / 80 | **0.01** | `pmpc_init` 全局默认，case 未覆盖 | — |
+| Slalom 80 | **0.20** | `pmpc_init` case 2，`controller==3` 分支 | `preview_L=preview_alpha=0` |
+| FishHook 80 | **0.025** | `run_fishhook('comp25',…)` | `preview_L=0.025`、`preview_alpha=1` |
+
+每个算例都显式确认实际生效值（存进 `_params.mat`，跑完从磁盘读回核对，见 §5）。
+`tau_d_mode = 2` 的代码与结果**保留不删**，作为"按实测滞后建模时补偿收益不显著"
+的说明性证据，见 §2。
+
+复现本文所有数字：
 
 ```
 matlab -batch "addpath('tools'); cp_case_metrics; taud_backid"
 ```
 
-单个算例的口径快照在同目录的 `<prefix>_params.mat` 里（字段见 §4）。
+（`cp_case_metrics` 默认就是下面这张固定 tau 的主表。）
 
 ---
 
-## 1. 统一测试矩阵（2026-11-14）
+## 1. 主表（固定 tau，统一测试矩阵）
 
-参数一律取 `pmpc_init` 的 case 默认值，未调任何权重；每个算例显式 `tau_d_mode=2`。
+参数全取 `pmpc_init` case 默认值，未调任何权重。
+`Md_avg`/`Mz_avg` 为 `mean(abs())`；`epsi_max` 由 rad 换算；`生效 tau_d` 取 `.mat`
+里的 `tau_dtrace`（`run_*.m` 用 `tau_d_effective.m` 按本算例实测口径复算）。
 
 | 算例 | T [s] | ey_max [m] | ey_rms [m] | epsi_max [deg] | LTR_max | SW_max [deg] | Mz_avg [N·m] | Mz_max [N·m] | Md_avg [N·m] | Md_max [N·m] | Icmd 范围 [A] | Vx 范围 [km/h] | 生效 tau_d [s] | QP% |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `cp_dlc_70` — DLC 70, µ0.4 | 10.63 | 0.6363 | 0.2026 | 6.81 | 0.325 | 69.1 | 674 | 2166 | 359 | 2409 | 0.00–1.60 | 66.7–70.0 | 0.01700–0.01744 | 100.0 |
-| `cp_dlc_75` — DLC 75, µ0.4 | 9.94 | 0.6484 | 0.2305 | 7.03 | 0.330 | 122.4 | 856 | 2124 | 369 | 2324 | 0.00–1.60 | 71.6–75.0 | 0.01700–0.01744 | 100.0 |
-| `cp_dlc_80` — DLC 80, µ0.4 | 9.32 | 0.8661 | 0.3033 | 7.90 | 0.330 | 276.0 | 847 | 2045 | 370 | 2390 | 0.00–1.60 | 76.4–80.0 | 0.01700–0.01799 | 100.0 |
-| `cp_sla_80` — Slalom 80, µ0.85 | 8.00 | 0.7724 | 0.4618 | 3.70 | 0.680 | 209.9 | 2133 | 5183 | 1513 | 5141 | 0.00–1.60 | 69.6–80.0 | 0.01700–0.02003 | 100.0 |
-| `cp_fh_80` — FishHook 80, µ0.9, cargo 170 | 7.99 | 14.8400 | 6.0272 | 52.48 | 0.799 | 0.0 | 4509 | 7786 | 614 | 4369 | 0.00–1.60 | 58.8–80.0 | 0.01700–0.01964 | 100.0 |
-
-命令：
+| `cp_dlc_70_fix` — DLC 70, µ0.4 | 10.64 | 0.6373 | 0.2028 | 6.77 | 0.325 | 68.1 | 666 | 2172 | 359 | 2431 | 0.00–1.60 | 66.7–70.0 | 0.0100 | 100.0 |
+| `cp_dlc_75_fix` — DLC 75, µ0.4 | 9.94 | 0.6484 | 0.2305 | 7.03 | 0.330 | 122.4 | 856 | 2124 | 369 | 2320 | 0.00–1.60 | 71.6–75.0 | 0.0100 | 100.0 |
+| `cp_dlc_80_fix` — DLC 80, µ0.4 | 9.32 | 0.8658 | 0.3031 | 7.90 | 0.330 | 275.9 | 847 | 2045 | 370 | 2385 | 0.00–1.60 | 76.4–80.0 | 0.0100 | 100.0 |
+| `cp_sla_80_fix` — Slalom 80, µ0.85 | 8.00 | 0.7433 | 0.4433 | 3.44 | 0.688 | 181.4 | 1939 | 5190 | 1622 | 5260 | 0.00–1.60 | 71.0–80.0 | 0.2000 | 100.0 |
+| `cp_fh_80_fix` — FishHook 80, µ0.9, cargo 170 | 7.99 | 14.7167 | 5.9887 | 52.61 | 0.804 | 0.0 | 4506 | 7628 | 611 | 4292 | 0.00–1.60 | 58.9–80.0 | 0.0250 | 100.0 |
 
 ```matlab
-run_dlc(3,70,struct('stopTime',15,'prefix','cp_dlc_70','tau_d_mode',2))   % 75 / 80 同理
-run_slalom(3,80,struct('stopTime',8,'prefix','cp_sla_80','tau_d_mode',2))
-run_fishhook('comp25',3,struct('stopTime',8,'prefix','cp_fh_80','cargo',170,'tau_d_mode',2))
+run_dlc(3,70,struct('stopTime',15,'prefix','cp_dlc_70_fix','tau_d_mode',1))   % 75 / 80 同理
+run_slalom(3,80,struct('stopTime',8,'prefix','cp_sla_80_fix','tau_d_mode',1))
+run_fishhook('comp25',3,struct('stopTime',8,'prefix','cp_fh_80_fix','cargo',170))
 ```
 
-### 口径说明（读表前必看）
+### 1.1 口径说明（读表前必看）
 
-- **QP%**：`D(24) = 1` 收敛、`0` 未收敛、`-1` 表示**本拍没跑 QP**
-  （`pmpc_step` 在无效测量 / 无参考路径时提前返回，留 `-1` 当哨兵）。
-  分母只数 `D(24) >= 0` 的帧，**不把 `-1` 算失败**：
-  `QP% = 100*sum(D(24)>0.5)/sum(D(24)>=0)`。
-  本次五个算例被跳过的帧数全是 0（70/75/80 km/h DLC 各 1064/995/933 帧，
-  Slalom 801 帧，FishHook 800 帧），所以 QP% 与旧口径数值一致。
+- **QP%**：`D(24)=1` 收敛、`0` 未收敛、`-1` 表示**本拍没跑 QP**（`pmpc_step` 在
+  无效测量/无参考路径时提前返回，留 `-1` 当哨兵）。分母只数 `D(24)>=0` 的帧，
+  `QP% = 100*sum(D(24)>0.5)/sum(D(24)>=0)`。本次五个算例 `-1` 帧数全为 0
+  （1065/995/933/801/800 帧），所以数值与旧口径一致。
 - **Vx 范围**必须一起看：基线那支没有纵向速度环，历史上有 DLC 掉到 0.6 km/h 的算例。
-  本文五个算例的 Vx 下界与目标车速的差距分别是 −3.3 / −3.4 / −3.6 / −10.4 / −21.2 km/h，
-  都是机动过程中的正常掉速（不是车速失控）；三方对比时先对齐这一列，再谈 `ey`。
-- **DLC 的 T 只有 9–11 s，不是 15 s**：`run_dlc` 把 CarSim 的 `SSTOP` 设成 200 m，
-  到里程就停（70 km/h 走完 200 m 约 10.3 s）。也就是说三个车速比的是**同一段 200 m**，
-  不是同一时长。
-- **FishHook 的 SW_max = 0**：该工况 `afs_on=false` 且 `steer_ext=true`（CarSim 转向机器人
-  给方向盘），`D(19)` 只记 AFS 增量，所以恒为 0。不要拿它和 DLC/Slalom 的 SW 比。
-- FishHook 的 `ey_max=14.84 m`、`epsi_max=52.5°` 是工况本身（鱼钩后大侧倾、大偏航），
-  量级天然和其它工况不同，**跨工况不要比 ey**；`LTR_max=0.799` 贴着约束 0.8，说明
-  LTR 约束在该工况起作用。
+  本文五个算例的 Vx 下界与目标差 −3.3 / −3.4 / −3.6 / −9.0 / −21.1 km/h，
+  都是机动过程中的正常掉速，不是车速失控。
+- **DLC 的 T 只有 9.3–10.6 s，不是 15 s**：`run_dlc` 把 CarSim `SSTOP` 设成 200 m，
+  到里程就停。三个车速比的是**同一段 200 m**，不是同一时长。
+- **FishHook 的 SW_max = 0**：`afs_on=false` + `steer_ext=true`（CarSim 转向机器人给方向盘），
+  `D(19)` 只记 AFS 增量，所以恒 0，不要和 DLC/Slalom 的 SW 比。
+- **FishHook `LTR_max=0.804` 略超 0.8**：LTR 是软约束（带松弛），该工况鱼钩后侧倾接近
+  极限，0.004 的越界量属松弛允许范围；Slalom 的 `LTR_max=0.688 < 0.75`，满足验收。
+
+### 1.2 与 B 支（noComp，`tau_d=1e-4`）同算例对照
+
+同一套矩阵、同一 stopTime，只差时滞口径（B 支数字取自
+`Proposed_noComp/PMPC_Results/NC_RESULTS.md`）：
+
+| 算例 | nc `ey_max`（1e-4） | cp `ey_max`（mode2，17–20 ms） | cp `ey_max`（固定 tau） | 固定 tau 相对 nc |
+|---|---|---|---|---|
+| DLC 70 | 0.6369 | 0.6363 | 0.6373 | +0.06% |
+| DLC 75 | 0.6483 | 0.6484 | 0.6484 | +0.02% |
+| DLC 80 | 0.8656 | 0.8661 | 0.8658 | +0.02% |
+| **Slalom 80** | **0.7735** | 0.7724 | **0.7433** | **−3.9%** |
+| **FishHook 80** | **14.8720** | 14.8400 | **14.7167** | **−1.0%** |
+
+- **DLC 三个车速上，三种时滞口径的结果差 ≤0.06%，等于没有区别**：DLC 的减振器几乎不激励
+  （`Md` 峰值 2.4 kN·m，`vmag` 中位数不到 10 mm/s），且 0.01 s 与 1e-4 在 0.1 s 采样下
+  本身只差 1/10 拍。**DLC 不能用来论证时滞补偿的收益**，只能证明链路一致、无副作用。
+- **收益只在大侧向工况出现**：Slalom −3.9%、FishHook −1.0%。这是主对照成立的依据。
 
 ---
 
-## 2. 时滞口径对照（不进对比矩阵）
+## 2. 时变口径（`tau_d_mode = 2`）的负结果
 
-同一算例只差 `tau_d_mode`，用来看"时变口径 vs 常数口径"的差别，以及留档两条 3 s 自检。
+时变表按实测压缩速度查 0.017 / 0.019 / 0.022 s。矩阵跑下来：
 
-| 算例 | T [s] | ey_max [m] | ey_rms [m] | epsi_max [deg] | LTR_max | SW_max [deg] | Mz_avg [N·m] | Mz_max [N·m] | Md_avg [N·m] | Md_max [N·m] | Icmd 范围 [A] | Vx 范围 [km/h] | 生效 tau_d [s] | QP% |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `cp_sla_mode1` — Slalom 80, 常数口径 | 8.00 | 0.7433 | 0.4433 | 3.44 | 0.688 | 181.4 | 1939 | 5190 | 1622 | 5260 | 0.00–1.60 | 71.0–80.0 | 0.2000 | 100.0 |
-| `cp_sla_mode2` — Slalom 80, 时变口径 | 8.00 | 0.7724 | 0.4618 | 3.70 | 0.680 | 209.9 | 2133 | 5183 | 1513 | 5141 | 0.00–1.60 | 69.6–80.0 | 0.01700–0.02003 | 100.0 |
-| `cp_dlc_mode1` — DLC 70, **3 s 自检，不用于对比** | 3.00 | 0.0016 | 0.0002 | 0.03 | 0.018 | 5.8 | 3 | 80 | 25 | 164 | 0.00–1.60 | 68.4–70.0 | 0.0100 | 100.0 |
-| `cp_dlc_mode2` — DLC 70, **3 s 自检，不用于对比** | 3.00 | 0.0016 | 0.0002 | 0.03 | 0.018 | 5.8 | 3 | 80 | 26 | 163 | 0.00–1.60 | 68.4–70.0 | 0.0170 | 100.0 |
+- 四个算例的 `tau_dtrace` **中位数全是 0.017 s**，最大值仅 0.020 s
+  （DLC 0.0170–0.0180、Slalom 0.0170–0.0200、FishHook 0.0170–0.0196）。
+  时变表**几乎从不越过第一个断点**（50 mm/s），实质退化成"常数 17 ms"。
+- 17 ms 与 noComp 的 1e-4 在闭环里不可区分：Slalom `ey_max` 0.7724 vs 0.7735（差 0.14%），
+  比固定 0.20 s 的 0.7433 差 3.8%。
+- 也就是说：**按实测物理滞后（17 ms）建模，补偿收益基本为零**；
+  带来收益的是 0.20 s 这个"等效整定值"，它把预瞄、力界预测、离散化误差一起吸收进去
+  （§3 的反辨识给出的实测表观滞后只有 10–20 ms，比 0.20 s 小一个量级）。
 
-- `cp_sla_mode1/2` 是同一算例的唯一差别（0.20 常数 vs 17–22 ms 时变）：
-  `ey_max` 0.7433 → 0.7724（时变口径差 3.9%）、`SW_max` 181° → 210°。
-  与 COORDINATION.md 的预期（"切到 mode=2 后 Slalom 的 ey 会从 0.767 回到 0.78 量级"）方向一致。
-- `cp_dlc_mode1/2` 是 **3 s 自检**：70 km/h 下变道在 X≈61 m（t≈3.1 s）才开始，
-  窗内 `ey` 只有 1.6 mm，只证明链路通，**不用于对比**。
-- 更早的 `cp_verify` / `cp_verify8` / `cp_verify8_td1` / `cp_verify_td1`
-  同样是 **3 s / 8 s 自检，不用于对比**，前缀混乱且被 `cp_dlc_mode*` 取代，**已删除**
-  （见 commit `bdd8cac`）。
+同一算例只差口径的三个跑法（Slalom 80、8 s，同一 stopTime）：
+
+| 口径 | 生效 tau_d | ey_max [m] | SW_max [deg] | 说明 |
+|---|---|---|---|---|
+| noComp | 1e-4 | 0.7735 | 206.0 | 不建模时滞 |
+| comp 时变（mode=2） | 0.0170–0.0200（中位 0.017） | 0.7724 | 209.9 | **负结果**：退化成常数 17 ms |
+| comp 固定（mode=1） | 0.20 | **0.7433** | 181.4 | **主对照** |
+
+mode=2 的五个算例（`cp_dlc_70/75/80`、`cp_sla_80`、`cp_fh_80`）**保留在库里不删**：
+
+| 算例 | ey_max | LTR_max | Vx 范围 | 生效 tau_d |
+|---|---|---|---|---|
+| `cp_dlc_70` | 0.6363 | 0.325 | 66.7–70.0 | 0.01700–0.01744 |
+| `cp_dlc_75` | 0.6484 | 0.330 | 71.6–75.0 | 0.01700–0.01744 |
+| `cp_dlc_80` | 0.8661 | 0.330 | 76.4–80.0 | 0.01700–0.01799 |
+| `cp_sla_80` | 0.7724 | 0.680 | 69.6–80.0 | 0.01700–0.02003 |
+| `cp_fh_80` | 14.8400 | 0.799 | 58.8–80.0 | 0.01700–0.01964 |
+
+`pmpc_core/tau_d_effective.m` 保持现状（mode=1 / mode=2 两个分支都在），本轮不删代码。
 
 ---
 
-## 3. tau_d 口径与反辨识
+## 3. tau_d 口径记录与反辨识（支撑 §2 的结论）
 
 > 本节用 `cp_sla_mode1` / `cp_sla_mode2` 两个 8 s 算例（§2），与 §1 的矩阵无依赖关系。
 
@@ -128,6 +166,9 @@ mode 2 记 0.0170–0.0200，就是它给出的信息。
 |---|---|---|
 | `D(6,:)` | `Md_actual` 实测 | `c.zeta(7) = Bd'*Fd` |
 | `D(7,:)` | `Md_cmd` 本拍下发 | `stateNext.u_prev(3)`（`pmpc_step.m:160` 覆盖后的值，不是 `:68` 的上一拍初值） |
+
+用到的两个文件：`cp_sla_mode1.mat`（= `cp_sla_80_fix`，固定 0.20）与
+`cp_sla_mode2.mat`（= `cp_sla_80`，时变 17–20 ms），同一算例同一 stopTime。
 
 一阶滞后 `dMd_actual/dt = (Md_cmd - Md_actual)/tau`，中心差分可得
 
@@ -180,13 +221,17 @@ Slalom 这类减振器被真正激励的算例。
 ```
 PMPC_Results/
   CP_RESULTS.md
-  DLC_mu0.4_interp/cp_dlc_70.mat  + cp_dlc_70_params.mat
-  DLC_mu0.4_interp/cp_dlc_75.mat  + cp_dlc_75_params.mat
-  DLC_mu0.4_interp/cp_dlc_80.mat  + cp_dlc_80_params.mat
-  Slalom_mu0.85_interp/cp_sla_80.mat + cp_sla_80_params.mat
-  FishHook_80_mu0.9_cargo170_newplant/cp_fh_80.mat + cp_fh_80_params.mat
-  DLC_mu0.4_interp/cp_dlc_mode1.mat / cp_dlc_mode2.mat        ← §2 3 s 自检
-  Slalom_mu0.85_interp/cp_sla_mode1.mat / cp_sla_mode2.mat    ← §2 口径对照
+  DLC_mu0.4_interp/cp_dlc_70_fix.mat + _params.mat      ← §1 主表
+  DLC_mu0.4_interp/cp_dlc_75_fix.mat + _params.mat
+  DLC_mu0.4_interp/cp_dlc_80_fix.mat + _params.mat
+  Slalom_mu0.85_interp/cp_sla_80_fix.mat + _params.mat
+  FishHook_80_mu0.9_cargo170_newplant/cp_fh_80_fix.mat + _params.mat
+  DLC_mu0.4_interp/cp_dlc_70/75/80.mat + _params.mat    ← §2 mode=2（负结果，保留）
+  Slalom_mu0.85_interp/cp_sla_80.mat + _params.mat
+  FishHook_80_mu0.9_cargo170_newplant/cp_fh_80.mat + _params.mat
+  Slalom_mu0.85_interp/cp_sla_mode2.mat                 ← §2/§3 对照（= cp_sla_80）
+  Slalom_mu0.85_interp/cp_sla_mode1.mat                 ← 与 cp_sla_80_fix 同口径同结果（历史重复）
+  DLC_mu0.4_interp/cp_dlc_mode1.mat / cp_dlc_mode2.mat  ← 3 s 自检，不用于对比
 tools/
   cp_case_metrics.m    ← §1/§2 的表（逐算例打印，与本文数字一致）
   taud_backid.m        ← §3 的反辨识（公式、适用条件、噪声地板写在头注释）
@@ -196,10 +241,25 @@ pmpc_core/
   tau_d_effective.m    ← mode1/mode2 的唯一口径来源（build_prediction 与 run_*.m 共用）
 ```
 
-`.mat` 内：`D`（27×N 诊断日志，行序见 `pmpc_core/pmpc_step.m` 头注释）、`t`、`Icmd`
-（四角 1 kHz 电流）、`tau_dtrace` / `tau_d_mode` / `tau_d_const` / `vd_ctrl`。
+`.mat` 内：`D`（27×N，行序见 `pmpc_core/pmpc_step.m` 头注释）、`t`、`Icmd`（四角 1 kHz 电流）、
+`tau_dtrace` / `tau_d_mode` / `tau_d_const` / `vd_ctrl`。
 
-`_params.mat` 内（由 `tools/cp_write_params.m` 写）：`maneuver`、`speed`、
-`horizon = [Ts Np Nc]`、`tau_d`、`tau_d_mode`、`tau_d_const`、`tau_d_default`、
-`controller`、`Q_norm`、`R_norm`、`slack_w`、`SH_MODE`、`timestamp`，
-以及各工况补充的 `mu` / `stopTime` / `variant` / `cargo`。
+`_params.mat` 内（`tools/cp_write_params.m` 写）：`maneuver`、`speed`、`horizon=[Ts Np Nc]`、
+`tau_d`、`tau_d_mode`、`tau_d_const`、`tau_d_default`、`controller`、`Q_norm`、`R_norm`、
+`slack_w`、`SH_MODE`、`timestamp`，以及各工况补充的 `mu` / `stopTime` / `variant` / `cargo`。
+
+---
+
+## 5. 验收核对（从磁盘读回，`*_fix` 五个算例）
+
+| 算例 | `tau_d_mode` | `.mat` 的 `tau_d_const` | `_params.mat` 的 `tau_d` | `tau_dtrace` | 唯一值数 |
+|---|---|---|---|---|---|
+| cp_dlc_70_fix | 1 | 0.01 | 0.01 | 0.01000–0.01000 | 1 |
+| cp_dlc_75_fix | 1 | 0.01 | 0.01 | 0.01000–0.01000 | 1 |
+| cp_dlc_80_fix | 1 | 0.01 | 0.01 | 0.01000–0.01000 | 1 |
+| cp_sla_80_fix | 1 | 0.20 | 0.20 | 0.20000–0.20000 | 1 |
+| cp_fh_80_fix | 1 | 0.025 | 0.025 | 0.02500–0.02500 | 1 |
+
+FishHook 的 `tau_d_default` 记的是 0.0001（`pmpc_init` case 4 的默认），
+实际生效值来自 `run_fishhook('comp25',…)` 的 0.025 —— 两者不一致是预期的，
+`tau_d` / `tau_d_const` 才是生效值。

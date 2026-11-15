@@ -1,7 +1,7 @@
 function T = cp_case_metrics(files)
 %CP_CASE_METRICS 打印 CP_RESULTS.md 表里的那一行（每个算例一行）。
 %
-%   cp_case_metrics                                  % 默认五个统一矩阵算例
+%   cp_case_metrics                                  % 默认主对照五个算例（固定 tau 口径，*_fix）
 %   cp_case_metrics({f1,f2})                         % 指定
 %   T = cp_case_metrics(...)                         % 返回 table
 %
@@ -20,15 +20,19 @@ function T = cp_case_metrics(files)
 %
 % Vx 范围按 km/h 打印：三方对比时先看这一列，确认大家跑的是同一个车速
 % （基线那支没有纵向速度环，曾出现过 DLC 掉到 0.6 km/h 的算例）。
+%
+% 默认清单是主对照用的固定 tau 版（tau_d_mode=1，*_fix）。时变口径（mode=2）的
+% 五个算例与它们同目录、无 _fix 后缀，需要时显式传文件名，例如：
+%   cp_case_metrics({'PMPC_Results/DLC_mu0.4_interp/cp_dlc_80.mat'})
 
 if nargin < 1 || isempty(files)
     root = fileparts(fileparts(mfilename('fullpath')));
     d1 = fullfile(root,'PMPC_Results','DLC_mu0.4_interp');
     d2 = fullfile(root,'PMPC_Results','Slalom_mu0.85_interp');
     d3 = fullfile(root,'PMPC_Results','FishHook_80_mu0.9_cargo170_newplant');
-    files = {fullfile(d1,'cp_dlc_70.mat'), fullfile(d1,'cp_dlc_75.mat'), ...
-             fullfile(d1,'cp_dlc_80.mat'), fullfile(d2,'cp_sla_80.mat'), ...
-             fullfile(d3,'cp_fh_80.mat')};
+    files = {fullfile(d1,'cp_dlc_70_fix.mat'), fullfile(d1,'cp_dlc_75_fix.mat'), ...
+             fullfile(d1,'cp_dlc_80_fix.mat'), fullfile(d2,'cp_sla_80_fix.mat'), ...
+             fullfile(d3,'cp_fh_80_fix.mat')};
 end
 if ischar(files) || isstring(files), files = {char(files)}; end
 
