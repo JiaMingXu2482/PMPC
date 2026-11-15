@@ -145,6 +145,8 @@ M.margin_mode = 1;
 %   3 = 四角按辨识表查 tau，再按 |Bd_i|*|目标力-当前力| 加权聚合成一个（推荐）
 %   4 = 同上，但取权重最大那个角的 tau（主导角）
 % 3/4 的表在 pmpc_core/data/tau_table_tau.mat，查表函数 pmpc_core/tau_d_lookup.m。
+%   5 = Smith 式超前反馈：把送入 MPC 的 Md 状态前推 M.tau_lead_eff 秒（缺省取 tau_d）
+% 另：M.tau_lead_eff 只在 mode 5 下起作用。
 M.tau_d_mode = 1;
 
 %% 5. 参考轨迹
