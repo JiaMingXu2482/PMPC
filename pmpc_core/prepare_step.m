@@ -81,13 +81,29 @@ end
     reference(meas,Reftraj,params,state.path_index,Np);
 
 % zeta=[Vy;r;phi;p;ey;epsi;实际Md;上一拍delta;上一拍Mz;上一拍Md命令]。
+% mode=5：Smith 式超前反馈。把送入 MPC 的 Md 状态前推 tau_lead_eff 秒，
+% 让 MPC 看见"再过 L 秒才真正到手"的力矩，而不是当前测到的滞后值。
+%   Md_lead = Md_cmd_prev + e^{-L/tau} * (Md_now - Md_cmd_prev)
+% L 由 M.tau_lead_eff 给；缺省时就取本拍的 tau（常数口径）。
+mdFeed = Bd'*Fd;
+if isfield(params.M,'tau_d_mode') && params.M.tau_d_mode==5
+    if isfield(params.M,'tau_lead_eff') && isfinite(params.M.tau_lead_eff)
+        Lf = max(params.M.tau_lead_eff, 0);
+    else
+        Lf = max(params.M.tau_d, 1e-4);
+    end
+    tauRef = max(params.M.tau_d, 1e-4);
+    mdCmd  = state.u_prev(3);
+    mdFeed = mdCmd + exp(-Lf/tauRef)*(mdFeed - mdCmd);
+end
+
 zeta=[  meas.Vy; 
         meas.r; 
         meas.phi; 
         meas.p; 
         ey; 
         epsi; 
-        Bd'*Fd; % 实际力矩由测量决定，不裁剪到目标力边界 
+        mdFeed; % 实际力矩由测量决定（mode 5 为超前后值） 
         state.u_prev];
 % 上一拍 Md 命令也保留实际下发值，避免边界变化造成虚假的输入跳变。
 
