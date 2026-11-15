@@ -52,6 +52,15 @@ for k = 1:numel(fn)
     prm.(fn{k}) = extra.(fn{k});
 end
 
+% 只在 P.M 里存在时才记录的旋钮：不写死默认值，缺省就是"这一项没被设置"。
+%   tau_lead_eff —— mode 5 的超前时间（缺省取 tau_d，无法从别处反推）
+%   preview_L / preview_alpha —— 力界预瞄（FishHook comp25 才有）
+for nm = {'tau_lead_eff','preview_L','preview_alpha'}
+    if isfield(P.M, nm{1})
+        prm.(nm{1}) = P.M.(nm{1});
+    end
+end
+
 if ~isfolder(outdir), mkdir(outdir); end
 f = fullfile(outdir,[prefix '_params.mat']);
 save(f,'-struct','prm');
