@@ -34,7 +34,10 @@ D=[0,cd/V.m,1/V.m;0,V.lf*cd/V.Iz,-V.lr/V.Iz;0,0,0; ...
 % 时变时滞（M.tau_d_mode=2）：由四角压缩速度幅值决定，标定自力阶跃响应
 % 的 t10-90（50/100/200/400 mm/s -> 17/19/22/22 ms）。分段线性、末段饱和。
 % M.tau_d_mode=1（默认）用常数 M.tau_d。
-if isfield(M,'tau_d_mode') && M.tau_d_mode==2
+if isfield(M,'tau_d_mode') && (M.tau_d_mode==3 || M.tau_d_mode==4)
+    % 3 = 四角加权聚合，4 = 主导角；两者都在 prepare_step 里算好放进 c
+    if M.tau_d_mode==3, tau_d = c.tau_d_eff; else, tau_d = c.tau_d_dom; end
+elseif isfield(M,'tau_d_mode') && M.tau_d_mode==2
     vmag=1000*mean(abs(c.vd));            % [mm/s]
     if vmag<=50
         tau_d=0.017;
