@@ -197,11 +197,14 @@ h = struct('Ts',0.05,'Np',12,'Nc',6);
 muOpt = [];
 if isfield(opts,'mu') && isfinite(opts.mu), muOpt = opts.mu; end
 [P,R,s0,m0] = pmpc_init(4,ctrl,h,muOpt);
+if isfield(opts,'horizon') && ~isempty(opts.horizon)
+    [P,R,s0,m0] = pmpc_init(4,ctrl,opts.horizon,muOpt);
+end
 P.M.tau_d         = cfg.tau_d;
 P.M.preview_L     = cfg.preview_L;
 P.M.preview_alpha = cfg.preview_alpha;
 for f = {'tau_d','preview_L','preview_alpha','tau_lead','cdc_mode', ...
-         'w1_max','w2_max','margin_mode','tau_d_mode','R_norm','Q_norm','slack_w','w_env','Wb', ...
+         'w1_max','w2_max','margin_mode','tau_d_mode','tau_lead_eff','R_norm','Q_norm','slack_w','w_env','Wb', ...
          'afs_on','mz_on','w_prev_alloc'}
     if isfield(opts,f{1}), P.M.(f{1}) = opts.(f{1}); end
 end
