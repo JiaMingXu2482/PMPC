@@ -1,0 +1,40 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\10.12\v17_pmpc_package\v17_pmpc_package] 
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+
+Simulink Agentic Toolkit - Installation Check
+===============================================
+
+Prerequisites
+  ? MATLAB 24.2.0.2712019 (R2024b)
+  ? Simulink installed and licensed
+
+MATLAB Environment
+  ? All 9 tool entry points on path
+  ? Package resolution correct (+sage, +mbd inside SATK)
+
+MCP Server
+  ? matlab-mcp-server.exe found: C:\Users\user\.matlab\agentic-toolkits\bin\matlab-mcp-server.exe
+
+MCP Connectivity
+  ? shareMATLABSession available (MATLAB-side MCP components installed)
+  ? MATLAB connector running (port 31516)
+
+===============================================
+Result: PASS
+
+[警告: 使用不带 'Variants' 参数的 find_system 会在搜索中跳过非活动的 Variant Subsystem 模块。此行为将在以后的版本中更改，以查看可变子系统的所有选择项。要查找仿真或代码生成中的活动模块，请编译模型，并使用内置变体
+过滤器和 'MatchFilter' 选项。要查找所有模块，请使用具有 'MatchFilter' 选项的 '@Simulink.match.allVariants' 过滤器。] 
+[> 位置：make_log_model (第 15 行)] 
+damper subsystem = PmpcLog_sla80/减振器正模型（1000Hz）
+  Ia1 <- Unit Delay     SID=981  Goto: Ia_L1
+  Ia2 <- Unit Delay1    SID=999  Goto: Ia_L2
+  Ia3 <- Unit Delay2    SID=1008  Goto: Ia_R1
+  Ia4 <- Unit Delay3    SID=1017  Goto: Ia_R2
+[警告: 使用不带 'Variants' 参数的 find_system 会在搜索中跳过非活动的 Variant Subsystem 模块。此行为将在以后的版本中更改，以查看可变子系统的所有选择项。要查找仿真或代码生成中的活动模块，请编译模型，并使用内置变体
+过滤器和 'MatchFilter' 选项。要查找所有模块，请使用具有 'MatchFilter' 选项的 '@Simulink.match.allVariants' 过滤器。] 
+[> 位置：make_log_model (第 67 行)] 
+boundary taps: LogFhi, LogFlo, LogFat0, LogFat16
+taps = 17 (期望 17)
+saved D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Controller\MAIN\experiments\full_actuator_audit_20261116\logging\PmpcLog_sla80.slx
+MODEL_SLA_DONE
+EXIT=0 

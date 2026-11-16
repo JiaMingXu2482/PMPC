@@ -1,0 +1,62 @@
+== 模型回调 ==
+PreLoadFcn: root = 'D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Jturn'; |  | addpath(fullfile(root,'pmpc_core'),'-begin'); | addpath(fullfile(root,'nlcsnn'),'-begin'); |  | [params,Reftraj,state0,meas0] = pmpc_init(1); | [PMPC_MeasBus,PMPC_StateBus,PMPC_PredictionBus] = ... |     pmpc_bus(meas0,state0);
+PostLoadFcn: 
+InitFcn: root = 'D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Jturn'; |  | addpath(fullfile(root,'pmpc_core'),'-begin'); | addpath(fullfile(root,'nlcsnn'),'-begin'); | % CDC current-loop average model (local copy of init_valve2.m). | run(fullfile(root,'init_valve2.m')); | Iref_init  = 0.8;              % A | D_init_avg = 3*Iref_init/24;   % R=3, Vdc=24 | D_init     = (Iref_init > 0)*(3*Iref_init + 0.7)/(24 + 0.7); % Vd=0.7 V | 
+StartFcn: 
+StopFcn: 
+
+== 顶层块 ==
+  CarSim  [S-Function]
+  Demux  [Demux]
+  Demux1  [Demux]
+  Demux2  [Demux]
+  From  [From]
+  From1  [From]
+  From2  [From]
+  From4  [From]
+  From5  [From]
+  From53  [From]
+  From55  [From]
+  From57  [From]
+  From59  [From]
+  From6  [From]
+  Goto  [Goto]
+  Goto1  [Goto]
+  Goto19  [Goto]
+  Goto2  [Goto]
+  Goto24  [Goto]
+  Goto29  [Goto]
+  Goto34  [Goto]
+  Goto4  [Goto]
+  Goto5  [Goto]
+  Goto6  [Goto]
+  MPC_Controller（100Hz）  [SubSystem]
+  Mux  [Mux]
+  Rate Transition  [RateTransition]
+  Scope1  [Scope]
+  Scope2  [Scope]
+  v_target [ km//h ]  [Constant]
+  减振器正模型（1000Hz）  [SubSystem]
+  边界模型（100Hz）  [SubSystem]
+  逆模型（1000Hz）  [SubSystem]
+  驾驶员转角  [Constant]
+
+== 含 PI / FIR / StateSpace / UnitDelay 的子系统 ==
+  [UnitDelay] Unit Delay   (parent=MPC_Controller（100Hz）)
+  [UnitDelay] Unit Delay1   (parent=MPC_Controller（100Hz）)
+  [DiscreteFir] Discrete FIR Filter   (parent=减振器正模型（1000Hz）)
+  [DiscreteFir] Discrete FIR Filter1   (parent=减振器正模型（1000Hz）)
+  [DiscreteFir] Discrete FIR Filter2   (parent=减振器正模型（1000Hz）)
+  [DiscreteFir] Discrete FIR Filter3   (parent=减振器正模型（1000Hz）)
+  [DiscreteStateSpace] Discrete State-Space   (parent=减振器正模型（1000Hz）)
+  [DiscreteStateSpace] Discrete State-Space1   (parent=减振器正模型（1000Hz）)
+  [DiscreteStateSpace] Discrete State-Space2   (parent=减振器正模型（1000Hz）)
+  [DiscreteStateSpace] Discrete State-Space3   (parent=减振器正模型（1000Hz）)
+  [UnitDelay] Unit Delay   (parent=减振器正模型（1000Hz）)
+  [UnitDelay] Unit Delay1   (parent=减振器正模型（1000Hz）)
+  [UnitDelay] Unit Delay2   (parent=减振器正模型（1000Hz）)
+  [UnitDelay] Unit Delay3   (parent=减振器正模型（1000Hz）)
+  [UnitDelay] Unit Delay   (parent=边界模型（100Hz）)
+  [UnitDelay] Unit Delay1   (parent=边界模型（100Hz）)
+  [UnitDelay] Unit Delay2   (parent=边界模型（100Hz）)
+  [UnitDelay] Unit Delay3   (parent=边界模型（100Hz）)

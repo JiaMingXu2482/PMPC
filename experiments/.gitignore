@@ -1,0 +1,14 @@
+# 实验目录的重型派生产物不进 git（脚本可重新生成）
+**/slprj/
+**/*.slxc
+**/*.autosave
+**/results/*.vs
+**/results/*.vsb
+**/raw/*.mat
+**/raw2/*.mat
+**/DamperBench.slx
+**/DamperRun.slx
+**/ReplayBench.slx
+**/pm_work.slx
+**/PmpcLog_*.slx
+**/*_INVALID_preloadbug.mat

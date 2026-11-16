@@ -1,0 +1,33 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\10.12\v17_pmpc_package\v17_pmpc_package] 
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+
+Simulink Agentic Toolkit - Installation Check
+===============================================
+
+Prerequisites
+  ? MATLAB 24.2.0.2712019 (R2024b)
+  ? Simulink installed and licensed
+
+MATLAB Environment
+  ? All 9 tool entry points on path
+  ? Package resolution correct (+sage, +mbd inside SATK)
+
+MCP Server
+  ? matlab-mcp-server.exe found: C:\Users\user\.matlab\agentic-toolkits\bin\matlab-mcp-server.exe
+
+MCP Connectivity
+  ? shareMATLABSession available (MATLAB-side MCP components installed)
+  ? MATLAB connector running (port 31516)
+
+===============================================
+Result: PASS
+
+{无法识别的字段名称 "dt_grid"。
+
+出错 run_nu (第 109 行)
+    gridMode, P.M.Np, sum(P.M.dt_grid), P.M.Nc, numel(s0.active_main), which('pmpc_init'));
+                          ^^^^^^^^^^^
+} 
+[警告: 无法关闭模型 'pmpc_mil_nu'，因为它已更改。要保存更改，请使用 close_system('pmpc_mil_nu',1)。要放弃更改，请使用 close_system('pmpc_mil_nu',0)。] 
+ERROR: MATLAB error Exit Status: 0x00000001
+EXIT=1 

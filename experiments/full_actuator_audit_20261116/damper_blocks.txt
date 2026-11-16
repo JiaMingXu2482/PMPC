@@ -1,0 +1,87 @@
+[SubSystem] DamperPlant
+[Inport] I_cmd -> 1
+[Inport] I_cmd1 -> 2
+[Inport] I_cmd2 -> 3
+[Inport] I_cmd3 -> 4
+[Inport] u -> 5
+[Constant] Constant1
+[Constant] Constant3
+[Constant] Constant4
+[Constant] Constant5
+[Constant] Constant6
+[DigitalClock] Digital Clock
+[DiscreteFir] Discrete FIR Filter c='[0.5 0.5]'
+[DiscreteFir] Discrete FIR Filter1 c='[0.5 0.5]'
+[DiscreteFir] Discrete FIR Filter2 c='[0.5 0.5]'
+[DiscreteFir] Discrete FIR Filter3 c='[0.5 0.5]'
+[SubSystem] Discrete PID Controller1
+[SubSystem] Discrete PID Controller2
+[SubSystem] Discrete PID Controller3
+[SubSystem] Discrete PID Controller4
+[DiscreteStateSpace] Discrete State-Space
+[DiscreteStateSpace] Discrete State-Space1
+[DiscreteStateSpace] Discrete State-Space2
+[DiscreteStateSpace] Discrete State-Space3
+[From] From10
+[From] From11
+[From] From12
+[From] From13
+[From] From14
+[From] From15
+[From] From16
+[From] From17
+[From] From18
+[From] From19
+[From] From20
+[From] From21
+[From] From22
+[From] From23
+[From] From4
+[From] From5
+[From] From6
+[From] From7
+[From] From8
+[From] From9
+[Gain] Gain2
+[Gain] Gain3
+[Gain] Gain4
+[Gain] Gain5
+[Goto] Goto
+[Goto] Goto1
+[Goto] Goto2
+[Goto] Goto22
+[Goto] Goto3
+[Goto] Goto4
+[Goto] Goto41
+[Goto] Goto42
+[Goto] Goto43
+[Goto] Goto5
+[Goto] Goto6
+[Goto] Goto7
+[Goto] Goto8
+[Goto] Goto9
+[SubSystem] MATLAB Function1
+[SubSystem] MATLAB Function2
+[SubSystem] MATLAB Function3
+[SubSystem] MATLAB Function4
+[SubSystem] MATLAB Function5
+[Saturate] Saturation
+[Saturate] Saturation1
+[Saturate] Saturation2
+[Saturate] Saturation3
+[Scope] Scope
+[Scope] Scope1
+[Scope] Scope2
+[Scope] Scope3
+[Sum] Sum
+[Sum] Sum1
+[Sum] Sum2
+[Sum] Sum3
+[UnitDelay] Unit Delay
+[UnitDelay] Unit Delay1
+[UnitDelay] Unit Delay2
+[UnitDelay] Unit Delay3
+[Outport] Out1 -> 1
+[Outport] Out2 -> 2
+[Outport] Out3 -> 3
+[Outport] Out4 -> 4

@@ -1,0 +1,46 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\10.12\v17_pmpc_package\v17_pmpc_package] 
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+
+Simulink Agentic Toolkit - Installation Check
+===============================================
+
+Prerequisites
+  ? MATLAB 24.2.0.2712019 (R2024b)
+  ? Simulink installed and licensed
+
+MATLAB Environment
+  ? All 9 tool entry points on path
+  ? Package resolution correct (+sage, +mbd inside SATK)
+
+MCP Server
+  ? matlab-mcp-server.exe found: C:\Users\user\.matlab\agentic-toolkits\bin\matlab-mcp-server.exe
+
+MCP Connectivity
+  ? shareMATLABSession available (MATLAB-side MCP components installed)
+  ? MATLAB connector running (port 31516)
+
+===============================================
+Result: PASS
+
+DBG pwd=D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Controller\MAIN\experiments\nonuniform_grid_20261115 root=D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Controller\MAIN\experiments\nonuniform_grid_20261115 which=D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Controller\MAIN\experiments\nonuniform_grid_20261115\pmpc_core\pmpc_init.m
+WHICHPGM=D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Controller\MAIN\experiments\nonuniform_grid_20261115\pmpc_core\pmpc_init.m
+AFTERINIT Np=10 isf=1
+GRID uniform: Np=10 sum(dt)=1.000000 Nc=5 active=190
+
+===== nu_uniform_c1_75 | ctrl=1 | DLC 75 km/h | mu=0.40 | stop=15.0 s =====
+Q=[0 0 10 0 50 20 0] R=[100 200 0.1] slack=[50000 50000 50000 50000]
+Use vehicle solver: D:\Program Files\CarSim2019.0\CarSim2019.0_Prog\Programs\solvers\carsim_64.dll
+CarSim 2019.0
+Vehicle Configuration: I_I
+Revision 76070, December 13, 2018
+
+DLC80_mu0.5_PMPC <PMPC>
+
+Termination at simulation time = 9.965 s.
+Computational time ratio: 0.99709 (real time)/(simulation time)
+
+
+t_end 9.96 | Vx 71.1..75.0 | ey 1.935/0.757 fin -0.415 @8.43s | epsi 7.85 deg | SW 571.4 | Mz 765/2181 | Md 434/2879 | yaw 11.6 | LTR 0.33 | QP 100.0%
+DONE_c1_75
+[警告: 无法关闭模型 'pmpc_mil_nu'，因为它已更改。要保存更改，请使用 close_system('pmpc_mil_nu',1)。要放弃更改，请使用 close_system('pmpc_mil_nu',0)。] 
+EXIT=0 

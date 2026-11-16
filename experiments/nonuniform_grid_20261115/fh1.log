@@ -1,0 +1,42 @@
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\10.12\v17_pmpc_package\v17_pmpc_package] 
+[警告: 名称不存在或不是目录: D:\OneDrive - mail.scut.edu.cn\周报\4.6\4.7All\DLC_0.85_100\PMPC\SUV_DLC_PMPC\Simulink_Model\nlcsnn\v17_pmpc_package] 
+
+Simulink Agentic Toolkit - Installation Check
+===============================================
+
+Prerequisites
+  ? MATLAB 24.2.0.2712019 (R2024b)
+  ? Simulink installed and licensed
+
+MATLAB Environment
+  ? All 9 tool entry points on path
+  ? Package resolution correct (+sage, +mbd inside SATK)
+
+MCP Server
+  ? matlab-mcp-server.exe found: C:\Users\user\.matlab\agentic-toolkits\bin\matlab-mcp-server.exe
+
+MCP Connectivity
+  ? shareMATLABSession available (MATLAB-side MCP components installed)
+  ? MATLAB connector running (port 31516)
+
+===============================================
+Result: PASS
+
+
+===== nu_fh_uniform_nocomp_c3 | ctrl=3 | nocomp | 80 km/h | cargo 170 kg | stop=8.0 s | Ts=0.050 Np=12 Nc=6 =====
+tau_d=0.0001 s, preview_L=0 s, preview_alpha=0, mu=0.90
+Use vehicle solver: D:\Program Files\CarSim2019.0\CarSim2019.0_Prog\Programs\solvers\carsim_64.dll
+CarSim 2019.0
+Vehicle Configuration: I_I
+Revision 76070, December 13, 2018
+
+FH80_cargo_MPC <PMPC>
+
+Termination at simulation time = 7.999 s.
+Computational time ratio: 0.4155 (real time)/(simulation time)
+
+
+t_end 7.99 | Vx 59.4..80.0 | ey 14.87/6.04 | roll 4.93 deg | LTR 0.79 | SW 0.0 | Mz 4427/7764 | Md 630/4115 | r 23.4 | QP 100.0%
+结果已保存到 D:\OneDrive - mail.scut.edu.cn\Thesis\Code\Controller\MAIN\experiments\nonuniform_grid_20261115\results
+F1
+[警告: 无法关闭模型 'pmpc_mil_nu'，因为它已更改。要保存更改，请使用 close_system('pmpc_mil_nu',1)。要放弃更改，请使用 close_system('pmpc_mil_nu',0)。] 
