@@ -249,7 +249,8 @@ for j = 1:N
     ur = (min(j,K)-1)*2 + (1:2);
     A(r,1:nd) = (c.Hr*p.Y(rows,:) + c.Or*p.AI(ur,:))/EPS_LTR_REF;
     A(r,nd+3) = -1;
-    b(r)      = (c.Gr - c.Hr*p.y(rows) - c.Or*p.Ut(ur))/EPS_LTR_REF;
+    % LTR = kL*(kg*ay*x + Kt*phi + Md)，冻结 Md 进仿射项（与 Proposed 同号）
+    b(r)      = (c.Gr - c.MdLTR - c.Hr*p.y(rows) - c.Or*p.Ut(ur))/EPS_LTR_REF;
 
     % 道路包络（4 行）-> s_env
     r = 4*K + 6*N + (j-1)*4 + (1:4);

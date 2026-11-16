@@ -47,6 +47,9 @@ M.tau_mz = 0.2;      % 横摆力矩全量程建立时间 [s]（与 pmpc_core 一
 
 % 减振器：固定电流，不是决策量
 M.cdc_fixed_I = 1.0; % 四角电流 [A]
+% 诊断开关：true=把实测四角阻尼力矩作为冻结外扰（修复后默认）
+%           false=退回修复前（不建模被动阻尼力矩），仅用于回归对照
+M.md_frozen_on = true;
 
 % AFS / 差动制动开关（FishHook 需要关掉 AFS）
 M.afs_on = true;
@@ -69,6 +72,8 @@ V.delta_sw_max      = deg2rad(720);
 V.delta_sw_rate_max = deg2rad(540);
 V.kf = 82e3;  V.kr = 45e3;  V.rs_f = 0.6111;  V.rs_r = 0.7511;
 V.rd_f = 0.614;  V.rd_r = 0.754;
+% 减振器横向力臂：仅用于把实测四角阻尼力折算成侧倾力矩（与 Proposed 一致）
+V.ldf = 1.1;   V.ldr = 1.1;
 V.Kaux_f = 384*180/pi;  V.Kaux_r = 384*180/pi;
 V.kw = 502e3;  V.Kt = 81.5e3;
 V.cs_fy  = -3.2e-6;
